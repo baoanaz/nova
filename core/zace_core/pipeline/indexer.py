@@ -60,7 +60,7 @@ from zace_core.chunking import (
 from zace_core.hashing import file_content_hash
 from zace_core.interfaces import EmbeddingProvider
 from zace_core.parsing.registry import EXTENSION_LANGUAGE, detect_language, get_parser
-from zace_core.pipeline.embedding_sink import EmbeddingPipeline, EmbeddingSink
+from zace_core.pipeline.embedding_sink import EmbeddingPipeline
 from zace_core.pipeline.generated import is_generated
 from zace_core.pipeline.ignore import (
     SKIP_REASON_BINARY,
@@ -221,6 +221,7 @@ class Indexer:
         *,
         scope: IndexScope | None = None,
         embedding_cache: EmbeddingCache | None = None,
+        workers: int | None = None,
     ) -> None:
         self._store = store
         self._embedding = embedding
@@ -235,6 +236,9 @@ class Indexer:
         #: 跨项目 embedding 缓存（TASK-111）：让同内容在不同分支/项目间复用向量。
         #: 为 ``None`` 时退化为"只在本项目内复用"（单测与老调用点）。
         self._cache = embedding_cache
+        #: 向量阶段消费者线程数（TASK-115）：``None`` → ``ZACE_EMBED_WORKERS``（默认 2）。
+        #: 显式传入是给测试与对照实验用的接缝（不想让用例依赖环境变量）。
+        self._workers = workers
 
     # ------------------------------------------------------------------ 对外
 
@@ -293,8 +297,9 @@ class Indexer:
         indexed: list[_Indexed] = []
         written: dict[str, ChunkDef] = {}
         removed_ids: list[str] = []
-        sink = EmbeddingSink(self._embedding, self._vectors, cache=self._cache)
-        with EmbeddingPipeline(sink) as pipeline:
+        with EmbeddingPipeline(
+            self._embedding, self._vectors, cache=self._cache, workers=self._workers
+        ) as pipeline:
             # 一轮文件共用一个写事务；每文件的失败隔离由内层 SAVEPOINT 保证（Store.write_batch）。
             with self._store.write_batch():
                 for item in inputs:
@@ -321,10 +326,11 @@ class Indexer:
             acc.vectors_deleted += self._vectors.delete(removed_ids)
 
         parsed_files = [result.parsed for result in indexed]
-        acc.vectors_upserted += sink.stats.upserted
+        stats = pipeline.stats
+        acc.vectors_upserted += stats.upserted
         # ``chunks_reused`` 只统计文件级对账（FileDelta）的 hash 未变；sink 的内容复用单独计数，
         # 两者的口径互斥，且满足 ``chunks_new + chunks_reused == embedded + deduped``。
-        acc.chunks_deduped += sink.stats.deduped
+        acc.chunks_deduped += stats.deduped
 
         self._resolve(acc, parsed_files)
         self._languages = repo_languages | {

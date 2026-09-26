@@ -60,14 +60,16 @@ def test_second_ingest_is_incremental_and_reembeds_nothing(
     repo: Path, data_root: Path, run_cli: RunCli, provider
 ) -> None:
     run_cli("ingest", "--repo", str(repo), "--data", str(data_root))
-    assert provider.calls == 1  # 首次：一次批量嵌入
+    # 首次：一次批量嵌入（TASK-115 的窗口在 pipeline 层全局攒满再派发，调用次数与 K 无关）。
+    assert provider.calls == 1
+    calls_after_first = provider.calls
 
     code, out, err = run_cli("ingest", "--repo", str(repo), "--data", str(data_root))
     assert code == 0, err
     assert "files: added=0 modified=0 deleted=0 parsed=0" in out
     assert "chunks: new=0 reused=0 removed=0" in out
     assert "vectors: upserted=0 deleted=0" in out
-    assert provider.calls == 1, "二次 ingest 不应产生任何嵌入调用"
+    assert provider.calls == calls_after_first, "二次 ingest 不应产生任何嵌入调用"
 
 
 def test_modified_file_reembeds_only_changed_chunk(

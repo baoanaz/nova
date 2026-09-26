@@ -19,6 +19,12 @@
 （``_embed_unique``），这是"同一批里相同内容只嵌一次"的真实落地（旧 docstring 声称有
 ``fresh`` 池去重，代码里 ``produced`` 根本不参与判定）。
 
+**并行消费者（TASK-115）**：向量阶段跑在 ``K`` 个消费者线程里（``ZACE_EMBED_WORKERS``，默认 2）。
+TASK-114 的实测账显示单个消费者把"取回 → 解码 → 落库"串成一根链：langchain 冷启动里它一户
+占 48.1s，而链路在解码/落库期间空转（``network_busy_s / wall_s = 0.41``）。拆成 K 个后，
+窗口 N 在解码/落库时窗口 N+1 的请求仍在飞。代价是峰值向量 ≈ ``K × 窗口 × 33KB``（内存护栏），
+以及"两个窗口同时判定同一内容未命中"时会多嵌少量重复内容（向量表"写好即可见"兜住大部分）。
+
 内存上界
 --------
 
@@ -40,6 +46,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -54,11 +61,15 @@ from zace_core.vectors.cache import EmbeddingCache, EmbeddingCacheError
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "DEFAULT_EMBED_WORKERS",
     "DEFAULT_EMBED_WINDOW",
     "EmbeddingPipeline",
     "EmbeddingSink",
     "EmbeddingStats",
+    "MAX_EMBED_WORKERS",
     "MAX_EMBED_WINDOW",
+    "WORKERS_ENV",
+    "embed_workers",
     "embed_window_size",
 ]
 
@@ -66,6 +77,12 @@ __all__ = [
 DEFAULT_EMBED_WINDOW = 512
 #: 窗口上限（chunk 数）：兜住"批大小 × 并发"被调到极端值的情况（防再次吃到 GB 级内存）。
 MAX_EMBED_WINDOW = 4_000
+#: 消费者线程数（``ZACE_EMBED_WORKERS`` 的默认值）。
+DEFAULT_EMBED_WORKERS = 2
+#: 消费者线程数上限：2 核上再多只会加上下文切换（本机实测 K>3 无收益）。
+MAX_EMBED_WORKERS = 4
+#: 消费者线程数的环境变量名。
+WORKERS_ENV = "ZACE_EMBED_WORKERS"
 
 
 def embed_window_size(embedding: EmbeddingProvider) -> int:
@@ -80,6 +97,23 @@ def embed_window_size(embedding: EmbeddingProvider) -> int:
     concurrency = getattr(embedding, "concurrency", None)
     window = max(1, int(batch)) * max(1, int(concurrency or 1))
     return min(window, MAX_EMBED_WINDOW)
+
+
+def embed_workers() -> int:
+    """消费者线程数：``ZACE_EMBED_WORKERS``（默认 2，夹在 1..``MAX_EMBED_WORKERS``）。
+
+    设 ``1`` 即退回 TASK-114 的单消费者行为（对照实验 / 内存极紧的机器）。
+    非法值只记日志并回落默认，不抛异常（配置噪声不该让索引失败）。
+    """
+    raw = os.environ.get(WORKERS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_EMBED_WORKERS
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("%s=%r 不是整数，按默认 %d", WORKERS_ENV, raw, DEFAULT_EMBED_WORKERS)
+        return DEFAULT_EMBED_WORKERS
+    return max(1, min(MAX_EMBED_WORKERS, value))
 
 
 @dataclass
@@ -111,18 +145,21 @@ class EmbeddingSink:
         vectors: VectorStore,
         *,
         cache: EmbeddingCache | None = None,
+        window: int | None = None,
     ) -> None:
         self._embedding = embedding
         self._vectors = vectors
         self._cache = cache
         self._model_id = embedding.profile.model_id
-        self._window = embed_window_size(embedding)
+        #: 单个 sink 的窗口。并行时由 pipeline 传 ``总窗口 ÷ K``（内存总量守恒，见其 docstring）；
+        #: 独立使用时取 provider 的完整窗口。
+        self._window = max(1, window) if window is not None else embed_window_size(embedding)
         self.stats = EmbeddingStats()
         self._pending: list[ChunkDef] = []
 
     @property
     def window(self) -> int:
-        """一个窗口的 chunk 数（= ``批大小 × 并发``，``MAX_EMBED_WINDOW`` 封顶）。"""
+        """本 sink 的窗口（chunk 数）：独立使用时 = ``批大小 × 并发``；并行时由 pipeline 传入。"""
         return self._window
 
     def feed(self, chunks: Sequence[ChunkDef]) -> None:
@@ -214,30 +251,82 @@ _SENTINEL = object()
 
 
 class EmbeddingPipeline:
-    """把 :class:`EmbeddingSink` 放到后台线程，让本地 CPU 段与网络段重叠（P1-4）。
+    """把向量阶段放到 K 个后台消费者线程，让"取回"与"解码/落库"跨窗口重叠（P1-4 → TASK-115）。
 
-    之前 ``_run`` 先把**全部**文件解析并写进 SQLite，再开始嵌入——langchain 实测本地段
-    ~93.8s 期间网络零流量、网络段 37.7s 期间 CPU 单核只有 ~40% 利用率。这里改成
-    生产者（主线程：读文件/解析/切分/写库）/ 消费者（本线程：复用判定/嵌入/向量落库）：
+    TASK-114 是"生产者 1 + 消费者 1"：消费者内部 ``取回 → 解码 → 落库`` 串成一根链，
+    langchain 冷启动里它一户占 48.1s、链路在解码/落库期间空转（``network_busy/wall=0.41``）。
+    这里把窗口分给 K 个消费者（默认 2），窗口 N 在解码/落库时窗口 N+1/N+2 的请求仍在飞。
 
-    - 队列有界（默认两个窗口）→ 背压即内存上限，窗口大小与 P0-2 的预算绑定；
-    - 单消费者 → 顺序确定；SQLite 写仍只在主线程（per-project 单写者不变量）；
-    - 消费者异常**不吞**：记录下来，``submit`` 尽快抛出、``close`` 兜底重抛。
+    边界：
+
+    - **窗口在 pipeline 层攒满再派发**（不是让每个消费者各自攒）：窗口 = ``批大小 × 并发``，
+      它同时是 provider 单次 ``embed()`` 能跑满并发的单位；若按 K 切小窗口，单次调用的批数会
+      变少、链路并发反而上不去（实测 K=2 + 切窗：73.98s，与 K=1 的 74.73s 无差）。
+      由主线程攒窗还有个好处：中等仓库（chunk 数介于 1~K 窗之间，如 HelloAgents）也能在
+      解析期间就派发出第一个满窗并开始取回，不必等关停；
+    - **队列单位是窗口**，有界 ``workers + 2``：背压即内存护栏；峰值向量 ≈
+      ``K × 窗口 × 33KB``（K 个消费者同时在处理），另有 1 窗待派发缓冲与队列里的 chunk；
+    - **SQLite 仍只有主线程写**（per-project 单写者不变量）；LanceDB 由 ``VectorStore`` 的
+      RLock 串行化（总量不变，被藏进网络等待）；
+    - **顺序无关**：向量按 chunk id 幂等写入，谁先谁后都得到同一张表；
+    - **异常不吞**：任一消费者失败 → 记下首个异常并继续排水（不让生产者死锁）→
+      ``submit`` 尽早重抛、``close`` 兜底重抛、``abort`` 丢弃缓冲不掩盖原异常。
     """
 
-    def __init__(self, sink: EmbeddingSink, *, queue_windows: int = 2) -> None:
-        self._sink = sink
-        self._window = sink.window
-        self._queue: Queue[object] = Queue(maxsize=max(1, queue_windows))
+    def __init__(
+        self,
+        embedding: EmbeddingProvider,
+        vectors: VectorStore,
+        *,
+        cache: EmbeddingCache | None = None,
+        workers: int | None = None,
+        queue_windows: int | None = None,
+    ) -> None:
+        self._workers = max(1, workers) if workers is not None else embed_workers()
+        self._window = embed_window_size(embedding)
+        self._sinks = [
+            EmbeddingSink(embedding, vectors, cache=cache, window=self._window)
+            for _ in range(self._workers)
+        ]
+        #: 主线程攒窗缓冲（< 1 窗）；攒满即派发，关停时把余量作为"尾窗"派发一次。
+        self._pending: list[ChunkDef] = []
+        self._queue: Queue[object] = Queue(
+            maxsize=max(2, (queue_windows or self._workers) + 2)
+        )
         self._error: BaseException | None = None
+        self._error_lock = threading.Lock()
         self._closed = False
         self._aborted = False
-        self._thread = threading.Thread(target=self._consume, name="zace-embed", daemon=True)
-        self._thread.start()
+        self._threads = [
+            threading.Thread(
+                target=self._consume, args=(sink,), name=f"zace-embed-{index}", daemon=True
+            )
+            for index, sink in enumerate(self._sinks)
+        ]
+        for thread in self._threads:
+            thread.start()
+
+    @property
+    def workers(self) -> int:
+        """消费者线程数（内存护栏的乘数：峰值 ≈ ``workers × 窗口 × 33KB``）。"""
+        return self._workers
+
+    @property
+    def window(self) -> int:
+        """**每个消费者**的窗口（chunk 数）= ``批大小 × 并发 ÷ K``。"""
+        return self._window
 
     @property
     def stats(self) -> EmbeddingStats:
-        return self._sink.stats
+        """K 个消费者计数的合计（各 sink 自己记，关闭前读到的不是最终值）。"""
+        total = EmbeddingStats()
+        for sink in self._sinks:
+            stats = sink.stats
+            total.upserted += stats.upserted
+            total.deduped += stats.deduped
+            total.skipped += stats.skipped
+            total.embedded += stats.embedded
+        return total
 
     def submit(self, chunks: Sequence[ChunkDef]) -> None:
         """投递一段 chunk（内部按窗口切片）；消费者已失败时立即重抛其异常。"""
@@ -245,16 +334,24 @@ class EmbeddingPipeline:
             raise RuntimeError("EmbeddingPipeline 已关闭，不能再 submit")
         if self._error is not None:
             raise self._error
-        for start in range(0, len(chunks), self._window):
-            self._queue.put(list(chunks[start : start + self._window]))
+        self._pending.extend(chunks)
+        while len(self._pending) >= self._window:
+            window = self._pending[: self._window]
+            del self._pending[: self._window]
+            self._queue.put(window)  # 队列满 → 阻塞，即背压
 
     def close(self) -> None:
-        """等队列排空并返回；消费者若失败则在此重抛。幂等。"""
+        """等队列排空并返回；任一消费者失败则在此重抛。幂等。"""
         if self._closed:
             return
         self._closed = True
-        self._queue.put(_SENTINEL)
-        self._thread.join()
+        if self._pending:
+            self._queue.put(self._pending)  # 尾窗（不满一窗）也要派发出去
+            self._pending = []
+        for _ in self._threads:
+            self._queue.put(_SENTINEL)
+        for thread in self._threads:
+            thread.join()
         if self._error is not None:
             raise self._error
 
@@ -262,14 +359,17 @@ class EmbeddingPipeline:
         """丢弃未处理任务并等待消费者退出（主流程已因异常中断时调用，不掩盖原异常）。"""
         self._closed = True
         self._aborted = True
+        self._pending = []
         while True:
             try:
                 self._queue.get_nowait()
                 self._queue.task_done()
             except Empty:
                 break
-        self._queue.put(_SENTINEL)
-        self._thread.join()
+        for _ in self._threads:
+            self._queue.put(_SENTINEL)
+        for thread in self._threads:
+            thread.join()
 
     def __enter__(self) -> EmbeddingPipeline:
         return self
@@ -280,21 +380,26 @@ class EmbeddingPipeline:
         else:
             self.close()
 
-    def _consume(self) -> None:
+    def _set_error(self, exc: BaseException) -> None:
+        with self._error_lock:
+            if self._error is None:
+                self._error = exc
+
+    def _consume(self, sink: EmbeddingSink) -> None:
         while True:
             item = self._queue.get()
             try:
                 if item is _SENTINEL:
                     if self._error is None and not self._aborted:
                         try:
-                            self._sink.flush()
+                            sink.flush()
                         except BaseException as exc:  # noqa: BLE001 - 同上，回抛主线程
-                            self._error = exc
+                            self._set_error(exc)
                     return
                 if self._error is None:
                     try:
-                        self._sink.feed(item)  # type: ignore[arg-type]
+                        sink.feed(item)  # type: ignore[arg-type]
                     except BaseException as exc:  # noqa: BLE001 - 记录后回抛主线程
-                        self._error = exc
+                        self._set_error(exc)
             finally:
                 self._queue.task_done()

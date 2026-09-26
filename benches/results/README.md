@@ -32,6 +32,7 @@
 | **`qa-quality-v1.md`** | `vps-la-2c2g` | 2026-09-15 | **60 题质量首测**：search recall@5 0.64–0.77 / MRR 0.39–0.69；ask 全部作答且证据不足时如实拒绝；失败集中在符号级定位与负例阈值 |
 | **`qa-audit-2026-09-15.md`** | `vps-la-2c2g` | 2026-09-15 | **v2 当前口径**：修正 10 条答案、语言分布与 ask 判分；定位 C++ 整文件 fallback 为 P0 根因；给出 core 分层修复建议 |
 | **`index-perf-task114-vps.md`** | `vps-la-2c2g` | 2026-09-26 | **冷启动优化实测（TASK-114）**：langchain 真实 API 131.5s→77.6s（-41%）、本地段进程墙钟 121.4s→49.4s、峰值 RSS 1143→696MB；质量 A/B recall 逐位一致 |
+| **`index-perf-task115-vps.md`** | `vps-la-2c2g` | 2026-09-26 | **向量阶段多窗口并行（TASK-115）**：langchain 真实 API 79.5s→63.3s（-20%）、HelloAgents 17.2→16.0s；并留档"窗口不能按 K 切"的负结果 |
 | `index-cost-model-company-wsl.md` | `company-wsl` | 2026-09-15 | 耗时 ≈ chunk × 21 ms，瓶颈是下载响应体（~1 MB/s），与 TPM 无关 |
 | `phase2-helloagents-baseline.md` | 旧机→当前 | 2026-09-14 | hello-agents 主靶场基线（recall@5 0.586 / recall@10 0.655 / MRR 0.388） |
 | `raw-helloagents-baseline.md` | — | 2026-09-14 | 上表的 **runner 直出**原始产物 |
@@ -60,6 +61,7 @@
 | `ingest-vps-phases/*.json` | `ingest_probe.py` | §3.1 阶段分解的网络在飞时间（`network_busy_s`） |
 | `local-only-vps.json` | `local_only_probe.py` | §3.1 纯本地耗地下限（零网络替身） |
 | `task114/*.json`、`task114/eval-*.md` | `coldstart_probe.py` / `zace-core eval` | TASK-114 的旧/新对照与质量 A/B 原始证据（整理见 `index-perf-task114-vps.md`） |
+| `task115/*.json` | `coldstart_probe.py` | TASK-115 的 K=1/K=2 对照（含切窗设计的负结果），整理见 `index-perf-task115-vps.md` |
 | `ttfb-vps.json` | `ttfb_probe.py` | §3.3 并发 1/4/8 的聚合吞吐与 TTFB 分解 |
 | `throughput-vps-conc-scan.json` | `throughput_probe.py` | §3.2/§4.2 并发扫描（4/8/16/32，16 因 2 vCPU 争抢崩塌） |
 | `repo-profile-vps.json` | `profile_repo.py` | 三靶场画像（文件/chunk/token 分布，免 API） |
