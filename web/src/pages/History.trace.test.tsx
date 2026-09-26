@@ -35,12 +35,22 @@ const PROJECT = {
   diskBytes: 30_408_704,
 };
 
+/**
+ * 时间基：历史页按 ``Date.now() - days * 86400`` 过滤窗口（HistoryPage「合并 + 按时间倒序 +
+ * 按窗口过滤」），因此夹具**必须给相对时间**。
+ *
+ * 回归锚点（真实事故）：夹具原先是写死的 ``1789305500/1789305566``（= 2026-09-13）。
+ * 2026-09-18 的 CI 是绿的，到 2026-09-26 就红了——「近 7 天」窗口滑过了夹具时间，
+ * 表格变成空态，``findByRole("table")`` 找不到。**与代码改动无关，是夹具的自然过期**。
+ */
+const NOW = Math.floor(Date.now() / 1000);
+
 const RUN = {
   runId: 7,
   projectId: "p1",
   state: "done",
-  startedAt: 1789305500,
-  finishedAt: 1789305566,
+  startedAt: NOW - 66,
+  finishedAt: NOW,
   durationMs: 66_000,
   filesTotal: 344,
   filesProcessed: 338,
@@ -63,7 +73,7 @@ const record = {
   usedTokens: 576,
   citationCoverage: null,
   requestId: "trace-094-abcdef",
-  createdAt: 1789305566,
+  createdAt: NOW,
 };
 
 function usage(records: unknown[]) {
@@ -162,14 +172,14 @@ describe("§需求2 合并表格（TASK-100）", () => {
   });
 
   it("按时间倒序：较新的记录排在前面", async () => {
-    // 初始化在 1789305566（与检索同一秒）——改早一点，让顺序确定。
-    stubAll([record], [{ ...RUN, finishedAt: 1789305000 }]);
+    // 初始化与检索同秒会让顺序不确定——把它改早一点（仍是相对时间，见 NOW 的说明）。
+    stubAll([record], [{ ...RUN, finishedAt: NOW - 566 }]);
     renderPage(<HistoryPage />);
 
     const table = await screen.findByRole("table");
     const rows = within(table).getAllByRole("row").slice(1); // 去掉表头
     expect(rows.length).toBe(2);
-    // 第一行必须是较新的那条（检索，1789305566 > 1789305000）。
+    // 第一行必须是较新的那条（检索 NOW > 初始化 NOW-566）。
     expect(within(rows[0]!).getByText("search_context")).toBeInTheDocument();
     expect(within(rows[1]!).getByText("仓库初始化")).toBeInTheDocument();
   });
