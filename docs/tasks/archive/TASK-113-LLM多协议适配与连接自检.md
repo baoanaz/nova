@@ -1,6 +1,6 @@
 # TASK-113：LLM 多协议适配 + 连接自检（保存即可用）
 
-> 状态：in_progress ｜ 阶段：Phase 4+（可用性）｜ 硬依赖：TASK-088 ✅ / TASK-099 ✅ ｜ soft 依赖：无
+> 状态：**已合并 main（`061b3da`）**
 > 建议分支：`feature/task-113-llm-protocols_xwz0916`
 > 交付物所有权：
 > - `service/zace_service/answer.py`（多协议适配器）

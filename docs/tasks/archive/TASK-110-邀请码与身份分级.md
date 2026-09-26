@@ -1,6 +1,6 @@
 # TASK-110：邀请码注册、身份分级与管理员后台
 
-> 状态：pending（**用户 2026-09-15 指定，下一批重点**）｜ 阶段：Phase 4+（增长与运营）
+> 状态：**已合并 main（`bef2b5e`）**
 > 硬依赖：TASK-060（鉴权 ✅）、TASK-061（租户双层 ✅）、TASK-094（配额 ✅）
 > soft 依赖：TASK-099（用户级 LLM 配置 ✅，本卡可复用其迁移手法）
 > 交付物所有权（详见 §6）：
@@ -269,7 +269,7 @@ CAN_CUSTOM_KEY = {ROLE_ADMIN, ROLE_BETA}   # 自定义 Key 是内测/管理员�
 - [ ] 全仓 `uv run pytest -o addopts="" -q` 全绿；`ruff check .` 全绿；
 - [ ] 依赖方向检查通过；
 - [ ] **不破坏既有接入**：现有用户（无 `role` 列值）登录 + MCP 调用全部照常；
-- [ ] 基准不回退（本卡不碰检索，跑一次确认）：[`../handbook/benchmark/README.md`](../handbook/benchmark/README.md)。
+- [ ] 基准不回退（本卡不碰检索，跑一次确认）：[`../handbook/benchmark/README.md`](../../handbook/benchmark/README.md)。
 
 ## 6. 文件所有权
 

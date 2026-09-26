@@ -180,6 +180,10 @@ uv run zace-core eval --golden benches/golden/HelloAgents/HelloAgents.jsonl \
 - [x] 性能复测（探针，新旧同机对照）+ 质量 A/B（各自新建索引）
 - [x] 回填任务卡执行记录 / 任务板状态 / 提交（本地，不 push）
 
+> **后续（已另开卡并合并）**：TASK-115（向量阶段多窗口并行 —— 把消费者从 1 拆成 K 窗在飞，
+> langchain 79.5s→63.3s，报告 `benches/results/index-perf-task115-vps.md`）、
+> TASK-116（把批参数 / 并发 / 消费者数按机器留档到 `configs/profiles/<机器标识>.env`）。
+
 ## 8. 风险与回退
 
 | 风险 | 缓解 |

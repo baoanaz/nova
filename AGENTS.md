@@ -15,7 +15,10 @@ cd /home/xuwenzheng/github/ACE/zace-lane-<lane>       # 切到自己的工作区
 
 - **绝不在主工作区（`/home/xuwenzheng/github/ACE/zace`）里改代码或提交**；
   多个会话共用同一目录会导致 `git commit` 落到“别人最后切到的分支”上（实测已造成提交错位与一次重做）；
-- 收工：回填记录 → 提交 → **不 push**（推送由编排者统一做）→ `bash scripts/lane-worktrees.sh release <lane>`；
+- **本机（VPS）实际路径**：仓库根 = `/root/xuwenzheng/ace/zace`（上面示例里的 `/home/...` 属另一台机器）；
+  `scripts/lane-worktrees.sh` 的 lane 目录可能指向已失效的旧路径，**以 `git worktree list` 为准**；
+  本轮实践：`git worktree add -b <branch> /root/xuwenzheng/ace/zace-<用途> main`，收工 `git worktree remove` + `git branch -d`；
+- 收工：回填记录 → 提交 → **默认不 push**（推送由编排者决定；本仓当前由用户授权 AI 直接 `git push origin main`，禁止 `--force`）→ `bash scripts/lane-worktrees.sh release <lane>`；
 - 完整规程与事故记录：`docs/plan/multi-ai-worktrees.md`。
 
 ## 1. 开工前必读
@@ -34,6 +37,9 @@ cd /home/xuwenzheng/github/ACE/zace-lane-<lane>       # 切到自己的工作区
 - **不改冻结契约**（`docs/contracts/**`、`core/zace_core/types.py`、`core/zace_core/interfaces.py`）：契约变更必须走 `docs/plan/orchestration.md` §4 流程。
 - **不越界改文件**：每张任务卡有"交付物（文件所有权）"清单；清单外的文件不要改（公共文件改动先在任务卡的"执行记录"里提出）。
 - **不修改 `source/` 下任何参考项目代码**。
+- **改性能旋钮要留档**：`EMBED_BATCH_SIZE` / `EMBED_CONCURRENCY` / `ZACE_EMBED_WORKERS` 等随硬件变化的取值，
+  改完必须同步更新 `configs/profiles/<机器标识>.env` 并回填实测（口径与"窗口不能按消费者切小"的告警见
+  `configs/profiles/README.md`）。
 - 不引入与任务无关的新依赖；依赖加入 `core/pyproject.toml` / `service/pyproject.toml` 时注释说明对应任务与决策编号。
 
 ## 3. Git 纪律

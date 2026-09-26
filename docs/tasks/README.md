@@ -13,29 +13,22 @@
 
 | 卡 | 标题 | 阶段 | 硬依赖 | 状态 |
 |---|---|---|---|---|
-| [TASK-113](TASK-113-LLM多协议适配与连接自检.md) | **LLM 多协议适配（openai/responses/anthropic）+ 连接自检**（D-47） | Phase 4+（可用性） | TASK-088 ✅ / TASK-099 ✅ | **review** |
-| [TASK-110](TASK-110-邀请码与身份分级.md) | **邀请码注册 + 身份分级（管理员/内测/公测）+ 头衔编号 + 管理员后台** | Phase 4+（增长运营） | TASK-060/061/094 ✅ | **review** |
 | [TASK-109](TASK-109-EvidenceGap二轮补检.md) | **Evidence-Gap 二轮补检**（D-19 落地：候选已索引但没召回） | Phase 5+（质量） | TASK-108 ✅ | pending |
 | [TASK-093](TASK-093-真实数据闭环.md) | 真实使用数据采集闭环 | Phase 2（M2b） | TASK-084 ✅ / TASK-091 ✅ | pending |
 | [TASK-023](TASK-023-真实场景用例采集.md) | 真实场景用例采集（**由 TASK-093 落地**） | Phase 2 | TASK-040 ✅ | pending |
-| [TASK-115](TASK-115-向量阶段多窗口并行.md) | **向量阶段多窗口并行**（消费者 K 窗在飞） | Phase 5+（性能） | TASK-114 ✅ | **review** |
-| [TASK-116](TASK-116-硬件配置档案.md) | **硬件配置档案**（`configs/profiles/`，按机器命名留档） | Phase 5+（工程化） | TASK-115 ✅ | **review** |
 
 ### 推荐顺序
 
 ```text
-TASK-113（LLM 多协议 + 连接自检，修“配置保存成功但 ask 持续 503”的静默失灵）
-   ↓
 TASK-109（检索质量，用户点名“下一轮重点”）
-   ↓
-TASK-110（邀请码与身份分级，四期：P1 邀请码注册 → P2 自定义 Key → P3 后台 → P4 前端）
    ↓
 TASK-093（把真实使用数据接成闭环）
    ↓
 TASK-023（随 TASK-093 落地回填，不单独开工）
 ```
 
-**彼此独立**：109 解决“搜得不够全”，110 解决“谁能用、能用多少”，093 解决“量不准”，可并行。
+**彼此独立**：109 解决“搜得不够全”，093 解决“量不准”，可并行。
+性能/工程化侧的最近三张卡（TASK-114/115/116）已合并，见下方历史索引。
 
 ## 已明确不做 / 暂不做
 
@@ -46,7 +39,7 @@ TASK-023（随 TASK-093 落地回填，不单独开工）
 | k8s / 多机集群 / 负载均衡 | **V1 不做** | 上限是单机 compose（Module/06 §4-A） |
 | CI/CD 自动部署 | **V1 不做** | 手动升级即可，见 [vps.md](../handbook/deployment/vps.md) §9 |
 | 数据库外部化 | **不做** | SQLite 单机足够（Module/06 §4-A） |
-| 邮箱/短信验证、付费充值 | **不做** | 邀请码已足够；额度固定不可购买（TASK-110 §8） |
+| 邮箱/短信验证、付费充值 | **不做** | 邀请码已足够；额度固定不可购买（[TASK-110](archive/TASK-110-邀请码与身份分级.md) §8） |
 | Cross-Encoder / LLM rerank | **V1.5 再做** | 见 TASK-109 §"明确不做" |
 | HyDE / Multi-Query 查询改写 | **不做** | 需额外 LLM 调用，违反 R1 延迟预算 |
 | 2-hop 常规图扩展 | **不做** | 只在 G1 触发时按需做（TASK-011 已定） |
@@ -71,8 +64,8 @@ TASK-023（随 TASK-093 落地回填，不单独开工）
 | Phase 3 | TASK-060 ~ TASK-064、TASK-097 | [`archive/`](archive/) |
 | Phase 4 | TASK-070 ~ TASK-099 | [`archive/`](archive/) |
 | Phase 5+（质量） | TASK-101 ~ TASK-108 | [`archive/`](archive/) |
-| Phase 5+（性能） | TASK-114（**已合并**，证据见 `benches/results/index-perf-task114-vps.md`） | [`archive/`](archive/) |
-| Phase 4+（增长运营） | TASK-110（**review**，P1–P4 已实现） | 本目录 |
+| Phase 4+（上线加固 / 增长运营 / 可用性） | TASK-110（邀请码与身份分级）、TASK-111（分支身份与内容寻址复用）、TASK-113（LLM 多协议 + 连接自检） | [`archive/`](archive/) |
+| Phase 5+（性能 / 工程化） | TASK-114（索引冷启动）、TASK-115（向量阶段多窗口并行）、TASK-116（硬件配置档案）——证据见 `benches/results/index-perf-task{114,115}-vps.md` | [`archive/`](archive/) |
 
 已归档卡的**执行记录里保留了当时的实测证据与设计偏差**，是回溯决策的首选来源。
 

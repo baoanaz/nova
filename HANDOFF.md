@@ -1,33 +1,40 @@
-# zace 项目交接说明（2026-09-14 晚更新）
+# zace 项目交接说明（2026-09-26 更新）
 
 > **给接手 AI 的第一份文档**。读完这一份，你就知道：项目是什么、做到哪了、下一步做什么、别踩哪些坑。
 > 详细任务清单在 `docs/tasks/README.md`；协作流程在 `docs/plan/orchestration.md` 与 `docs/plan/multi-ai-worktrees.md`。
 > **跑基准前先读 [`benches/README.md`](benches/README.md)「新会话从这里开始」**：三靶场（`leveldb`/`HelloAgents`/`langchain`）的索引已持久化在 `/root/.zace/bench/voyage-4-lite-d1024`，**复用即可、不要再 ingest**；
 > 设备绑定纪律与报告索引见 `benches/results/README.md`。
 >
-> **基准与质量现状（2026-09-15，VPS 生产环境 `vps-la-2c2g`）**：
-> ① 配置已冻结（`voyage-4-lite` / 1024 维 / 并发 4 / batch 500 / budget 300000 / maxTok 32000），
->    耗时与内存基线（含 ±20% 抖动纪律）见 `benches/results/baseline-v1.md`；
-> ② 三仓库各 20 题（共 60）的**题库 + 人工核实答案 + 建议工具**在 `benches/golden/{leveldb,HelloAgents,langchain}/qa.md`，
->    首轮质量评测结论见 `benches/results/qa-quality-v1.md`（search recall@5 0.64–0.77；ask 全部作答且证据不足时如实拒绝）。
-> **留给架构优化的已知入口（按性价比排序）**：
-> ① 检索的**符号级定位偏弱**——`.h/.cc` 与同主题 doc 互串（qa-quality §4-1）；
+> **2026-09-26 快照（先看这段）**：
+> - `main @ 3953d9a` ｜ ruff ✅ ｜ 依赖方向 ✅ ｜ **1340 passed, 9 skipped**（core 771 / service 552 / root 17）｜ CI（python + web）✅
+> - 本轮完成**冷启动优化三连**：TASK-114（索引冷启动，langchain 真实 API 131.5s→77.6s）、
+>   TASK-115（向量阶段多窗口并行，79.5s→**63.3s**）、TASK-116（硬件配置档案）。
+>   报告：[`index-perf-task114-vps.md`](benches/results/index-perf-task114-vps.md)、
+>   [`index-perf-task115-vps.md`](benches/results/index-perf-task115-vps.md)；调优档：[`configs/profiles/`](configs/profiles/README.md)。
+> - 当前 langchain 冷启动账（K=2 / 真实 API / 63.3s）＝ **网络窗口 34.0s + 消费者本地 ~17s + 尾窗/GIL ~12s**；
+>   生产者本地 24.5s 基本被网络盖住。**硬地板是 API 配额**：3.56M token ÷ 16M TPM ≈ **13.4s**。
+> - 质量护栏（各自新建索引的 A/B）：leveldb recall@5 **1.000**、HelloAgents **0.842**；负例 1/1 通过。
+> - 活跃卡只剩 **TASK-109 / TASK-093 / TASK-023**（见 §3）；运维侧 3 件小事也在 §3。
+>
+> **留给架构优化的已知入口（2026-09-26 重排）**：
+> ① 检索的**符号级定位偏弱**——`.h/.cc` 与同主题 doc 互串（qa-quality §4-1）→ TASK-109；
 > ② **负例可回答性阈值偏宽**——名字沾边即判 `answerable`（§4-4）；
-> ③ 本地/网络**未流水线化**——重叠可省 ~26%（`index-cost-model-vps.md` §7-3）；
+> ③ 冷启动再压缩只剩两条路：**减少 token 总量**（chunk 策略，有质量代价）或**升 TPM 配额**；
+>    想把"消费者本地那 ~5s"也藏进网络，需要动 provider 内部（取回与解码分离）；
 > ④ **维度不可配**——API 模式未透传 `output_dimension`（`baseline-v1.md` §5-1）；
 > ⑤ **chunk 参数无 env 入口**，且改动触发 `full_reparse`（必须先换数据根，§5-2）。
 >
-> 当前基线：`main @ d5f7eb4` ｜ ruff ✅ ｜ 依赖方向 ✅ ｜ **878 passed, 2 skipped** ｜ web **41 passed** + build ✅
->
-> **本轮更新（2026-09-14 晚）**：TASK-087/088/089/090 已合并并端到端验证（真实 LLM 调用、MCP 越权拦截、
-> trace id 日志查询均实测通过）；环境事实已重核（见 §6，cargo/docker 现已可用）。
+> **§1–§2、§4–§7 是 2026-09-14/15 的历史记述**（Phase 1–4 的完成情况、工具返回形态、约束与环境事实），保留作背景；
+> 与它们冲突时，以本快照、§3/§8 与 `docs/tasks/README.md` 为准。
 
 ---
 
 ## 0. 一句话现状
 
-**整条链路已端到端跑通**：网页登录 → 创建 API Key → `npx zace-client` 接入 Codex → 真实提问 → 返回带「文件:行号」的证据。
-检索引擎、服务化外壳、Rust 客户端、WebUI 全部可用；**剩下的是上线前加固与质量打磨**。
+**整条链路已上线可用**：网页注册/登录（邀请码 + 身份分级）→ 创建 API Key → `npx zace-client` 接入 Codex
+→ 真实提问 → 返回带「文件:行号」的证据。检索、服务化（REST + MCP）、Rust 客户端、WebUI、鉴权/租户/统计/
+管理员后台全部可用且 CI 绿。**当前重心是性能与质量打磨**：冷启动已完成两轮优化（§3），质量侧等真实使用
+数据（TASK-093）驱动。
 
 ---
 
@@ -104,33 +111,43 @@ Voyage 嵌入：POST https://api.voyageai.com/v1/embeddings "200 OK"
 
 ---
 
-## 3. 下一步做什么（按用户拍板的顺序）
+## 3. 下一步做什么（2026-09-26）
 
-用户 2026-09-14 的明确路线：
-
-> 明天我仔细打磨两个工具的返回内容，以及补全多个真实的问题，打磨 benchmark 的设计。
-> 等架构稳定后，加上各个用户的请求 LOG 缓存窗口机制…等全部稳定后，补上 VPS 部署。
-> 就可以基于 VPS 的 IP 公网发布了。做好 tool 和质量之后，就可以发布给其他人使用，进行压测了。
-
-### 已开卡（可直接派活）
+### 活跃卡（只有这三张）
 
 | 卡 | 标题 | 硬依赖 | 状态 |
 |---|---|---|---|
-| ~~TASK-087~~ | ContextPack 渲染补齐 | 无 | ✅ **已合并**（`2664f70`） |
-| ~~TASK-088~~ | `ask_project` 接入 LLM | 无 | ✅ **已合并**（`5aac030`） |
-| ~~TASK-089~~ | MCP 面归属校验 | TASK-061 ✅ | ✅ **已合并**（`77f76ca`） |
-| ~~TASK-090~~ | 请求日志持久化 + trace id 查询 | TASK-084 ✅ | ✅ **已合并**（`7ca94ff`） |
-| **TASK-091** | 评测靶场与 golden 集打磨（~75 条用例） | 无 | 🔄 **进行中**（lane-e） |
-| **TASK-094** | 项目内存可见性 + **存储配额 tool 告警** + 历史记录 trace id | ~~TASK-090~~ ✅ | ✅ **可开工**（依赖已解除） |
-| **TASK-092** | VPS 部署（docker 现已可用，可本地部分验证） | ~~TASK-089/090~~ ✅ | ✅ **可开工** |
-| **TASK-093** | 真实使用数据闭环（TASK-023 落地，**不含调参**；**已定不合并 023**） | TASK-084 ✅ / TASK-091 | ⛔ 等 091 |
+| [TASK-109](docs/tasks/TASK-109-EvidenceGap二轮补检.md) | Evidence-Gap 二轮补检（检索质量，用户点名"下一轮重点"） | TASK-108 ✅ | **pending** |
+| [TASK-093](docs/tasks/TASK-093-真实数据闭环.md) | 真实使用数据采集闭环（**不含调参**） | TASK-084 ✅ / TASK-091 ✅ | **pending** |
+| [TASK-023](docs/tasks/TASK-023-真实场景用例采集.md) | 真实场景用例采集（由 TASK-093 落地，不单独开工） | TASK-040 ✅ | **pending** |
+
+**推荐顺序**：TASK-109（搜得不够全）→ TASK-093（量不准）→ TASK-023 随 093 回填。
+质量参数（R29/R30）**仍未解冻**，需用户单独授权——TASK-050 暂不开卡。
+
+### 本轮性能工作（已完成并合并，2026-09-26）
+
+| 卡 | 内容 | 实测结果 |
+|---|---|---|
+| TASK-114 | 索引冷启动：ASCII 快速路径（跳过 jieba）、向量流式 sink、冷启动 SQL 快路径、lazy `lancedb`、本地/网络流水线 | langchain 真实 API **131.5s → 77.6s**；峰值 RSS 1143→697MB；`import zace_core.cli` 4.2s→**0.66s** |
+| TASK-115 | 向量阶段多窗口并行（消费者 K=2，**整窗派发**） | langchain **79.5s → 63.3s（-20%）**、HelloAgents 17.2→16.0s；峰值 +75MB |
+| TASK-116 | 硬件配置档案 `configs/profiles/<机器标识>.env` | 现役 `154.12.34.214` 已冻结留档；新机 `dmit-2c2g-200m` 占位档待实测 |
+
+证据：[`index-perf-task114-vps.md`](benches/results/index-perf-task114-vps.md)、
+[`index-perf-task115-vps.md`](benches/results/index-perf-task115-vps.md)（后者 §2 留了
+"窗口不能按消费者切小"的负结果）；原始 JSON 在 `benches/results/raw/task114/`、`raw/task115/`。
+
+### 运维侧待办（需要用户动手，AI 改不到）
+
+1. `/etc/zace/zace.env` 显式加 `ZACE_EMBED_WORKERS=2`（不写也是 2，写出来便于留档与回滚）；
+2. systemd `MemoryHigh=800M` 建议抬到 **1000M**（TASK-115 后 langchain 规模的服务端峰值实测 823MB），
+   `MemoryMax=1400M` 不动；
+3. 换新机（2C/2G/200Mbps）后：**4 流并行实测出口带宽** → 跑探针 → 回填
+   `configs/profiles/dmit-2c2g-200m.env` 并把状态改成 ✅（该文件尾部有"必做三件事"）。
 
 ### 用户的人工任务（非 AI 卡）
 
-1. **打磨两个工具的返回内容**（依赖 087/088 落地后）；
-2. **补全真实问题 + 打磨 benchmark**（配合 091/093）；
-3. 质量参数解冻（R29/R30）**需用户单独授权**——当前 `docs_ratio`/`rerank` 权重是 smoke 集拟合值，
-   **TASK-050 暂不开卡**。
+1. 打磨两个工具的返回内容；2. 补真实问题 + 打磨 benchmark（配合 093）；
+3. 质量参数解冻需单独授权（TASK-050 暂不开卡）。
 
 ---
 
@@ -201,16 +218,16 @@ return {"status": "answered", "answer": outcome.answer, ...}
 
 ### 一个工作区一个会话
 
-**一个 AI 会话 = 一个独占 worktree（`zace-lane-<x>`）= 一个分支**。
-在**主工作区**（`/home/xuwenzheng/2_github/AI/ACE/zace`）改代码是禁止的（只用于集成）。
+**一个 AI 会话 = 一个独占 worktree = 一个分支**。
+在**主工作区**（`/root/xuwenzheng/ace/zace`）改代码是禁止的（只用于集成）。
 
 ```bash
-cd /home/xuwenzheng/2_github/AI/ACE/zace
-bash scripts/lane-worktrees.sh status              # 看哪个 lane 空闲
-bash scripts/lane-worktrees.sh claim <lane> TASK-xxx
-cd /home/xuwenzheng/2_github/AI/ACE/zace-lane-<lane>
-git switch -c feature/task-xxx_<缩写><MMDD> main
-# 干完：基线三条绿 → 回填卡片 → commit（不 push）→ release
+cd /root/xuwenzheng/ace/zace
+bash scripts/lane-worktrees.sh status              # 看哪个 lane 空闲（lane 目录可能已失效，以 git worktree list 为准）
+# 本机可直接开临时 worktree（本轮实践）：
+git worktree add -b feature/task-xxx_<缩写><MMDD> /root/xuwenzheng/ace/zace-<用途> main
+# 干完：基线三条绿 → 回填卡片 → commit →（默认不 push；本仓当前由用户授权 AI 直接推 main）→
+#      git worktree remove /root/xuwenzheng/ace/zace-<用途> && git branch -d feature/task-xxx_<缩写><MMDD>
 ```
 
 **教训**（真实发生过）：多个会话共用一个目录时，`git commit` 提交到哪个分支取决于
@@ -237,17 +254,19 @@ uv run pytest -o addopts="" -q      # 注意：不加 -o addopts="" 看不到汇
 
 | 项 | 值 |
 |---|---|
-| **仓库根** | `/home/xuwenzheng/2_github/AI/ACE/zace`（**2026-09-14 晚核对**；旧文档里的 `~/github/ACE/zace` 已不存在） |
-| **泳道工作区** | `/home/xuwenzheng/2_github/AI/ACE/zace-lane-{a..j}` |
-| Python | 3.12（uv **0.9.9** 管理） |
-| Node / npm | v22.23.2 / 10.9.8 |
+| **仓库根** | `/root/xuwenzheng/ace/zace`（**2026-09-26 复核**；历史文档里的 `~/github/ACE/zace`、`/home/...` 路径在本机不存在） |
+| **泳道工作区** | `/root/xuwenzheng/ace/zace-lane-{a..j}`——**注意**目录里的 `.git` 可能指向已消失的旧路径（以 `git worktree list` 为准）。本轮实践：临时 `git worktree add -b <branch> /root/xuwenzheng/ace/zace-<用途> main`，收工 `git worktree remove` + `git branch -d` |
+| Python | 3.12（uv 管理；`uv sync --all-packages --all-extras` —— 只 `uv sync --frozen` 不会装 pytest/ruff） |
+| Node / npm | v24.15.0 / 11.12.1（**CI 用 Node 22**；本机 Node 24 跑 web 套件会出现 jsdom/undici 的 `AbortSignal` 报错，别拿它当 web 判据） |
+| **配置分层** | `/etc/zace/zace.env`（0600，含真密钥，不进 Git）→ `configs/profiles/<机器标识>.env`（非密钥调优档，进 Git；见 §3 与 `configs/profiles/README.md`） |
 | **cargo** | ✅ **1.97.1 可用** —— Rust client 可本地构建（`cd client && cargo build --release`，实测 1m57s） |
 | **docker** | ✅ **29.1.3 可用，daemon 在跑** —— TASK-092 可本地部分验证 |
 | **Playwright** | ✅ chromium 已装（`~/.cache/ms-playwright/chromium-1243`）；`--with-deps` 需 sudo |
 | **http_proxy** | ⚠️ 已设（`http://127.0.0.1:7890`）—— **连本机服务必须 `NO_PROXY=127.0.0.1,localhost`**（`.env` 里已配） |
 | **embedding key** | ✅ `.env`（仓库根与每个 lane 都有，**已被 gitignore**）：Voyage `voyage-4-lite` 主路径 + 硅基流动 `bge-m3` 备选；两者实测 200 |
 | **LLM key** | ✅ `.env` 的 `ANSWER_*`（xiugou / deepseek-v4.1-flash），实测 200 |
-| **靶场** | `/home/xuwenzheng/2_github/Agent开发/hello-agents/hello-agents` @ `4f7682c`（**只读**！不要在里面建文件） |
+| **基准靶场** | `/root/xuwenzheng/ace/benchmark/{leveldb,HelloAgents,langchain}`（**只读**！不要在里面建文件；旧的 `Agent开发/hello-agents` 靶场已不用） |
+| **密钥文件** | `/etc/zace/zace.env`（0600，生产/基准都用它；仓库根**没有** `.env`）。用法：`set -a; source /etc/zace/zace.env; set +a` |
 | 磁盘 | 820G 可用 |
 
 **`.env` 用法**（每个工位已铺好）：
@@ -256,16 +275,17 @@ uv run pytest -o addopts="" -q      # 注意：不加 -o addopts="" 看不到汇
 set -a; source .env; set +a     # Voyage/LLM key + NO_PROXY 一次到位
 ```
 
-> **注**：`.env` 含真实 key，**永不提交**（`.gitignore` 已排除）。新工位若缺 `.env`，
-> 从主仓库复制（`cp ~/2_github/AI/ACE/zace/.env ../zace-lane-x/.env`）。
+> **注**：`/etc/zace/zace.env` 含真实 key，**永不提交**（也不在仓库里）。非密钥的调优档见
+> `configs/profiles/<机器标识>.env`（进 Git）。
 
 ---
 
 ## 7. 本地怎么跑起来（2 分钟）
 
 ```bash
-cd /home/xuwenzheng/2_github/AI/ACE/zace
-set -a; source .env; set +a      # Voyage/LLM key + NO_PROXY
+cd /root/xuwenzheng/ace/zace
+set -a; source /etc/zace/zace.env; set +a      # Voyage/LLM key + NO_PROXY
+set -a; source configs/profiles/154.12.34.214.env; set +a   # 本机调优档（可选）
 
 # 后端（云端形态，可看到登录/API Key/统计）
 ZACE_LOCAL_MODE=false ZACE_REGISTER_OPEN=true ZACE_DATA_ROOT=/tmp/zace-dev \
@@ -299,18 +319,21 @@ startup_timeout_ms = 60000
 | # | 缺口 | 严重度 | 处置 |
 |---|---|---|---|
 | 1 | ~~MCP 面仍未做归属校验~~ **已修复**（TASK-089 已合并，实测 bob 越权两工具均拦） | ✅ | done |
-| 2 | `/healthz` 免鉴权且**列出全部 projectId**（枚举面） | 🟡 | **未处理**（TASK-089 登记为未决，改 `ops.py` 属 TASK-090 领地） |
+| 2 | `/healthz` 免鉴权且**列出全部 projectId/项目进度**（枚举面） | 🟡 | **仍未处理**（2026-09-26 复核：`ops.py` 的 `_project_progress` 照旧返回 `projects`，且路由无鉴权依赖） |
 | 3 | ~~日志只在 stdout，无持久化~~ **已修复**（TASK-090，文件轮转 + trace id 查询） | ✅ | done |
 | 4 | ~~`ask_project` 未接 LLM~~ **已修复**（TASK-088，实测 citation_coverage=1.0） | ✅ | done |
 | 5 | ~~`next_queries` 已生成但不渲染~~ **已修复**（TASK-087） | ✅ | done |
-| 5b | **无任何存储配额机制**（`grep quota` 零结果），用户要求超限时在 tool 内容里告警 | 🟡 | TASK-094 |
+| 5b | ~~无任何存储配额机制~~ **已实现**（`metadb.py` / `routers/admin.py` 已有配额判定与展示，TASK-094 已合并） | ✅ | done |
 | 6 | 无 CI 覆盖的 e2e（需起服务造数据） | 🟢 | 未开卡 |
 | 7 | 历史页逐项目拉明细（N 次请求） | 🟢 | 未开卡 |
 | 8 | 参数冻结未解（质量优化受阻） | 🟡 | TASK-093 数据充分后由用户授权 |
 | 9 | 多人共用同一仓库 → 只有第一个认领者能用（V1 简化） | 🟡 | 设计已记录（`org_id` 留 V2） |
-| 10 | 无域名时 Caddy 自动 TLS 不可用 → key 明文暴露风险 | 🟡 | TASK-092 需给方案 |
+| 10 | 无域名时自动 TLS 不可用 → key 明文暴露风险 | 🟡 | TASK-092 **已部署**（nginx + 静态产物，见 `docs/handbook/deployment/vps.md`）；TLS 现状按该文复核 |
 | 11 | 未认证请求（401）的日志无 owner → 用户报错时若只给未认证请求的 id，管理员查不到 | 🟡 | TASK-090 登记为未决（V1 无角色体系） |
 | 12 | `docs/contracts/openapi.yaml` 第 167 行有 YAML 语法瑕疵（未闭合引号）——**既有问题，非本轮引入**；项目用按缩进解析故不影响测试 | 🟢 | 未开卡 |
+| 13 | 服务端 systemd `MemoryHigh=800M`：TASK-115 后 langchain 规模的服务端峰值实测 **823MB**，会持续触发内存回收 | 🟡 | **建议抬到 1000M**（`MemoryMax=1400M` 不动）——运维动作，见 §3 |
+| 14 | `/etc/zace/zace.env` 未显式写 `ZACE_EMBED_WORKERS`（走代码默认 2） | 🟢 | 不影响行为，但建议显式留档（便于回滚/对照）——见 §3 |
+| 15 | 新机档案 `configs/profiles/dmit-2c2g-200m.env` 是**外推值**，未实测 | 🟡 | 上机后按该文件尾部"必做三件事"跑探针并回填状态 |
 
 ---
 
@@ -320,32 +343,34 @@ startup_timeout_ms = 60000
 |---|---|
 | 一张卡一个会话 | 不并行做多卡；不顺手重构其它模块 |
 | 只管清单内文件 | 任务卡的"交付物所有权"是硬边界；改公共文件先申请 |
-| 不 push / 不切 main / 不 force push | 评审与合并由编排者做 |
+| 推送 | 泳道模式下**只需本地提交**；本仓当前由用户授权 AI 直接 `git push origin main`（禁止 `--force`、禁止移动已有 tag）。合并/评审由编排者（用户）拍板 |
 | 完成即回填 | 卡片"执行记录" + `docs/tasks/README.md` 对应行改 `review` |
 | 有疑问就停 | 契约/设计冲突、需求不明 → 写进"未决问题"并停下，不要自行拍板 |
 | 不夸大验证 | "跑过了"必须有真实输出；没跑的明确写"未验证" |
 
 ---
 
-## 10. 交接时的当前现场
+## 10. 交接时的当前现场（2026-09-26）
 
-- **工作区**：主工作区在 `main @ d5f7eb4`，干净；lane-a..d 挂着已合并分支（可 `remove` 或复用），
-  lane-e 正被 TASK-091 占用，lane-f..j 空闲；
-- **运行中的服务**：无（编排者已验证后清理；`ss -ltn | grep -E '1889[0-9]|5174'` 可查）；
-- **临时数据根**：`/tmp/zace-*` 下有多个验证用数据根，**可安全删除**（不影响仓库）；
-- **未提交改动**：无。
-- **靶场状态**：`hello-agents` 已 checkout 到 `4f7682c`（golden 要求的 commit），
-  工作区有 2 个未提交的代码改动（`ReAct.py` / `tools.py`，非密钥）——出题时注意。
-  **曾经的密钥泄露已处置**（`.env copy` 恢复为上游占位符，备份在 `/tmp/hello-agents-env-backup/`）。
+- **工作区**：主工作区 `/root/xuwenzheng/ace/zace` 在 `main @ 3953d9a`、干净；本轮的临时 worktree
+  （`zace-perf` / `zace-par` / `zace-cfg`）与对应分支已删除，`git worktree list` 只剩主工作区；
+- **运行中的服务**：`zace-service`（systemd，127.0.0.1:8899，配置 `/etc/zace/zace.env`）。
+  ⚠️ **推 main 不会自动部署**：服务端跑的是部署时的代码，升级动作见 `docs/handbook/deployment/vps.md` §9；
+- **临时数据根（可安全删除，不影响仓库）**：`/tmp/p0926-*`、`/tmp/t115b-*`、`/tmp/t116-*`（本轮真实 API 冷启动对照）、
+  `/tmp/ha-branch`（换分支复用实验的靶场副本）、`/tmp/index-perf-handoff.main-untracked-backup.md`（合并前的未跟踪文件备份，内容已入库）；
+- **未提交改动**：无；
+- **靶场状态**：`benchmark/{leveldb,HelloAgents,langchain}`（只读）——`leveldb @ 7ee830d`、`HelloAgents @ 93e77ea`
+  与 golden 登记一致；`langchain` 当前在 **`e75dae1f`**（比 `targets.json` 登记的 `41d3572` 新，做 golden 对照时必须注明）。
 
 ---
 
 ## 11. 下一步建议（给接手 AI）
 
-1. **先读**：本文件 → `docs/tasks/README.md` → `docs/plan/orchestration.md`（泳道模式、契约流程）；
-2. **挑卡**：TASK-087 / 088 / 089 / 090 / 091 五张**互相不冲突**，可同时派五个会话；
-3. **TASK-094 必须等 TASK-090**（两者抢 `metadb.py`/`ops.py`，且 `request_id` 落库与
-   TASK-090 的请求日志是同一件事的两半 —— 若 090 未开工，可直接把 094 §C 并入 090）；
-4. **注意**：TASK-092（部署）**必须等 089/090 合并**，否则等于把越权面发布到公网；
-4. **用户的下一步人工任务**：打磨工具返回内容、补真实问题、打磨 benchmark
+1. **先读**：本文件（尤其顶部"2026-09-26 快照"）→ `docs/tasks/README.md` → `docs/plan/orchestration.md`（泳道模式、契约流程）；
+2. **挑卡**：只剩 TASK-109 / TASK-093 两张，互相独立可并行（TASK-023 随 093 回填）；
+3. **动性能参数前**：先读 `configs/profiles/README.md`（旋钮含义、内存实测、命名约定、"窗口不能按消费者切小"），
+   改完把实测回填到对应档案；
+4. **别踩**：`docs/design/**`、`docs/contracts/**`、`core/zace_core/{types,interfaces,hashing}.py` 是冻结面；
+   本机（1.9G）整包 `pytest` 单进程可能被全局 OOM 杀（`exit=137`），按 `core/tests` / `service/tests` / `tests` 分三段跑；
+5. **推送**：用户已授权 AI 直接 `git push origin main`；工作区隔离与合并纪律见 `docs/plan/multi-ai-worktrees.md`。
    —— 这些依赖 087/088/091 的产出，做完后需要用户参与评审。

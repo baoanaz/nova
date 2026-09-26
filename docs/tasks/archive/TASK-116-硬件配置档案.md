@@ -1,6 +1,6 @@
 # TASK-116：硬件配置档案（`configs/profiles/`）
 
-> 状态：review ｜ 阶段：Phase 5+（工程化） ｜ 硬依赖：TASK-115 ✅ ｜ soft 依赖：无
+> 状态：**已合并 main（`3953d9a`）** ｜ 阶段：Phase 5+（工程化） ｜ 硬依赖：TASK-115 ✅ ｜ soft 依赖：无
 > 建议分支：`feature/task-116_config-profiles0926`
 > 交付物所有权：`configs/profiles/**`（新增）、`docs/tasks/README.md`、`docs/handbook/deployment/vps.md`
 > （只加指针 + 一个键）、本卡。清单外文件不得改。

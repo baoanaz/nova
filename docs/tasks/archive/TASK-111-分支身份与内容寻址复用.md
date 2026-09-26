@@ -1,6 +1,6 @@
 # TASK-111：分支级项目身份、内容寻址复用与按分支管理
 
-> 状态：review ｜ 阶段：Phase 4+（上线前加固）｜ 硬依赖：TASK-101（engine 扩展）、TASK-110（配额与后台）
+> 状态：**已合并 main（`8b46efb`）** ｜ 阶段：Phase 4+（上线前加固）｜ 硬依赖：TASK-101（engine 扩展）、TASK-110（配额与后台）
 > soft 依赖：无
 > 建议分支：`feature/task-111-branch-identity_xwz0916`
 > 交付物所有权：

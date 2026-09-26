@@ -29,6 +29,7 @@
 | **改检索/排序后跑跨仓库回归** | [benchmark/README.md](benchmark/README.md) |
 | **准备密钥与隐私资产** | [privacy/资产清单.md](privacy/资产清单.md) |
 | 切换 embedding 参数 / 看实测数字 | [operations/embedding-provider切换.md](operations/embedding-provider切换.md) |
+| **按机器留档/切换批参数、并发与消费者数（换 VPS）** | [../../configs/profiles/README.md](../../configs/profiles/README.md) |
 | 让 `.gitignore` 排除的文档也能被索引 | [operations/索引白名单.md](operations/索引白名单.md) |
 | 查一个 trace id / 看请求日志 | [operations/请求日志与trace-id报错手册.md](operations/请求日志与trace-id报错手册.md) |
 

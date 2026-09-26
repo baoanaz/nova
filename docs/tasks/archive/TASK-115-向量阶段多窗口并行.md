@@ -1,6 +1,6 @@
 # TASK-115：向量阶段多窗口并行（消费者拆分）
 
-> 状态：review ｜ 阶段：Phase 5+（性能） ｜ 硬依赖：TASK-114 ✅（已合并） ｜ soft 依赖：无
+> 状态：**已合并 main（`239b472`）** ｜ 阶段：Phase 5+（性能） ｜ 硬依赖：TASK-114 ✅（已合并） ｜ soft 依赖：无
 > 建议分支：`feature/task-115_embed-parallel0926`
 > 交付物所有权：`core/zace_core/pipeline/{embedding_sink,indexer}.py`、`core/tests/pipeline/**`、
 > `benches/embed-bench/coldstart_probe.py`（打桩点）、`benches/results/{README.md,index-perf-task115-vps.md}`、
