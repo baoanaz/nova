@@ -18,6 +18,8 @@ lane-c        : new=5842  vectors upserted=5842   ← 两者 55%–98% 内容相
 
 缓存目录按 ``<model_id>-<dim>`` 分片，因此天然不会把不同模型/维度的向量混用
 （换模型 = 换目录，旧目录可安全删除）。
+
+``lancedb`` 与 ``vectors.store`` 一样走惰性导入（P1-5），模块顶层零重依赖。
 """
 
 from __future__ import annotations
@@ -26,8 +28,9 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-import lancedb
 import pyarrow as pa
+
+from zace_core.vectors._lancedb import load as _load_lancedb
 
 CACHE_DIRNAME = "cache"
 EMBEDDINGS_DIRNAME = "embeddings"
@@ -89,7 +92,7 @@ class EmbeddingCache:
             / _shard_name(model_id, dim)
         )
         directory.mkdir(parents=True, exist_ok=True)
-        db = lancedb.connect(str(directory))
+        db = _load_lancedb().connect(str(directory))
         names = {
             name for name in _list_tables(db)
         }

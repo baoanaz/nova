@@ -7,10 +7,15 @@
 
 并发模型：per-project 单写者——WAL 允许“单写多读”，写事务用 ``BEGIN IMMEDIATE``
 立即拿写锁，避免升级死锁（Module/01 §4.3）。
+
+**嵌套事务（TASK-114）**：同一个连接上的嵌套 ``transaction()`` 自动退化为 ``SAVEPOINT``
+（进入时已在外层事务内即视为嵌套）。这让"一整轮文件共用一个写事务、但每个文件仍可独立回滚"
+成为可能——单文件失败隔离（TASK-018 §C）不变，同时省掉每文件一次 ``COMMIT`` 的固定开销。
 """
 
 from __future__ import annotations
 
+import itertools
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -33,6 +38,9 @@ SCHEMA_VERSION = "1"
 
 DB_FILENAME = "index.db"
 """项目目录内的库文件名（Module/01 §3.3：``{project_id}/index.db``）。"""
+
+_savepoint_seq = itertools.count()
+"""嵌套事务的 SAVEPOINT 名序号（``SAVEPOINT`` 要求名字在同一时刻唯一）。"""
 
 
 class SchemaMismatchError(RuntimeError):
@@ -100,8 +108,21 @@ def validate_schema_version(conn: sqlite3.Connection) -> None:
 def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     """显式写事务：``BEGIN IMMEDIATE`` … ``COMMIT`` / 异常 ``ROLLBACK``。
 
-    故意不支持嵌套（嵌套调用会抛 sqlite3.OperationalError，属于编程错误）。
+    嵌套调用（同一连接、已在外层事务内）自动退化为 ``SAVEPOINT``：内层异常只回滚到该保存点，
+    不影响外层已做的写；外层异常才 ``ROLLBACK`` 整段。语义与 SQLite 的保存点一致。
     """
+    if conn.in_transaction:
+        name = f"zace_sp_{next(_savepoint_seq)}"
+        conn.execute(f"SAVEPOINT {name}")
+        try:
+            yield conn
+        except BaseException:
+            conn.execute(f"ROLLBACK TO {name}")
+            conn.execute(f"RELEASE {name}")
+            raise
+        else:
+            conn.execute(f"RELEASE {name}")
+        return
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn

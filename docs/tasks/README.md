@@ -18,6 +18,7 @@
 | [TASK-109](TASK-109-EvidenceGap二轮补检.md) | **Evidence-Gap 二轮补检**（D-19 落地：候选已索引但没召回） | Phase 5+（质量） | TASK-108 ✅ | pending |
 | [TASK-093](TASK-093-真实数据闭环.md) | 真实使用数据采集闭环 | Phase 2（M2b） | TASK-084 ✅ / TASK-091 ✅ | pending |
 | [TASK-023](TASK-023-真实场景用例采集.md) | 真实场景用例采集（**由 TASK-093 落地**） | Phase 2 | TASK-040 ✅ | pending |
+| [TASK-114](TASK-114-索引冷启动性能优化.md) | **索引冷启动性能优化**（P0-1/P0-2/P1-3/P1-4/P1-5） | Phase 5+（性能） | 无 | **review** |
 
 ### 推荐顺序
 

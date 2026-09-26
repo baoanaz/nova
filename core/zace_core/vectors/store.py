@@ -14,6 +14,8 @@
   ``rename_table``，这是可用的最简原子语义；旧句柄仍可读旧快照，替换后本实例立即切到新表）；
 - 维度不匹配（打开已有表 / 写入 / 查询）一律抛 ``DimensionMismatchError``，文案给出
   "触发 D-07 二级失效" 的处置指引。
+- **惰性依赖（P1-5）**：``lancedb`` 不在模块顶层导入（其导入链 2.6–3.2s），
+  统一走 :mod:`zace_core.vectors._lancedb`；本模块 import 本身零重依赖。
 """
 
 from __future__ import annotations
@@ -22,12 +24,15 @@ import threading
 from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
-import lancedb
 import pyarrow as pa
 
 from zace_core.types import VectorHit, VectorRow
+from zace_core.vectors._lancedb import load as _load_lancedb
+
+if TYPE_CHECKING:  # pragma: no cover - 仅类型检查期需要（运行期走 _load_lancedb 惰性导入）
+    import lancedb
 
 VECTORS_DIRNAME = "vectors"
 TABLE_NAME = "chunk_vectors"
@@ -131,7 +136,7 @@ class VectorStore:
         directory = Path(project_dir)
         vectors_dir = directory / VECTORS_DIRNAME
         vectors_dir.mkdir(parents=True, exist_ok=True)
-        db = lancedb.connect(str(vectors_dir))
+        db = _load_lancedb().connect(str(vectors_dir))
         table_names = _list_table_names(db)
         if TABLE_NAME in table_names:
             table = db.open_table(TABLE_NAME)

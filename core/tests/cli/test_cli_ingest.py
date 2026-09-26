@@ -11,8 +11,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 from zace_core.storage import Store
+from zace_core.vectors import VectorStore
 
-from .conftest import LOGGING_PY, REPO_FILES
+from .conftest import LOGGING_PY, REPO_FILES, TEST_DIM
 
 RunCli = Callable[..., tuple[int, str, str]]
 
@@ -97,8 +98,14 @@ def test_full_flag_triggers_full_reparse(
     assert code == 0, err
     assert "mode: full_reparse (invalidation=full_reparse)" in out
     assert f"parsed={len(REPO_FILES)}" in out
-    # 全量重解析 = 重建向量表 + 重嵌存量（嵌入量与首次全量一致）
-    assert len(provider.texts) - first_pass == first_pass
+    # 全量重解析 = 原子重建向量表 + 重写全部存量 chunk 的向量。
+    # TASK-114 起统一走向量 sink：存量内容在跨项目内容缓存（TASK-111）里命中，
+    # 因此向量表被完整重建、但**零新增 embedding**（旧实现每次 --full 都重嵌一遍、白烧额度）。
+    assert len(provider.texts) == first_pass
+    project_dir = data_root / "projects" / _project_id(out)
+    with Store.open(project_dir) as store, VectorStore.open(project_dir, TEST_DIM) as vectors:
+        assert store.counts()["chunks"] > 0
+        assert vectors.count() == store.counts()["chunks"]
 
 
 def test_deleted_file_is_removed_from_index(

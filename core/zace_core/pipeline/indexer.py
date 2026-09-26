@@ -18,8 +18,12 @@ R4（``FileDelta`` 三集合）、R8（imports 边缘）、R10（向量相似度
 - **三档执行**（``check_fingerprint`` 驱动，D-07）：
   ``none`` → 常规增量（只嵌 ``FileDelta.new``）；``reembed`` → 重建向量表并重嵌**存量** chunk
   （不写 SQLite）；``full_reparse`` → 遍历 provider 全部文件重跑增量 + 重建向量表。
-- **向量阶段分窗（内存护栏）**：``_embed_and_upsert`` 按 ``批大小 × 并发`` 开窗、逐窗嵌入与
-  落库，不把整仓 chunk 的向量一次性常驻内存（理由与量级见 ``_embed_window_size``）。
+- **向量阶段 = ``EmbeddingSink`` + ``EmbeddingPipeline``（TASK-114）**：复用判定 / 分窗嵌入 /
+  向量落库 / 缓存写回都收进 ``pipeline.embedding_sink``，本类只负责"解析 + 写 SQLite + 投递"。
+  嵌入在**后台消费者线程**里跑，与本地 CPU 段重叠（P1-4）；sink 任何时刻只持有一个窗口的
+  向量，不再跨窗口累积整仓 ``list[float]``（P0-2，实测曾多占 824MB）。
+- **整批单事务（P1-3）**：一轮文件共用一个写事务（``Store.write_batch``），每个文件仍是
+  独立的 ``SAVEPOINT``——单文件失败隔离不变，省掉每文件一次 ``COMMIT``。
 - **向量清理**：``FileDelta.removed_chunk_ids`` 直接删；整文件删除由
   ``Store.apply_deletions`` 在同一事务里返回被删 chunk id 后清理（TASK-REVIEW-RUNTIME
   P1-2 修掉了旧的跨进程孤儿向量缺陷：之前依赖 ``Indexer`` 进程内的 ``_known_chunks``，
@@ -38,7 +42,6 @@ R4（``FileDelta`` 三集合）、R8（imports 边缘）、R10（向量相似度
 from __future__ import annotations
 
 import json
-import logging
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -46,7 +49,6 @@ from zace_core.chunking import (
     IndexFingerprint,
     Invalidation,
     check_fingerprint,
-    embedding_text,
     link_spec_references,
     resolve_edges,
     resolve_pending,
@@ -58,6 +60,7 @@ from zace_core.chunking import (
 from zace_core.hashing import file_content_hash
 from zace_core.interfaces import EmbeddingProvider
 from zace_core.parsing.registry import EXTENSION_LANGUAGE, detect_language, get_parser
+from zace_core.pipeline.embedding_sink import EmbeddingPipeline, EmbeddingSink
 from zace_core.pipeline.generated import is_generated
 from zace_core.pipeline.ignore import (
     SKIP_REASON_BINARY,
@@ -66,18 +69,14 @@ from zace_core.pipeline.ignore import (
 )
 from zace_core.pipeline.source import SourceProvider
 from zace_core.storage import Store
-from zace_core.types import ChangeSet, ChunkDef, ParsedFile, VectorRow
+from zace_core.types import ChangeSet, ChunkDef, ParsedFile
 from zace_core.vectors import VectorStore
-from zace_core.vectors.cache import EmbeddingCache, EmbeddingCacheError
-
-logger = logging.getLogger(__name__)
+from zace_core.vectors.cache import EmbeddingCache
 
 __all__ = [
     "CPP_EXTENSIONS",
-    "DEFAULT_EMBED_WINDOW",
     "H_EXTENSION",
     "LANGUAGES_KEY",
-    "MAX_EMBED_WINDOW",
     "Indexer",
     "IngestReport",
 ]
@@ -91,30 +90,6 @@ CPP_EXTENSIONS = frozenset(
     extension for extension, language in EXTENSION_LANGUAGE.items() if language == "cpp"
 )
 
-#: 向量阶段窗口的兜底值（chunk 数）：provider 未声明 ``batch_size`` 时使用。
-DEFAULT_EMBED_WINDOW = 512
-#: 向量阶段窗口上限（chunk 数）：兜住"批大小 × 并发"被调到极端值的情况（防再次吃到 GB 级内存）。
-MAX_EMBED_WINDOW = 4_000
-
-
-def _embed_window_size(embedding: EmbeddingProvider) -> int:
-    """一次 ``embed`` + ``upsert`` 处理的 chunk 数（内存安全的上界）。
-
-    为什么需要上界：``embed()`` 返回 ``list[list[float]]``，1024 维向量在 CPython 里约 33 KB
-    （24 B/float + 8 B/指针 + 列表头），且下游 ``VectorRow`` / ``upsert`` 还会各复制一份。
-    把整仓 chunk 一次性交出去，20k chunk 的仓库仅向量就要 ~1 GB 常驻内存——2026-09-15 在本机
-    （2 GiB VPS）实测把机器拖到失联；15.6 GiB 的开发机掩盖了这个问题。
-
-    窗口取 ``批大小 × 并发``：刚好让 provider 跑满**一轮**并发（不牺牲吞吐），常驻向量量压到
-    ``窗口 × 33 KB``（Voyage 默认 500×8 → ~130 MB），并用 ``MAX_EMBED_WINDOW`` 兜住极端配置。
-    """
-    batch = getattr(embedding, "batch_size", None)
-    if not batch:
-        return DEFAULT_EMBED_WINDOW
-    concurrency = getattr(embedding, "concurrency", None)
-    window = max(1, int(batch)) * max(1, int(concurrency or 1))
-    return min(window, MAX_EMBED_WINDOW)
-
 
 @dataclass(frozen=True, slots=True)
 class IngestReport:
@@ -127,7 +102,8 @@ class IngestReport:
     modified: int = 0             # 本次按 modified 处理并写入的文件数
     deleted: int = 0              # 本次删除的文件数
     chunks_new: int = 0           # 新写入且 hash 变化、需要嵌入的 chunk 数
-    chunks_reused: int = 0        # content_hash 未变、向量可复用的 chunk 数
+    chunks_reused: int = 0        # content_hash 未变（文件级对账）、向量可复用的 chunk 数
+    chunks_deduped: int = 0       # 按内容命中已有向量/缓存/本轮更早窗口 → 省掉嵌入调用的 chunk 数
     chunks_removed: int = 0       # 行被移除（需要删向量）的 chunk 数
     unresolved_resolved: int = 0  # 本次落边的 unresolved 引用条数
     errors: tuple[str, ...] = ()  # 解析/切分/落库失败（单文件隔离，不中断整体 ingest）
@@ -142,6 +118,7 @@ class IngestReport:
     skip_reasons: tuple[str, ...] = ()     # 等长的 ``"path:reason"``（TASK-037 §B）
     orphan_files: tuple[str, ...] = ()      # 删除时无法枚举 chunk id（向量可能残留）的文件
     languages: tuple[str, ...] = ()         # 本次处理后仓库已见语言集合（R1 抬升输入）
+    warnings: tuple[str, ...] = ()          # 非致命的可操作告警（如索引位移，TASK-114 / P2-7）
 
 
 @dataclass
@@ -153,6 +130,7 @@ class _Accumulator:
     deleted: int = 0
     chunks_new: int = 0
     chunks_reused: int = 0
+    chunks_deduped: int = 0
     chunks_removed: int = 0
     unresolved_resolved: int = 0
     invalidation: Invalidation = Invalidation.NONE
@@ -168,6 +146,7 @@ class _Accumulator:
     orphan_files: list[str] = field(default_factory=list)
     _skipped_seen: set[str] = field(default_factory=set)
     languages: tuple[str, ...] = ()
+    warnings: list[str] = field(default_factory=list)
 
     def skip(self, path: str, reason: str) -> None:
         """记录一个被跳过（未索引）的文件与原因（TASK-037 §B / R43）。
@@ -192,6 +171,7 @@ class _Accumulator:
             deleted=self.deleted,
             chunks_new=self.chunks_new,
             chunks_reused=self.chunks_reused,
+            chunks_deduped=self.chunks_deduped,
             chunks_removed=self.chunks_removed,
             unresolved_resolved=self.unresolved_resolved,
             errors=tuple(self.errors),
@@ -206,6 +186,7 @@ class _Accumulator:
             skip_reasons=tuple(self.skip_reasons),
             orphan_files=tuple(self.orphan_files),
             languages=self.languages,
+            warnings=tuple(self.warnings),
         )
 
 
@@ -305,28 +286,45 @@ class Indexer:
         }
         repo_is_cpp = "cpp" in repo_languages
 
+        # 指纹二级失效：先原子重建（清空）向量表，之后的写入都落在新表上。
+        if rebuild_vectors:
+            self._vectors.rebuild(self._embedding.profile.dim)
+
         indexed: list[_Indexed] = []
-        for item in inputs:
-            result = self._index_file(item, repo_is_cpp, acc)
-            if result is not None:
-                indexed.append(result)
+        written: dict[str, ChunkDef] = {}
+        removed_ids: list[str] = []
+        sink = EmbeddingSink(self._embedding, self._vectors, cache=self._cache)
+        with EmbeddingPipeline(sink) as pipeline:
+            # 一轮文件共用一个写事务；每文件的失败隔离由内层 SAVEPOINT 保证（Store.write_batch）。
+            with self._store.write_batch():
+                for item in inputs:
+                    result = self._index_file(item, repo_is_cpp, acc)
+                    if result is None:
+                        continue
+                    indexed.append(result)
+                    for chunk in result.chunks:
+                        written.setdefault(chunk.id, chunk)
+                    acc.chunks_reused += len(result.chunks) - len(result.new_ids)
+                    if rebuild_vectors:
+                        # 重建档位由 ``_rebuild_vectors`` 统一投递（它还要覆盖未处理的存量文件）；
+                        # 这里再投一次就会把整仓向量写两遍（实测 vectors.count 翻倍）。
+                        continue
+                    pipeline.submit(result.chunks)
+                    removed_ids.extend(result.removed_ids)
+                if rebuild_vectors:
+                    self._rebuild_vectors(
+                        acc, pipeline, written, {result.parsed.path for result in indexed}
+                    )
+        # 删除必须等向量阶段排空：行漂移后的**按内容复用**要读旧行（旧 id 同内容），
+        # 先删就会把复用来源删掉、整文件重嵌（实测踩过）。
+        if removed_ids:
+            acc.vectors_deleted += self._vectors.delete(removed_ids)
 
         parsed_files = [result.parsed for result in indexed]
-        written: dict[str, ChunkDef] = {}
-        for result in indexed:
-            for chunk in result.chunks:
-                written.setdefault(chunk.id, chunk)
-            acc.chunks_reused += len(result.chunks) - len(result.new_ids)
-
-        if rebuild_vectors:
-            self._rebuild_vectors(acc, written, {result.parsed.path for result in indexed})
-        else:
-            self._embed_new(acc, indexed)
-            removed_ids = [
-                chunk_id for result in indexed for chunk_id in result.removed_ids
-            ]
-            if removed_ids:
-                acc.vectors_deleted += self._vectors.delete(removed_ids)
+        acc.vectors_upserted += sink.stats.upserted
+        # ``chunks_reused`` 只统计文件级对账（FileDelta）的 hash 未变；sink 的内容复用单独计数，
+        # 两者的口径互斥，且满足 ``chunks_new + chunks_reused == embedded + deduped``。
+        acc.chunks_deduped += sink.stats.deduped
 
         self._resolve(acc, parsed_files)
         self._languages = repo_languages | {
@@ -465,117 +463,23 @@ class Indexer:
 
     # ------------------------------------------------------------------ 向量
 
-    def _embed_new(self, acc: _Accumulator, indexed: Sequence[_Indexed]) -> None:
-        """增量嵌入：只嵌需要向量的 chunk（TASK-111 起按内容寻址复用）。
-
-        两层判定（R4：“复用键是 hash 不是 id”）：
-
-        1. **同 id 同内容** → 复用（原行为）。
-        2. **同内容换 id** → 从向量库按 ``content_hash`` 读回旧向量，**只把行搬成新 id**，
-           不重算 embedding。为什么必须有这一层：``chunk_id = {path}:{fqn}:{start_line}``
-           含行号，在文件上方插入一行就会让**后续全部 chunk 的 id 改变**；
-           旧实现只按 id 比对 hash，于是整文件重嵌。实测（10 个 worktree）
-           按内容复用可省 **81.8%** 的 embedding 与向量存储。
-
-        本轮新嵌入的向量会进 ``fresh`` 池，使同一批内**相同内容只嵌一次**
-        （例如同一模板文件被复制到多个路径）。
-        """
-        candidates: dict[str, ChunkDef] = {}
-        for result in indexed:
-            for chunk in result.chunks:
-                candidates.setdefault(chunk.id, chunk)
-        if not candidates:
-            return
-        stored = self._vectors.get_hashes(list(candidates))
-        need: list[ChunkDef] = []
-        for chunk_id, chunk in candidates.items():
-            if stored.get(chunk_id) == chunk.content_hash:
-                # 同 id 同内容：已在 SQLite 侧计入 ``chunks_reused``（见 ingest 主循环），
-                # 这里不重复计数。
-                continue
-            need.append(chunk)
-        if not need:
-            return
-
-        # 一次查库拿全部可复用向量（可能来自漂移前的旧 id，或其他文件写入的同内容行）。
-        # 这一层是 TASK-111 新增能力：chunk_id 含行号，漂移后旧实现会整文件重嵌。
-        seen_hash = self._vectors.get_vectors_by_hash([c.content_hash for c in need])
-        model_id = self._embedding.profile.model_id
-        # 跨项目缓存（TASK-111）：分支隔离后"换分支 = 换项目"，本地向量表里没有旧向量，
-        # 靠 data_root 级缓存命中同内容——否则每个分支都要付一次全量嵌入（实测 lane-c 零复用）。
-        # 缓存是优化，任何异常都必须降级为"未命中"。
-        if self._cache is not None:
-            missing = [c.content_hash for c in need if c.content_hash not in seen_hash]
-            try:
-                for digest, vector in self._cache.lookup(model_id, missing).items():
-                    seen_hash.setdefault(digest, ("", vector))
-            except EmbeddingCacheError as exc:  # 缓存坏了不能阻断索引
-                logger.warning("embedding 缓存读取失败，按未命中处理：%s", exc)
-
-        moved: list[VectorRow] = []
-        pending: list[ChunkDef] = []
-        for chunk in need:
-            hit = seen_hash.get(chunk.content_hash)
-            if hit is not None:
-                moved.append(
-                    VectorRow(chunk_id=chunk.id, content_hash=chunk.content_hash, vector=hit[1])
-                )
-                acc.chunks_reused += 1
-                continue
-            pending.append(chunk)
-        if moved:
-            acc.vectors_upserted += self._vectors.upsert(moved)
-        embedded = self._embed_and_upsert(pending, acc)
-        # 把本次新嵌的内容写回共享缓存，供其他分支/项目直接命中（TASK-111）。
-        if self._cache is not None and embedded:
-            try:
-                self._cache.put(
-                    model_id, {chunk.content_hash: vector for chunk, vector in embedded}
-                )
-            except EmbeddingCacheError as exc:  # 缓存写失败不影响索引
-                logger.warning("embedding 缓存写入失败：%s", exc)
-
-    def _embed_and_upsert(
-        self, chunks: Sequence[ChunkDef], acc: _Accumulator
-    ) -> list[tuple[ChunkDef, list[float]]]:
-        """嵌入并写向量表；返回本次**真正嵌入**的 ``(chunk, vector)``（供写回共享缓存）。"""
-        pending = list(dict.fromkeys(chunk.id for chunk in chunks))
-        by_id = {chunk.id: chunk for chunk in chunks}
-        ordered = [by_id[chunk_id] for chunk_id in pending]
-        if not ordered:
-            return []
-        produced: list[tuple[ChunkDef, list[float]]] = []
-        window_size = _embed_window_size(self._embedding)
-        for start in range(0, len(ordered), window_size):
-            window = ordered[start : start + window_size]
-            texts = [embedding_text(chunk) for chunk in window]
-            vectors = self._embedding.embed(texts)
-            if len(vectors) != len(window):
-                raise RuntimeError(
-                    f"embedding 返回行数不匹配：期望 {len(window)}，实际 {len(vectors)}"
-                )
-            rows = [
-                VectorRow(chunk_id=chunk.id, content_hash=chunk.content_hash, vector=list(vector))
-                for chunk, vector in zip(window, vectors, strict=True)
-            ]
-            acc.vectors_upserted += self._vectors.upsert(rows)
-            produced.extend(
-                (chunk, list(vector)) for chunk, vector in zip(window, vectors, strict=True)
-            )
-        return produced
-
     def _rebuild_vectors(
-        self, acc: _Accumulator, written: dict[str, ChunkDef], processed: set[str]
+        self,
+        acc: _Accumulator,
+        pipeline: EmbeddingPipeline,
+        written: dict[str, ChunkDef],
+        processed: set[str],
     ) -> None:
-        """重建向量表并重嵌全部存量 chunk（reembed / full_reparse）。
+        """重嵌全部存量 chunk（reembed / full_reparse）。
 
-        存量枚举方式：遍历 provider 清单重新解析切分拿到 chunk id（**不写 SQLite**），
-        再用 ``Store.chunks_by_ids`` 取回库内权威内容后嵌入——解析口径未变是
-        ``reembed`` 档位的前提（指纹保证），因此 id 与库内一致。
+        向量表已由 :meth:`_run` 原子重建为空，因此这里投递的 chunk 都会真正嵌入。
+        已写入的 chunk 直接从内存投递（对象刚写完，与库内一致）；其余按 provider 清单
+        重新解析切分拿到 chunk id（**不写 SQLite**），再用 ``Store.chunks_by_ids``
+        取回库内权威内容——解析口径未变是 ``reembed`` 档位的前提（指纹保证），
+        因此 id 与库内一致。
         """
-        profile_dim = self._embedding.profile.dim
-        self._vectors.rebuild(profile_dim)
-        ids: list[str] = list(written)
+        pipeline.submit(list(written.values()))
+        ids: list[str] = []
         for path in self._source.list_files():
             if path in processed:
                 continue
@@ -609,8 +513,7 @@ class Indexer:
             except Exception as exc:  # 同上：单文件切分失败不拖垮重建（TASK-018 §C 同一口径）
                 acc.errors.append(f"{path}: {type(exc).__name__}: {exc}")
                 continue
-        stored = self._store.chunks_by_ids(ids)
-        self._embed_and_upsert(list(stored), acc)
+        pipeline.submit(self._store.chunks_by_ids(ids))
 
     # ------------------------------------------------------------------ 二阶段解析
 

@@ -15,10 +15,10 @@ from zace_core.chunking import PARSER_CONFIG_KEY, embedding_text, split_file
 from zace_core.interfaces import EmbeddingProfile
 from zace_core.parsing.registry import get_parser
 from zace_core.pipeline import LANGUAGES_KEY, DirectorySource, Indexer, IngestReport
-from zace_core.pipeline.indexer import (
+from zace_core.pipeline.embedding_sink import (
     DEFAULT_EMBED_WINDOW,
     MAX_EMBED_WINDOW,
-    _embed_window_size,
+    embed_window_size,
 )
 from zace_core.storage import Store
 from zace_core.text import segment
@@ -577,10 +577,10 @@ def test_embed_window_size_falls_back_and_caps() -> None:
         batch_size = 1000
         concurrency = 32
 
-    assert _embed_window_size(Anonymous()) == DEFAULT_EMBED_WINDOW
-    assert _embed_window_size(LocalLike()) == 16
-    assert _embed_window_size(VoyageLike()) == 4_000
-    assert _embed_window_size(Extreme()) == MAX_EMBED_WINDOW
+    assert embed_window_size(Anonymous()) == DEFAULT_EMBED_WINDOW
+    assert embed_window_size(LocalLike()) == 16
+    assert embed_window_size(VoyageLike()) == 4_000
+    assert embed_window_size(Extreme()) == MAX_EMBED_WINDOW
     assert MAX_EMBED_WINDOW < 1000 * 32
 
 
@@ -635,7 +635,10 @@ def test_identical_content_in_new_file_reuses_existing_vector(
     report = indexer.ingest(change_set(added={"pkg/copy.py": PY_MODULE}))
 
     assert embedding.calls == calls_before, "相同内容换个路径不应重嵌"
-    assert report.chunks_reused > 0
+    # TASK-114 起口径拆开：``chunks_reused`` 只统计**文件级对账**（hash 未变）；
+    # "新文件命中既有向量"属向量阶段的按内容复用，记在 ``chunks_deduped``。
+    assert report.chunks_reused == 0
+    assert report.chunks_deduped > 0
     assert vectors.count() == store.counts()["chunks"]
 
 
