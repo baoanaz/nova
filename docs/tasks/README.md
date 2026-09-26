@@ -19,6 +19,8 @@
 | [TASK-093](TASK-093-真实数据闭环.md) | 真实使用数据采集闭环 | Phase 2（M2b） | TASK-084 ✅ / TASK-091 ✅ | pending |
 | [TASK-023](TASK-023-真实场景用例采集.md) | 真实场景用例采集（**由 TASK-093 落地**） | Phase 2 | TASK-040 ✅ | pending |
 
+| [TASK-115](TASK-115-向量阶段多窗口并行.md) | **向量阶段多窗口并行**（消费者 K 窗在飞） | Phase 5+（性能） | TASK-114 ✅ | **review** |
+
 ### 推荐顺序
 
 ```text

@@ -1,10 +1,11 @@
 """向量 sink 与流水线（TASK-114 / P0-2 / P1-4）。
 
-覆盖三条不变量：
+覆盖四条不变量：
 
 1. **复用优先级**：同 id 同内容跳过、同内容换 id 搬移、缓存命中 → 都不重嵌；
 2. **窗口内去重**：同窗口相同内容只送 ``embed()`` 一次，且每个 chunk 都有向量行；
 3. **流水线失败语义**：消费者异常必须回抛主线程，不静默吞掉半个索引。
+4. **并行消费者（TASK-115）**：K 窗在飞时窗口上限与计数不变量不变，失败/背压都不死锁。
 """
 
 from __future__ import annotations
@@ -15,8 +16,12 @@ from pathlib import Path
 
 import pytest
 from zace_core.pipeline.embedding_sink import (
+    DEFAULT_EMBED_WORKERS,
+    MAX_EMBED_WORKERS,
+    WORKERS_ENV,
     EmbeddingPipeline,
     EmbeddingSink,
+    embed_workers,
 )
 from zace_core.types import ChunkDef, VectorRow
 from zace_core.vectors import VectorStore
@@ -62,6 +67,13 @@ class _ExplodingEmbedding(CountingEmbedding):
         raise RuntimeError("embedding boom")
 
 
+class _TinyExplodingEmbedding(_ExplodingEmbedding):
+    """窗口=1 的爆炸替身：投进去立刻失败，用来验证错误能尽早回到主线程。"""
+
+    batch_size = 1
+    concurrency = 1
+
+
 def test_within_window_dedupes_identical_content(vectors: VectorStore) -> None:
     """同窗口相同内容只嵌一次；每个 chunk 仍各有一行向量（计数不变）。"""
     embedding = CountingEmbedding()
@@ -98,11 +110,10 @@ def test_feed_buffers_across_files_until_a_full_window(vectors: VectorStore) -> 
 
 
 def test_pipeline_close_flushes_pending(vectors: VectorStore) -> None:
-    """流水线关停必须把未满窗口的缓冲处理掉（否则向量表缺行）。"""
+    """``workers=1``：关停必须把未满窗口的缓冲处理掉（否则向量表缺行）。"""
     embedding = CountingEmbedding()
-    sink = EmbeddingSink(embedding, vectors)
 
-    with EmbeddingPipeline(sink) as pipeline:
+    with EmbeddingPipeline(embedding, vectors, workers=1) as pipeline:
         pipeline.submit([_chunk("a.py:x:1", "one")])
         pipeline.submit([_chunk("b.py:x:1", "two")])
 
@@ -179,29 +190,92 @@ def test_embedded_vectors_are_written_back_to_cache(
 
 def test_pipeline_reraises_consumer_error(vectors: VectorStore) -> None:
     """消费者（后台线程）异常必须在主线程重抛，不允许静默半成品。"""
-    sink = EmbeddingSink(_ExplodingEmbedding(), vectors)
-
     with pytest.raises(RuntimeError, match="embedding boom"):
-        with EmbeddingPipeline(sink) as pipeline:
+        with EmbeddingPipeline(_ExplodingEmbedding(), vectors, workers=2) as pipeline:
             pipeline.submit([_chunk("a.py:x:1", "body")])
 
 
-def test_pipeline_keeps_fifo_order_across_submits(vectors: VectorStore) -> None:
-    """多次 submit 按 FIFO 处理：后一个窗口能复用前一个窗口刚落的向量。"""
+def test_single_worker_keeps_fifo_reuse(vectors: VectorStore) -> None:
+    """``workers=1`` 退回 TASK-114 行为：FIFO 处理，后一窗复用前一窗刚落的向量。"""
     embedding = _TinyWindow()
-    sink = EmbeddingSink(embedding, vectors)
-
-    with EmbeddingPipeline(sink) as pipeline:
+    with EmbeddingPipeline(embedding, vectors, workers=1) as pipeline:
         pipeline.submit([_chunk("a.py:x:1", "same")])
         pipeline.submit([_chunk("b.py:x:1", "same")])
+    stats = pipeline.stats
 
     assert embedding.calls == 1
-    assert sink.stats.deduped == 1
+    assert stats.deduped == 1
     assert vectors.count() == 2
 
 
+def test_parallel_workers_keep_window_and_counts(vectors: VectorStore) -> None:
+    """K=2：窗口上限不变、计数不变量成立、每个 chunk 都落到向量表。"""
+    embedding = _TinyWindow()  # 窗口 = 1，便于观察批次划分
+    chunks = [_chunk(f"f{index}.py:x:1", f"body-{index}") for index in range(20)]
+
+    with EmbeddingPipeline(embedding, vectors, workers=2) as pipeline:
+        pipeline.submit(chunks)
+    stats = pipeline.stats
+
+    assert pipeline.workers == 2
+    assert all(len(batch) <= pipeline.window for batch in embedding.batches)
+    assert stats.upserted == 20
+    assert stats.upserted == stats.embedded + stats.deduped
+    assert vectors.count() == 20
+
+
+def test_embed_workers_reads_env_and_clamps(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``ZACE_EMBED_WORKERS``：缺省 2、非法值回落、上限夹住（配置噪声不得让索引失败）。"""
+    monkeypatch.delenv(WORKERS_ENV, raising=False)
+    assert embed_workers() == DEFAULT_EMBED_WORKERS
+    monkeypatch.setenv(WORKERS_ENV, "1")
+    assert embed_workers() == 1
+    monkeypatch.setenv(WORKERS_ENV, "99")
+    assert embed_workers() == MAX_EMBED_WORKERS
+    monkeypatch.setenv(WORKERS_ENV, "abc")
+    assert embed_workers() == DEFAULT_EMBED_WORKERS
+
+
+def test_close_dispatches_the_partial_tail(vectors: VectorStore) -> None:
+    """关停要把"不满一个窗口的余量"派发出去（否则向量表缺行）。"""
+    embedding = CountingEmbedding()  # 窗口 = 512：两段都还留在 pipeline 的待派发缓冲里
+
+    with EmbeddingPipeline(embedding, vectors, workers=2) as pipeline:
+        pipeline.submit([_chunk("a.py:x:1", "one")])
+        pipeline.submit([_chunk("b.py:x:1", "two")])
+
+    assert vectors.count() == 2
+    assert sum(len(batch) for batch in embedding.batches) == 2
+
+
+def test_backpressure_never_deadlocks(vectors: VectorStore) -> None:
+    """生产者远快于消费者（逐个 submit、队列只留 1 窗）时不死锁，最终全部落库。"""
+    embedding = _TinyWindow()
+    chunks = [_chunk(f"f{index}.py:x:1", f"body-{index}") for index in range(50)]
+
+    with EmbeddingPipeline(embedding, vectors, workers=2, queue_windows=1) as pipeline:
+        for chunk in chunks:
+            pipeline.submit([chunk])
+
+    assert vectors.count() == 50
+    assert pipeline.stats.upserted == 50
+
+
+def test_consumer_error_does_not_block_producer(vectors: VectorStore) -> None:
+    """一个消费者失败后 ``submit`` 尽早重抛——不能把生产者卡在队列上等死。"""
+    pipeline = EmbeddingPipeline(
+        _TinyExplodingEmbedding(), vectors, workers=2, queue_windows=1
+    )
+    try:
+        with pytest.raises(RuntimeError, match="embedding boom"):
+            for index in range(50):
+                pipeline.submit([_chunk(f"f{index}.py:x:1", "body")])
+    finally:
+        pipeline.abort()
+
+
 def test_pipeline_rejects_submit_after_close(vectors: VectorStore) -> None:
-    pipeline = EmbeddingPipeline(EmbeddingSink(CountingEmbedding(), vectors))
+    pipeline = EmbeddingPipeline(CountingEmbedding(), vectors, workers=2)
     pipeline.close()
     with pytest.raises(RuntimeError, match="已关闭"):
         pipeline.submit([_chunk("a.py:x:1", "body")])
@@ -210,7 +284,7 @@ def test_pipeline_rejects_submit_after_close(vectors: VectorStore) -> None:
 def test_pipeline_abort_does_not_flush_pending(vectors: VectorStore) -> None:
     """主流程已失败时 abort 丢弃缓冲，不做无意义的嵌入（也不掩盖原异常）。"""
     embedding = CountingEmbedding()
-    pipeline = EmbeddingPipeline(EmbeddingSink(embedding, vectors))
+    pipeline = EmbeddingPipeline(embedding, vectors, workers=2)
 
     pipeline.submit([_chunk("a.py:x:1", "body")])
     pipeline.abort()

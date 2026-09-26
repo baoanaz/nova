@@ -540,7 +540,9 @@ def test_embed_upsert_windows_batch_size_times_concurrency(
     在 2 GiB VPS 上实测把机器拖到失联。本用例锁住分窗行为，防止回归。
     """
     embedding = WindowedEmbedding()
-    indexer = Indexer(store, embedding, vectors, DirectorySource(repo))
+    # workers=1：本用例锁的是"窗口切分"本身，单消费者才能精确断言调用次数
+    # （K 个消费者各自 flush 尾部，调用次数会多出 ≤K 次，另见下一个用例）。
+    indexer = Indexer(store, embedding, vectors, DirectorySource(repo), workers=1)
     source = _many_functions(20)
     report = _ingest_files(indexer, change_set, {"pkg/many.py": source}, repo)
 
@@ -550,6 +552,28 @@ def test_embed_upsert_windows_batch_size_times_concurrency(
     assert embedding.calls == math.ceil(total / window)
     assert max(len(batch) for batch in embedding.batches) <= window
     # 分窗不改变结果：所有 chunk 都有向量
+    assert report.vectors_upserted == total
+    assert vectors.count() == total
+
+
+def test_parallel_workers_keep_the_global_window(
+    store: Store, vectors: VectorStore, repo: Path, change_set: ChangeSetFactory
+) -> None:
+    """默认 K=2（TASK-115）：窗口在 pipeline 层全局攒满再派发，调用次数与 K=1 相同。
+
+    回归锚点：若按 K 把窗口切小，provider 单次 ``embed()`` 的批数会变少、链路并发反而上不去
+    （实测 K=2 + 切窗：73.98s vs K=1 的 74.73s，等于没并行）。
+    """
+    embedding = WindowedEmbedding()
+    indexer = Indexer(store, embedding, vectors, DirectorySource(repo), workers=2)
+    source = _many_functions(20)
+    report = _ingest_files(indexer, change_set, {"pkg/many.py": source}, repo)
+
+    total = _chunk_count("pkg/many.py", source)
+    window = embed_window_size(WindowedEmbedding())
+    assert total > window
+    assert embedding.calls == math.ceil(total / window)
+    assert max(len(batch) for batch in embedding.batches) <= window
     assert report.vectors_upserted == total
     assert vectors.count() == total
 

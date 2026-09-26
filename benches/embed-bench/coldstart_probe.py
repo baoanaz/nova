@@ -350,6 +350,7 @@ def main() -> int:
             "batch_size": getattr(provider, "batch_size", None),
             "batch_token_budget": getattr(provider, "batch_token_budget", None),
             "concurrency": getattr(provider, "concurrency", None),
+            "embed_workers": os.environ.get("ZACE_EMBED_WORKERS", "default(2)"),
             "max_input_tokens": cfg.max_input_tokens,
         },
         "wall_s": round(wall_s, 3),
