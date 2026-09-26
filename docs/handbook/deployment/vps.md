@@ -83,6 +83,10 @@ EMBED_BATCH_TOKEN_BUDGET=300000
 EMBED_MAX_INPUT_TOKENS=32000
 EMBED_API_KEY=<你的 Voyage key>
 
+# ---- 向量阶段消费者（TASK-115；不写也是 2，写出来便于留档与回滚）
+# 窗口 = EMBED_BATCH_SIZE × EMBED_CONCURRENCY = 2000；K 个消费者同时在处理 K 个窗口。
+ZACE_EMBED_WORKERS=2
+
 # ---- LLM（OpenAI-compatible 网关）
 ANSWER_BASE_URL=http://<网关地址>:8080/v1
 ANSWER_MODEL=deepseek-flash
@@ -96,6 +100,11 @@ ANSWER_MAX_CONTEXT_TOKENS=1048576
 EMBED_TPM=16000000
 EMBED_RPM=2000
 ```
+
+> **按机器留档的调优档在 [`configs/profiles/`](../../../configs/profiles/README.md)**：
+> 每个机器一份 `<机器标识>.env`（现役 VPS = `154.12.34.214.env`，计划中的 DMIT = `dmit-2c2g-200m.env`），
+> 只放非密钥调优项（批大小 / 并发 / 消费者数）与 systemd 内存护栏留档；
+> 用法与"窗口不能按消费者切小"的告警见该目录 README。
 
 **三个必须知道的点**：
 

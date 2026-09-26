@@ -18,8 +18,8 @@
 | [TASK-109](TASK-109-EvidenceGap二轮补检.md) | **Evidence-Gap 二轮补检**（D-19 落地：候选已索引但没召回） | Phase 5+（质量） | TASK-108 ✅ | pending |
 | [TASK-093](TASK-093-真实数据闭环.md) | 真实使用数据采集闭环 | Phase 2（M2b） | TASK-084 ✅ / TASK-091 ✅ | pending |
 | [TASK-023](TASK-023-真实场景用例采集.md) | 真实场景用例采集（**由 TASK-093 落地**） | Phase 2 | TASK-040 ✅ | pending |
-
 | [TASK-115](TASK-115-向量阶段多窗口并行.md) | **向量阶段多窗口并行**（消费者 K 窗在飞） | Phase 5+（性能） | TASK-114 ✅ | **review** |
+| [TASK-116](TASK-116-硬件配置档案.md) | **硬件配置档案**（`configs/profiles/`，按机器命名留档） | Phase 5+（工程化） | TASK-115 ✅ | **review** |
 
 ### 推荐顺序
 
