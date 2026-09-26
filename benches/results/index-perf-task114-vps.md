@@ -105,6 +105,7 @@ vectors_upserted == embedded + chunks_deduped           （向量阶段）
 
 - P2-6 解析/解码多进程：需 ≥4 核才有意义，且 lancedb 在 fork 下有已知告警；
 - P2-7 "接管旧索引目录"：D-29/TASK-111 冻结设计，本轮只加**告警**（`IngestReport.warnings`）；
+  2026-09-26 实测"换分支重嵌"的 token 浪费已被 TASK-111 内容缓存兜住，见 §10。
 - P3-8 硬件判据：只复述，不采购。
 
 ## 8. 复现
@@ -140,3 +141,36 @@ uv run ruff check . && uv run python scripts/check_dependency_direction.py && uv
 | `hello-{base,new}-localonly.json`、`hello-{base,new}-full.json` | HelloAgents 对照 |
 | `hello-new-nobatch-localonly.json` | 对照实验：关掉"整轮单事务"（证明其对墙钟中性） |
 | `eval-{leveldb,helloagents}-{control,new}.md` | §4 的 `zace-core eval` 报告 |
+
+## 10. 附：P2-7「换分支还要重嵌吗」实测（2026-09-26 补）
+
+handoff 的 P2-7 担心"换分支/换目录 ⇒ 换 projectId ⇒ 全量重嵌 4.58M token"。实测（零成本实验）：
+
+```bash
+# 把靶场复制一份并 checkout 到新分支（身份变了 ⇒ 新 projectId），灌进**同一个数据根**
+cp -a /root/xuwenzheng/ace/benchmark/HelloAgents /tmp/ha-branch
+git -C /tmp/ha-branch checkout -qb task114-probe
+uv run python benches/embed-bench/coldstart_probe.py --repo /tmp/ha-branch \
+  --data <上次构建 HelloAgents 用的数据根> --out /tmp/branch-reuse.json --mode full
+```
+
+| 观测 | 值 |
+|---|---|
+| projectId | `218ac10d73b55a8a`（与旧分支不同） |
+| invalidation | `full_reparse`（236 files / 2729 chunks） |
+| **API token / 请求数** | **0 / 0** |
+| `chunks_deduped` | **2729**（全部命中跨项目内容缓存） |
+| 墙钟 / 峰值 RSS | 13.7s / 445MB |
+
+**结论**：只要是**同一个数据根**（缓存 `{data_root}/cache/embeddings/<model>-<dim>` 还在）、
+模型与维度不变，"换分支"已经**不花 API 额度**，只花本地 CPU（HelloAgents 13.7s；
+langchain 同规模约 50s）。因此：
+
+1. **不做"接管旧索引目录"**（无论别名共享还是复制快照）：它只能再省那段本地 CPU，
+   却要动 D-29/TASK-111 的冻结口径，或引入"跨项目复制索引 + 一致性快照 + 每分支一份磁盘"的复杂度；
+2. 保留本轮的**位移告警**：它提示的是"这一次要从零重建（会花本地时间）"，而不是"会烧额度"；
+3. 真正需要小心的是**缓存被清理 / 换数据根 / 换模型或维度**——那时才会重新付费（`--dry-run`
+   与 `ZACE_EMBED_CACHE=off` 属该场景）。
+
+**裁决记录（2026-09-26）**：用户确认接受 §4 的 Voyage 批次抖动（MRR 1e-3）；
+P2-7 按上述结论**不做目录接管**。

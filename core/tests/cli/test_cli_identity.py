@@ -271,6 +271,10 @@ def test_branch_switch_surfaces_index_displacement_warning(
 
     report = engine.ingest_repo(second.project_id, root)
 
-    assert any("全量重嵌" in warning for warning in report.warnings), report.warnings
+    assert any("从零重建" in warning for warning in report.warnings), report.warnings
+    # 告警要说清"代价是本地时间、不是额度"（实测见 index-perf-task114-vps.md §10）。
+    assert any(
+        "不额外消耗 embedding 额度" in warning for warning in report.warnings
+    ), report.warnings
     # 索引建好后再次 ingest 属于增量，不应再告警。
     assert engine.ingest_repo(second.project_id, root).warnings == ()
