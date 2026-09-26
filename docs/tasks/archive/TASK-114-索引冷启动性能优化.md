@@ -1,6 +1,6 @@
 # TASK-114：索引冷启动性能优化（P0-1/P0-2/P1-3/P1-4/P1-5）
 
-> 状态：review ｜ 阶段：Phase 5+（性能） ｜ 硬依赖：无 ｜ soft 依赖：无
+> 状态：**已合并 main（`a977da6`）** ｜ 阶段：Phase 5+（性能） ｜ 硬依赖：无 ｜ soft 依赖：无
 > 建议分支：`feature/task-114_index-perf0926`
 > 交付物所有权：`core/zace_core/pipeline/**`、`core/zace_core/storage/{store,db}.py`、
 > `core/zace_core/text/segmenter.py`、`core/zace_core/vectors/{store,cache}.py`、
@@ -15,13 +15,13 @@
 让本地 CPU 段与网络段重叠（P1-4）、CLI 不再为 lancedb 付固定 3s 导入（P1-5）**。
 被 service 与 CLI 的索引路径共同消费，行为与检索质量不得回退。
 
-完整计划、依赖顺序、架构问题清单与验收矩阵见 [`../plan/index-perf-plan.md`](../plan/index-perf-plan.md)。
+完整计划、依赖顺序、架构问题清单与验收矩阵见 [`../../plan/index-perf-plan.md`](../../plan/index-perf-plan.md)。
 
 ## 输入文档（按序读，只读所需章节）
 
-1. [`../plan/index-perf-handoff.md`](../plan/index-perf-handoff.md)（实测数字与代码定位的唯一来源）；
-2. [`../design/Module/01-切片存储.md`](../design/Module/01-切片存储.md) §4.1–§4.3（双层增量 / 指纹失效 / 时序）；
-3. [`../contracts/PROCESS.md`](../contracts/PROCESS.md) §3.2 R4（复用键是 hash）、R10（rebuild 语义）；
+1. [`../../plan/index-perf-handoff.md`](../../plan/index-perf-handoff.md)（实测数字与代码定位的唯一来源）；
+2. [`../../design/Module/01-切片存储.md`](../../design/Module/01-切片存储.md) §4.1–§4.3（双层增量 / 指纹失效 / 时序）；
+3. [`../../contracts/PROCESS.md`](../../contracts/PROCESS.md) §3.2 R4（复用键是 hash）、R10（rebuild 语义）；
 4. `docs/contracts/index-schema.sql`（CF-01，只读，不改）。
 
 ## 冻结接口（本卡不得变更）
@@ -70,8 +70,8 @@
 ### 2026-09-26 ｜ 分支 `feature/task-114_index-perf0926` ｜ 工作区 `/root/xuwenzheng/ace/zace-perf`
 
 **范围**：handoff 的 P0-1 / P0-2 / P1-3 / P1-4 / P1-5 全部落地；P2-7 只做告警；P2-6、P3-8 按计划不做。
-计划、架构问题清单、验收矩阵见 [`../plan/index-perf-plan.md`](../plan/index-perf-plan.md)；
-实测报告见 [`../../benches/results/index-perf-task114-vps.md`](../../benches/results/index-perf-task114-vps.md)。
+计划、架构问题清单、验收矩阵见 [`../../plan/index-perf-plan.md`](../../plan/index-perf-plan.md)；
+实测报告见 [`../../../benches/results/index-perf-task114-vps.md`](../../../benches/results/index-perf-task114-vps.md)。
 
 **关键决策**
 
