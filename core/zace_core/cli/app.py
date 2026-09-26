@@ -347,7 +347,7 @@ def _cmd_ingest(args: argparse.Namespace, factory: EngineFactory) -> int:
     )
     print(
         f"chunks: new={report.chunks_new} reused={report.chunks_reused} "
-        f"removed={report.chunks_removed}"
+        f"removed={report.chunks_removed} deduped={report.chunks_deduped}"
     )
     print(f"vectors: upserted={report.vectors_upserted} deleted={report.vectors_deleted}")
     print(
@@ -363,6 +363,8 @@ def _cmd_ingest(args: argparse.Namespace, factory: EngineFactory) -> int:
             "（跨进程删除留孤儿，下一次全量重建清理）",
             file=sys.stderr,
         )
+    for warning in report.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     for warning in report.errors[:5]:
         print(f"warning: {warning}", file=sys.stderr)
     if len(report.errors) > 5:

@@ -119,7 +119,8 @@ def test_two_branches_isolated_but_second_reuses_vectors(tmp_path: Path) -> None
     assert main_identity.identity_key != branch_identity.identity_key
 
     # ② 复用：第二个分支只为新增内容付费（shared.py 走缓存，不重嵌）
-    assert branch_report.chunks_reused > 0, "第二个分支必须复用已有向量"
+    #    TASK-114 起"按内容复用向量"记在 ``chunks_deduped``；``chunks_reused`` 只表示文件级对账。
+    assert branch_report.chunks_deduped > 0, "第二个分支必须复用已有向量"
     newly_embedded = len(provider.texts) - texts_after_main
     assert newly_embedded < branch_report.chunks_new, (
         f"第二个分支不应全量重嵌：新增嵌入 {newly_embedded} 条 vs chunks {branch_report.chunks_new}"

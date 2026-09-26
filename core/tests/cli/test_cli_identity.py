@@ -236,3 +236,41 @@ def test_branch_identity_material_matches_documented_formula(tmp_path: Path) -> 
 
     expected = hashlib.sha256(f"{remote}\x00main".encode()).hexdigest()
     assert repo_identity(repo).identity_key == expected
+
+
+def test_branch_switch_surfaces_index_displacement_warning(
+    tmp_path: Path, engine: Engine
+) -> None:
+    """TASK-114 / P2-7：换分支 = 换身份 = 从零全量重嵌 → 必须给出一条可操作告警。
+
+    为什么需要它：D-29 + TASK-111 让分支进身份后，同一仓库的另一个分支会拿到全新的
+    projectId，索引为空；下一次 ingest 会**静默**重嵌整仓（靶场实测 4.58M token）。
+    本卡不做"接管旧索引"（冻结设计，换分支是否复用旧目录需编排者裁决），但至少不再沉默。
+    """
+    remote = "https://example.com/team/zace.git"
+    root = _git_repo(tmp_path / "zace", remote=remote)
+    try:
+        _commit_all(root)
+        subprocess.run(
+            ["git", "-C", str(root), "branch", "-M", "main"], check=True, capture_output=True
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:  # pragma: no cover
+        pytest.skip(f"环境不可用 git：{exc}")
+
+    first, _ = engine.resolve_repo(root)
+    first_report = engine.ingest_repo(first.project_id, root)
+    assert first_report.warnings == (), "首个分支是正常的冷启动，不该告警"
+
+    subprocess.run(
+        ["git", "-C", str(root), "checkout", "-qb", "feature/displacement"],
+        check=True,
+        capture_output=True,
+    )
+    second, _ = engine.resolve_repo(root)
+    assert second.project_id != first.project_id, "分支必须参与身份"
+
+    report = engine.ingest_repo(second.project_id, root)
+
+    assert any("全量重嵌" in warning for warning in report.warnings), report.warnings
+    # 索引建好后再次 ingest 属于增量，不应再告警。
+    assert engine.ingest_repo(second.project_id, root).warnings == ()

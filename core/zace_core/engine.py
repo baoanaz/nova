@@ -522,6 +522,7 @@ class Engine:
         identity = repo_identity(root)
         handle = self.resolve_project(identity.identity_key, identity.display_name)
         self._repo_roots[handle.project_id] = Path(root).expanduser().resolve()
+        self._record_repo_identity(handle.project_id, identity)
         return handle, identity
 
     def set_query_cache(self, cache: object | None) -> None:
@@ -619,9 +620,13 @@ class Engine:
             raise EngineError(f"仓库路径不是目录：{repo}")
         self._repo_roots[project_id] = repo
         scan = plan_scan(repo, self.read_manifest(project_id))
+        # 位移诊断要在 ingest 之前算：ingest 一跑，项目就不再是"空索引"了（P2-7）。
+        warning = self._displacement_warning(project_id, repo)
         report = self._ingest(project_id, scan.changes, full=full)
         if scan.errors:
             report = replace(report, errors=report.errors + scan.errors)
+        if warning:
+            report = replace(report, warnings=report.warnings + (warning,))
         self.write_manifest(project_id, repo, scan.hashes)
         return report
 
@@ -1192,6 +1197,84 @@ class Engine:
         except Exception as exc:  # noqa: BLE001 - 缓存不可用不得阻断索引
             logger.warning("embedding 缓存不可用，退化为项目内复用：%s", exc)
             return None
+
+    # ------------------------------------------------------------------ 索引位移诊断（P2-7）
+
+    def _project_meta(self, project_id: str) -> dict[str, object] | None:
+        """读项目 ``project.json``；不存在/损坏返回 ``None``（诊断信息不得阻断索引）。"""
+        path = self.project_dir(project_id) / PROJECT_META_FILENAME
+        if not path.exists():
+            return None
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _record_repo_identity(self, project_id: str, identity: RepoIdentity) -> None:
+        """把 D-29 身份的输入（remote / 相对路径 / 分支）记进 ``project.json``。
+
+        为什么需要：分支进身份后，"换分支/换目录 = 换 projectId = 从零重嵌"（TASK-111 的
+        已知代价）。记下这三个输入，:meth:`_displacement_warning` 才能在"新项目为空"时
+        找回同一仓库的其它分支索引，把一次静默的 4.58M token 全量重嵌变成一条可操作告警。
+
+        纯诊断字段：写失败只记日志，不影响任何索引语义。
+        """
+        meta = self._project_meta(project_id)
+        if meta is None:
+            return
+        fields = {
+            "remote_url": identity.remote_url,
+            "repo_path": identity.repo_path,
+            "branch": identity.branch,
+        }
+        if all(meta.get(key) == value for key, value in fields.items()):
+            return
+        meta.update(fields)
+        try:
+            (self.project_dir(project_id) / PROJECT_META_FILENAME).write_text(
+                json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError as exc:
+            logger.warning("project.json 写入失败（不影响索引）：%s", exc)
+
+    def _displacement_warning(self, project_id: str, root: str | Path) -> str | None:
+        """索引位移告警（P2-7 的"只告警"版本）：当前项目为空、同一仓库的其它分支已有索引。
+
+        不实现"接管旧索引目录"——那会改变 D-29/TASK-111 的冻结口径，属编排者裁决范围。
+        这里只保证"不会再静默烧 token"：告警写进 ``IngestReport.warnings``（CLI 会打印）。
+        """
+        identity = repo_identity(root)
+        self._record_repo_identity(project_id, identity)
+        if identity.remote_url is None:
+            return None
+        with Store.open(self.project_dir(project_id)) as store:
+            if store.counts()["files"] > 0:
+                return None  # 已有索引：本次是增量，不存在全量重嵌
+        projects_root = self._data_root / PROJECTS_DIRNAME
+        if not projects_root.is_dir():
+            return None
+        siblings: list[str] = []
+        for meta_path in sorted(projects_root.glob(f"*/{PROJECT_META_FILENAME}")):
+            if meta_path.parent.name == project_id:
+                continue
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(meta, dict) or meta.get("remote_url") != identity.remote_url:
+                continue
+            if (meta.get("repo_path") or "") != identity.repo_path:
+                continue
+            siblings.append(str(meta.get("display_name") or meta_path.parent.name))
+        if not siblings:
+            return None
+        return (
+            "检测到同一仓库的其它分支/目录已有索引（"
+            + "、".join(siblings[:5])
+            + "）：当前分支身份不同，本次将从零全量重嵌。"
+            "这是 D-29 分支隔离的已知代价（TASK-114 只告警、不接管旧索引；接管与否待编排者裁决）。"
+        )
 
     @contextmanager
     def _open_project(

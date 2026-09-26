@@ -30,7 +30,8 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -286,6 +287,21 @@ class Store:
                 (key, value),
             )
 
+    @contextmanager
+    def write_batch(self) -> Iterator[None]:
+        """把一批单文件写合并进**一个**写事务（TASK-114 / P1-3）。
+
+        为什么需要它：冷启动逐文件 ``BEGIN IMMEDIATE`` + ``COMMIT`` 在 langchain 规模下
+        仅提交开销就有 3.3s（2986 个事务）。这里开一个外层事务，内部每次
+        :meth:`apply_file_change` 的 ``transaction()`` 自动退化为 ``SAVEPOINT``——
+        **单文件失败隔离不变**（失败只回滚该文件的保存点），整批写只在最后提交一次。
+
+        代价：写锁持有到整批结束、失败时整批回滚（比"留半成品"更符合 ingest 的原子语义）、
+        WAL 在提交前持续增长。调用方负责把批的大小控制在合理范围。
+        """
+        with transaction(self._conn):
+            yield
+
     # ------------------------------------------------------------------ 写路径
 
     def apply_file_change(
@@ -308,6 +324,11 @@ class Store:
         - ``generated``（TASK-REVIEW-RUNTIME P2-5）由**扫描/索引期**传入（见
           :mod:`zace_core.pipeline.generated`）。此列以前硬编码为 0，导致 rerank 只能靠
           文件名约定代理，无法识别内容 banner（如 ``DO NOT EDIT`` 头）。
+
+        **冷启动快路径（TASK-114 / P1-3）**：先按主键探测 ``files`` 是否有本路径。
+        没有 ⇒ 本文件从未入库 ⇒ 旧 chunks/symbols/spec_blocks/unresolved_refs 必然为空
+        （写入与删除都成对发生），于是跳过旧行定位 SELECT、FTS rowid SELECT 与 4 条 DELETE。
+        实测这些空转在 langchain 冷启动占 11.4s 中的绝大部分，而真正的行插入只要 1.1s。
         """
         file_path = parsed.path
         new_chunks = list(chunks)
@@ -325,24 +346,32 @@ class Store:
                 )
 
         with transaction(self._conn) as conn:
-            old_rows = conn.execute(
-                "SELECT id, content_hash FROM chunks WHERE file_path = ? ORDER BY rowid",
-                (file_path,),
-            ).fetchall()
+            known_file = (
+                conn.execute("SELECT 1 FROM files WHERE path = ?", (file_path,)).fetchone()
+                is not None
+            )
+            if known_file:
+                old_rows = conn.execute(
+                    "SELECT id, content_hash FROM chunks WHERE file_path = ? ORDER BY rowid",
+                    (file_path,),
+                ).fetchall()
+                old_symbols = conn.execute(
+                    "SELECT id, fqn FROM symbols WHERE file_path = ? ORDER BY rowid",
+                    (file_path,),
+                ).fetchall()
+            else:
+                old_rows, old_symbols = [], []
             old_by_id = {str(r["id"]): str(r["content_hash"]) for r in old_rows}
             old_hashes = set(old_by_id.values())
 
-            old_symbols = conn.execute(
-                "SELECT id, fqn FROM symbols WHERE file_path = ? ORDER BY rowid", (file_path,)
-            ).fetchall()
-
             self._apply_spec_ref_cascade(conn, file_path, old_symbols, parsed)
 
-            _delete_fts_for_file(conn, file_path)
-            conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
-            conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
-            conn.execute("DELETE FROM spec_blocks WHERE file_path = ?", (file_path,))
-            conn.execute("DELETE FROM unresolved_refs WHERE file_path = ?", (file_path,))
+            if known_file:
+                _delete_fts_for_file(conn, file_path)
+                conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
+                conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
+                conn.execute("DELETE FROM spec_blocks WHERE file_path = ?", (file_path,))
+                conn.execute("DELETE FROM unresolved_refs WHERE file_path = ?", (file_path,))
             old_fqns = {str(r["fqn"]) for r in old_symbols}
             edge_sources = old_fqns | {s.fqn for s in parsed.symbols} | {
                 e.source_fqn for e in parsed.edges

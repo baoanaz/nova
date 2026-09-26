@@ -46,7 +46,7 @@ import httpx  # noqa: E402
 from zace_core.chunking.fingerprint import stored_fingerprint  # noqa: E402
 from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
 from zace_core.engine import Engine  # noqa: E402
-from zace_core.pipeline.indexer import _embed_window_size  # noqa: E402
+from zace_core.pipeline.embedding_sink import embed_window_size  # noqa: E402
 from zace_core.storage import Store  # noqa: E402
 
 
@@ -343,7 +343,7 @@ def main() -> int:
         },
         "provider_meter": {
             "peak_rss_mb": round(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024, 1),
-            "embed_window_chunks": _embed_window_size(provider),
+            "embed_window_chunks": embed_window_size(provider),
             "embedding_window_s": round(counted.window_s, 2),
             "network_busy_s": round(union_seconds(client.embedding_intervals), 2),
             "upsert_total_s": round(upsert_meter.total_s, 2),

@@ -11,6 +11,7 @@
 | `build_indexes.sh` | 三靶场的**持久索引**建/复用（未来测试的唯一入口，缺哪个建哪个） | ✅ | ✅ | 烧 token（首次） |
 | `ingest_probe.py` | 真实 ingest 路径 + 进程内计量：响应 MB / API token / 网络在飞 / 嵌入窗口 / upsert / 峰值 RSS | ✅ | ✅ | 烧 token |
 | `local_only_probe.py` | **零网络地板**：解析+切分+SQLite/FTS+建图+入库要多久（判定"瓶颈是不是网速"） | ❌ | ✅（临时根） | **免费** |
+| `coldstart_probe.py` | **阶段级分解**：本地段/网络段逐阶段墙钟（jieba、SQLite、JSON 解码、LanceDB、背压等待）、RSS 曲线、HTTP TTFB/下载细分 | ❌ | ✅（临时根） | local-only 免费 / full 烧 token |
 | `ttfb_probe.py` | 只调 `/v1/embeddings`、不落盘：并发下的 TTFB 与聚合吞吐分解 | ✅ | ❌ | 少量 token |
 | `throughput_probe.py` | 固定样本的批量吞吐扫描（并发 / 批大小 / 预算） | ✅ | ❌ | 少量 token |
 | `profile_repo.py` | 仓库画像：文件 / chunk / token 分布（免 API，出题与估算用） | ❌ | ❌ | 免费 |
