@@ -1,11 +1,18 @@
-# zace 项目交接说明（2026-09-26 更新）
+# zace 项目交接说明（2026-09-26 更新；2026-10-04 增补）
 
 > **给接手 AI 的第一份文档**。读完这一份，你就知道：项目是什么、做到哪了、下一步做什么、别踩哪些坑。
 > 详细任务清单在 `docs/tasks/README.md`；协作流程在 `docs/plan/orchestration.md` 与 `docs/plan/multi-ai-worktrees.md`。
 > **跑基准前先读 [`benches/README.md`](benches/README.md)「新会话从这里开始」**：三靶场（`leveldb`/`HelloAgents`/`langchain`）的索引已持久化在 `/root/.zace/bench/voyage-4-lite-d1024`，**复用即可、不要再 ingest**；
 > 设备绑定纪律与报告索引见 `benches/results/README.md`。
 >
-> **2026-09-26 快照（先看这段）**：
+> **2026-10-04 增补**：
+> - 通读代码后整理了**可优化项待办** [`docs/plan/optimization-backlog.md`](docs/plan/optimization-backlog.md)
+>   （检索质量 Q1–Q4 / 查询延迟 L1–L5 / 同步路径 S1–S3 / 架构与可维护性），**新卡优先从这里挑**；
+> - 纠正：**TASK-109 早已合并**（`5b60fc4`，2026-09-16），任务板此前误标 pending，现已归档；
+> - 重要发现（待实测）：冷启动基准走的是 `zace-core ingest` 整仓路径，而真实接入 `npx zace-client`
+>   是 ≤1MB 串行分批 + 请求内同步 ingest，冷启动优化在生产路径上未必兑现（backlog S1/S2）。
+>
+> **2026-09-26 快照**：
 > - `main @ 3953d9a` ｜ ruff ✅ ｜ 依赖方向 ✅ ｜ **1340 passed, 9 skipped**（core 771 / service 552 / root 17）｜ CI（python + web）✅
 > - 本轮完成**冷启动优化三连**：TASK-114（索引冷启动，langchain 真实 API 131.5s→77.6s）、
 >   TASK-115（向量阶段多窗口并行，79.5s→**63.3s**）、TASK-116（硬件配置档案）。
@@ -14,10 +21,10 @@
 > - 当前 langchain 冷启动账（K=2 / 真实 API / 63.3s）＝ **网络窗口 34.0s + 消费者本地 ~17s + 尾窗/GIL ~12s**；
 >   生产者本地 24.5s 基本被网络盖住。**硬地板是 API 配额**：3.56M token ÷ 16M TPM ≈ **13.4s**。
 > - 质量护栏（各自新建索引的 A/B）：leveldb recall@5 **1.000**、HelloAgents **0.842**；负例 1/1 通过。
-> - 活跃卡只剩 **TASK-109 / TASK-093 / TASK-023**（见 §3）；运维侧 3 件小事也在 §3。
+> - 活跃卡只剩 **TASK-093 / TASK-023**（见 §3；TASK-109 已合并，见 2026-10-04 增补）；运维侧 3 件小事也在 §3。
 >
 > **留给架构优化的已知入口（2026-09-26 重排）**：
-> ① 检索的**符号级定位偏弱**——`.h/.cc` 与同主题 doc 互串（qa-quality §4-1）→ TASK-109；
+> ① 检索的**符号级定位偏弱**——`.h/.cc` 与同主题 doc 互串（qa-quality §4-1）→ backlog Q2/Q3（TASK-109 补的是“池内未进包”，不解决这一项）；
 > ② **负例可回答性阈值偏宽**——名字沾边即判 `answerable`（§4-4）；
 > ③ 冷启动再压缩只剩两条路：**减少 token 总量**（chunk 策略，有质量代价）或**升 TPM 配额**；
 >    想把"消费者本地那 ~5s"也藏进网络，需要动 provider 内部（取回与解码分离）；
@@ -113,15 +120,14 @@ Voyage 嵌入：POST https://api.voyageai.com/v1/embeddings "200 OK"
 
 ## 3. 下一步做什么（2026-09-26）
 
-### 活跃卡（只有这三张）
+### 活跃卡（只有这两张）
 
 | 卡 | 标题 | 硬依赖 | 状态 |
 |---|---|---|---|
-| [TASK-109](docs/tasks/TASK-109-EvidenceGap二轮补检.md) | Evidence-Gap 二轮补检（检索质量，用户点名"下一轮重点"） | TASK-108 ✅ | **pending** |
 | [TASK-093](docs/tasks/TASK-093-真实数据闭环.md) | 真实使用数据采集闭环（**不含调参**） | TASK-084 ✅ / TASK-091 ✅ | **pending** |
 | [TASK-023](docs/tasks/TASK-023-真实场景用例采集.md) | 真实场景用例采集（由 TASK-093 落地，不单独开工） | TASK-040 ✅ | **pending** |
 
-**推荐顺序**：TASK-109（搜得不够全）→ TASK-093（量不准）→ TASK-023 随 093 回填。
+**推荐顺序**：TASK-093（量不准）→ TASK-023 随 093 回填；可并行从 [`optimization-backlog.md`](docs/plan/optimization-backlog.md) 挑无需授权的项（Q1/Q2/L1/L2/S3 等）开卡。
 质量参数（R29/R30）**仍未解冻**，需用户单独授权——TASK-050 暂不开卡。
 
 ### 本轮性能工作（已完成并合并，2026-09-26）
@@ -254,7 +260,7 @@ uv run pytest -o addopts="" -q      # 注意：不加 -o addopts="" 看不到汇
 
 | 项 | 值 |
 |---|---|
-| **仓库根** | `/root/xuwenzheng/ace/zace`（**2026-09-26 复核**；历史文档里的 `~/github/ACE/zace`、`/home/...` 路径在本机不存在） |
+| **仓库根** | VPS：`/root/xuwenzheng/ace/zace`（**2026-09-26 复核**）；开发机（WSL）：`/home/xuwenzheng/github/ace/zace`（2026-10-04 复核，注意小写 `ace`；`git worktree list` 里 `.../ACE/zace-lane-*` 均已 prunable）。§6 其余条目是 VPS 的事实 |
 | **泳道工作区** | `/root/xuwenzheng/ace/zace-lane-{a..j}`——**注意**目录里的 `.git` 可能指向已消失的旧路径（以 `git worktree list` 为准）。本轮实践：临时 `git worktree add -b <branch> /root/xuwenzheng/ace/zace-<用途> main`，收工 `git worktree remove` + `git branch -d` |
 | Python | 3.12（uv 管理；`uv sync --all-packages --all-extras` —— 只 `uv sync --frozen` 不会装 pytest/ruff） |
 | Node / npm | v24.15.0 / 11.12.1（**CI 用 Node 22**；本机 Node 24 跑 web 套件会出现 jsdom/undici 的 `AbortSignal` 报错，别拿它当 web 判据） |
@@ -319,7 +325,7 @@ startup_timeout_ms = 60000
 | # | 缺口 | 严重度 | 处置 |
 |---|---|---|---|
 | 1 | ~~MCP 面仍未做归属校验~~ **已修复**（TASK-089 已合并，实测 bob 越权两工具均拦） | ✅ | done |
-| 2 | `/healthz` 免鉴权且**列出全部 projectId/项目进度**（枚举面） | 🟡 | **仍未处理**（2026-09-26 复核：`ops.py` 的 `_project_progress` 照旧返回 `projects`，且路由无鉴权依赖） |
+| 2 | `/healthz` 免鉴权且**列出全部 projectId/项目进度**（枚举面） | 🟡 | **仍未处理**（2026-10-04 再复核仍在，已收进 backlog A2；2026-09-26 复核：`ops.py` 的 `_project_progress` 照旧返回 `projects`，且路由无鉴权依赖） |
 | 3 | ~~日志只在 stdout，无持久化~~ **已修复**（TASK-090，文件轮转 + trace id 查询） | ✅ | done |
 | 4 | ~~`ask_project` 未接 LLM~~ **已修复**（TASK-088，实测 citation_coverage=1.0） | ✅ | done |
 | 5 | ~~`next_queries` 已生成但不渲染~~ **已修复**（TASK-087） | ✅ | done |
@@ -367,7 +373,7 @@ startup_timeout_ms = 60000
 ## 11. 下一步建议（给接手 AI）
 
 1. **先读**：本文件（尤其顶部"2026-09-26 快照"）→ `docs/tasks/README.md` → `docs/plan/orchestration.md`（泳道模式、契约流程）；
-2. **挑卡**：只剩 TASK-109 / TASK-093 两张，互相独立可并行（TASK-023 随 093 回填）；
+2. **挑卡**：活跃卡只剩 TASK-093（TASK-023 随 093 回填）；新卡从 `docs/plan/optimization-backlog.md` 挑；
 3. **动性能参数前**：先读 `configs/profiles/README.md`（旋钮含义、内存实测、命名约定、"窗口不能按消费者切小"），
    改完把实测回填到对应档案；
 4. **别踩**：`docs/design/**`、`docs/contracts/**`、`core/zace_core/{types,interfaces,hashing}.py` 是冻结面；

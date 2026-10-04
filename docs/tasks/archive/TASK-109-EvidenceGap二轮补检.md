@@ -1,6 +1,6 @@
 # TASK-109：Evidence-Gap 驱动的二轮补检（D-19 落地）
 
-> 状态：pending（**下一轮重点**）｜ 阶段：Phase 5+（质量）
+> 状态：done（已合并 `5b60fc4`，2026-09-16；2026-10-04 补改状态并归档）｜ 阶段：Phase 5+（质量）
 > 硬依赖：TASK-108（已完成，提供基线）｜ soft 依赖：TASK-110（专项测试项）
 > 交付物所有权：
 > - `core/zace_core/retrieval/gap.py`（**新建**）

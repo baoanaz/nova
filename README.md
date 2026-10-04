@@ -18,19 +18,19 @@
 
 | 目录 | 内容 | 状态 |
 |---|---|---|
-| `core/` | **zace-core** 纯库（Module/01-04）：解析 → 切片 → 存储 → 检索 → 组装 | 可用（Phase 1 完成） |
-| `service/` | **zace-service** 外壳（Module/06）：HTTP API、索引 job、MCP 端点 | 可用（M2a 完成） |
+| `core/` | **zace-core** 纯库（Module/01-04）：解析 → 切片 → 存储 → 检索 → 组装 | 可用（已上线） |
+| `service/` | **zace-service** 外壳（Module/06）：REST API、MCP 端点 `/mcp`、鉴权/租户、索引 job、审计/统计/配额、LLM 总结 | 可用（已上线） |
 | `client/` | **zace-client**（Rust，Module/05）：MCP stdio + 本地同步代理 | 可用 |
-| `npm/` | 分发包装器：`npx zace-client` 按平台取二进制并拉起 | 已发布 `zace-client@0.0.1` |
-| `web/` | **zace-web** SPA（Module/07）：管理面 + Playground，只消费 service 的 REST API | 骨架（Phase 4） |
+| `npm/` | 分发：主包 `zace-client`（仅启动器）+ 6 个平台子包（`optionalDependencies`，D-48/D-49） | 已发布（当前 `0.0.8`，以 `npm/package.json` 为准） |
+| `web/` | **zace-web** SPA（Module/07）：登录/控制台/接入指南/API Key/历史/设置/管理员后台，只消费 service 的 REST API（Playground 已于 TASK-082 移除） | 可用（已上线） |
 | `benches/` | golden 集与基准跑分（`golden/` 用例、`bakeoff/` 模型选型、`embed-bench/` 索引计量、`results/` 报告与证据） | — |
 | `docs/design/` | 设计文档（`INDEX.md` 为入口，决策以 §3 决策登记表为准） | 活文档 |
 | `docs/contracts/` | 冻结契约（DDL / JSON schema / OpenAPI / MCP tools）——变更须走编排流程 | 冻结 |
-| `docs/plan/` | roadmap / 编排流程 / 契约清单 / 云端 MCP 就绪度报告 | — |
+| `docs/plan/` | roadmap / 编排流程 / 多 AI 工作区纪律 / 索引性能计划 / **可优化项待办**（`optimization-backlog.md`） | — |
 | `docs/tasks/` | 任务板与任务卡（实施入口：`README.md` 是任务板） | — |
-| `docs/handbook/` | 操作手册（M2a 验收、云端 embedding 接入、provider 切换） | — |
-| `scripts/` | 工具脚本：依赖方向检查、版本一致性、泳道管理、冒烟 | — |
-| `.github/workflows/` | `ci.yml`（推送触发）+ `release.yml`（`v*` tag 触发五平台构建） | — |
+| `docs/handbook/` | 操作手册：上手与 Agent 接入、部署（VPS/WSL）、运维（provider 切换、白名单、trace id）、发布（npm）、基准、隐私 | — |
+| `scripts/` | 工具脚本：依赖方向检查、版本/平台子包一致性、客户端发布、泳道管理、冒烟 | — |
+| `.github/workflows/` | `ci.yml`（推送触发）+ `release.yml`（`v*` tag 触发六平台构建 + npm 发布） | — |
 | `server.json` | MCP registry 清单（stdio 传输 + runtime 参数） | — |
 
 **依赖方向（CI 强制）**：`web, client → service → core`，core 零上层依赖（D-33/D-34）。
@@ -43,15 +43,17 @@ core/zace_core/            service/zace_service/        client/src/
 ├── chunking/  切片 + unresolved 两阶段解析             ├── blobref.rs   CF-02 哈希
 ├── storage/   SQLite+FTS5（jieba 双侧预分词）          ├── ignore.rs    D-28 三层忽略
 ├── vectors/   LanceDB + hash 复用对账                  ├── index.rs     本地缓存与对账
-├── retrieval/ exact/bm25/vector/rrf/expand/rerank      ├── remote.rs    CF-05 客户端
+├── retrieval/ exact/literal/bm25/vector/rrf/fusion/    ├── remote.rs    CF-05 客户端
+│              expand/rerank/gap（二轮补检）
 ├── contextpack/ 组装 + Markdown 渲染（D-21）           ├── tools.rs     CF-06 两工具
 ├── embedding/ 双实现：本地 ONNX / OpenAI 兼容 API      ├── protocol.rs  MCP stdio
 ├── pipeline/  ignore 规则 / source / indexer           └── main.rs      CLI 入口
 ├── text/      CJK 分词（D-45）
-├── engine.py  引擎装配        routers/  auth|projects|query|sync|ops
+├── engine.py  引擎装配        routers/  auth|projects|query|sync|ops|admin
 ├── hashing.py CF-02 哈希      mcp.py    /mcp 端点（HTTP 形态）
 ├── types.py   CF-01 类型      runtime.py EngineManager（懒构造/懒重扫）
 └── interfaces.py CF-07/08/09  indexer.py 后台索引 + 进度
+                               metadb.py 用户/Key/审计/配额   answer.py LLM 总结（多协议）
 ```
 
 `core/{types,interfaces,hashing}.py` 与 `docs/contracts/**` 是**冻结契约**：改它们必须走
@@ -84,12 +86,11 @@ uv run pytest                           # 测试
 
 ## 状态
 
-V1 开发中。已完成：Phase 0 骨架 ｜ Phase 1 = core 最小闭环 ｜ M2a = service + 本地 MCP。
-可用接入（最终形态）：`npx zace-client --base-url <你的服务地址>`，暴露 `search_context` / `ask_project`
-两个工具，见 `npm/README.md`。
+V1 已上线：网页注册/登录 → 创建 API Key → `npx zace-client --base-url <服务地址> --token <Key>` 接入 Agent，
+暴露 `search_context` / `ask_project` 两个工具（见 `npm/README.md`）。当前重心是检索质量与性能打磨。
 
 设计与分工入口：`docs/design/INDEX.md`（设计）、`docs/tasks/README.md`（任务板）、
-`docs/evidence/task-051-cloud-mcp-readiness.md`（云端接入的已知缺口，**含服务端鉴权未落地**这一硬前置）。
+`docs/plan/optimization-backlog.md`（可优化项待办）。最新现状以 `HANDOFF.md` 顶部快照为准。
 
 ## 许可
 
