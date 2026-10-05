@@ -2,7 +2,7 @@
 
 来源：Module/04 §2（AnswerProvider）、Module/06 §1（ContextEngine）、
 Module/01 §2.4 + D-44（EmbeddingProvider）、Module/01 §2.2（Parser）。
-维护者：编排者；变更必须走 docs/plan/orchestration.md §4 契约变更协议。
+维护者：编排者；变更前须在任务卡执行记录里提契约变更申请、等裁决。
 
 实现位置约定（各卡交付物）：
   ContextEngine      → core/zace_core/engine.py        （TASK-007/013；TASK-031 接入 service）

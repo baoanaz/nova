@@ -2,7 +2,7 @@
 
 > **给明天接手优化的会话**：这份文档只讲"慢在哪、怎么改、怎么验收"。
 > 全部数字都是**本机实测**，不是估算；原始计量 JSON 已归档在 `/root/.zace/bench/probe-2026-09-25/`（`/tmp` 的副本会在重启后丢失）。
-> 读之前先读根 `HANDOFF.md` 与 `benches/README.md`；改代码前先读 `AGENTS.md`（工作区隔离 / 契约流程）。
+> 读之前先读根 `HANDOFF.md` 与 `benches/README.md`；改代码前先读契约纪律（`docs/contracts/PROCESS.md`）。
 
 ---
 
@@ -139,7 +139,7 @@ t=104.0s   676 MB   ← _embed_and_upsert 返回后立刻回落
   - 重跑 `coldstart_probe.py` 看 `sqlite.jieba_segment` 掉到 ~0.5s
 - **风险 / 纪律**
   - **这是检索语义变更**，不是纯性能改动：会改变 `chunks_fts` 内容 → 必须重建索引（触发 `full_reparse`）
-  - 需要先按 `docs/plan/orchestration.md` §4 走流程修订 D-45 的口径；不要静默改
+  - 需要先走契约变更流程（在任务卡执行记录里提申请、等裁决）修订 D-45 的口径；不要静默改
 
 ### 【P0-2】整仓向量以 Python list 常驻（内存 + 时间双杀） —— -700MB
 
@@ -268,7 +268,7 @@ uv run pytest -o addopts="" -q
 ## 6. 未决问题（需要用户 / 编排者拍板）
 
 1. **去 jieba 是否走 D-45 修订？** 这是检索语义变更（改变 `chunks_fts` 内容），不能静默做——需要设计口径确认 + 全量 golden 回归。
-2. **索引身份变更怎么处理？** D-29 / TASK-111 是冻结设计，改它要走 `orchestration.md` §4。
+2. **索引身份变更怎么处理？** D-29 / TASK-111 是冻结设计，改它要走契约变更流程。
 3. **"10 分钟"的真实场景是哪个仓库、走哪条链路？**（CLI `zace-core ingest` / client→service 上传 / 本地 ONNX）——本机单位成本是 6.3ms/chunk，10 分钟对应约 10 万 chunk。
 4. **是否买 DMIT 2核2G？** 结论：**可以买，但必须先做 P0-2**（否则 langchain 每次索引都踩在换页边缘）。若预算允许，倾向 2核4G。
 5. **本报告是否要落成 `benches/results/` 的正式报告**（含 HelloAgents + langchain 双靶场）？
@@ -277,7 +277,6 @@ uv run pytest -o addopts="" -q
 
 ## 7. 纪律提醒
 
-- 本文件与全部探针都在**主工作区**，未提交。开工前按 `AGENTS.md` §0 认领 lane worktree，**不要在 `/root/xuwenzheng/ACE/zace` 里直接改代码**。
 - P0-1 / P2-7 涉及设计口径变更，**先提申请、等裁决**，不要静默偏离。
-- 改完必须回填任务卡"执行记录" + `docs/tasks/README.md` 状态，并按 `orchestration.md` §3 出报告。
+- 改完必须回填任务卡"执行记录" + `docs/tasks/README.md` 状态。
 - 计量口径别混：`ingest 墙钟`（服务端口径）≠ `CLI 墙钟`（含 3.5–3.9s 导入）；`网络在飞并集` ≠ 各请求耗时之和（langchain 是 37.7s vs 117.8s）。

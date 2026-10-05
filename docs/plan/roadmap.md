@@ -25,7 +25,7 @@ M1 是唯一当前需要"战之能胜"的目标；M1 不达标（检索质量明
 | P0-1 | monorepo 骨架 + 工具链 + CI | `core/ service/ client/ web/ benches/ docs/`、root `pyproject.toml`、`.github/workflows/ci.yml`、`scripts/check_dependency_direction.py` |
 | P0-2 | 设计文档迁入 + 决策登记 | `docs/design/`（含 MANIFEST.sha256）、INDEX §3 更新（D-39 定稿、D-44/D-45 新增） |
 | P0-3 | 契约冻结 | `docs/contracts/*`、`core/zace_core/{types,interfaces,hashing}.py` |
-| P0-4 | 编排体系 | `docs/plan/orchestration.md`、`docs/tasks/README.md`、任务卡模板与 Phase 1 全部卡片 |
+| P0-4 | 任务体系 | `docs/tasks/README.md`、任务卡模板与 Phase 1 全部卡片 |
 | P0-5 | benches 骨架 | `benches/README.md`、`benches/golden/` 样例与格式定义 |
 
 ### Phase 1 — zace-core 最小闭环（M1，主战场）

@@ -10,7 +10,7 @@
 - **先测后改**：标了“需实测”的项，先用 profiler / trace 确认量级再开卡，不要按本文件的推断直接动手。
 - **R29/R30 冻结仍有效**：凡是改变 rerank 权重、可回答性阈值、装填比例的项（标“⚠️ 需授权”），
   必须等用户单独授权（TASK-050 / TASK-093 的数据），不得在现有 golden 上拟合。
-- **契约面**：标“契约”的项涉及 `docs/contracts/**`（含 `index-schema.sql`），走 `docs/plan/orchestration.md` §4。
+- **契约面**：标“契约”的项涉及 `docs/contracts/**`（含 `index-schema.sql`），须先在任务卡执行记录里提申请、等裁决。
 - 质量回归口径：三靶场 `zace-core eval`（recall@5/@10、MRR、负例）**不允许下降**，见 `benches/README.md`。
 
 ## 1. 总览（按“收益 ÷ 成本”排序）

@@ -27,7 +27,7 @@
 | 项 | 值 |
 |---|---|
 | HEAD | `4dfe65c`（`origin/main` 已同步，无未推送提交） |
-| 工作区 | 干净；**无 worktree**（新环境需重建泳道） |
+| 工作区 | 干净；无未提交改动 |
 | 基线三条 | `ruff` clean ｜ 依赖方向 通过 ｜ **668 passed, 2 skipped**（11.4s） |
 | 参考源码 `../source/` | **不存在**（任务卡里的"参考锚点"只能按卡内摘录理解） |
 | 机器 | 12 逻辑核 / 15 GiB 内存 / 938 GiB 空闲磁盘 |
@@ -81,8 +81,7 @@ EMBED_MODE=api EMBED_MODEL=BAAI/bge-m3 EMBED_DIM=1024 \
 
 ## 3. W6 波次：三条泳道
 
-> 划分依据：文件所有权互不重叠（`orchestration.md` §2）、依赖可并行。
-> 泳道工作区需重建：`bash scripts/lane-worktrees.sh create`（本环境尚无 worktree）。
+> 划分依据：文件所有权互不重叠、依赖可并行。
 
 | 泳道 | 任务卡 | 文件所有权（互斥） | 性质 |
 |---|---|---|---|
@@ -194,7 +193,6 @@ U1 之下 38 降级（不派人），但 46 的修法应**顺带覆盖 38 的 `m
 ## 7. 本波验收（编排者收口）
 
 ```bash
-bash scripts/lane-worktrees.sh create          # 重建泳道工作区（本环境首次）
 # 每条泳道完成后：核对报告 → 集成 → 合并
 uv run ruff check . && uv run python scripts/check_dependency_direction.py && uv run pytest -o addopts="" -q
 # 端到端：新靶场索引 + 检索（云端 embedding） + MCP 冒烟

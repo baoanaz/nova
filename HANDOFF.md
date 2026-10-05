@@ -1,7 +1,7 @@
 # zace 项目交接说明（2026-09-26 更新；2026-10-04 增补）
 
 > **给接手 AI 的第一份文档**。读完这一份，你就知道：项目是什么、做到哪了、下一步做什么、别踩哪些坑。
-> 详细任务清单在 `docs/tasks/README.md`；协作流程在 `docs/plan/orchestration.md` 与 `docs/plan/multi-ai-worktrees.md`。
+> 详细任务清单在 `docs/tasks/README.md`。
 > **跑基准前先读 [`benches/README.md`](benches/README.md)「新会话从这里开始」**：三靶场（`leveldb`/`HelloAgents`/`langchain`）的索引已持久化在 `/root/.zace/bench/voyage-4-lite-d1024`，**复用即可、不要再 ingest**；
 > 设备绑定纪律与报告索引见 `benches/results/README.md`。
 >
@@ -222,28 +222,6 @@ return {"status": "answered", "answer": outcome.answer, ...}
 - 需要新增字段/改签名 → 在任务卡"执行记录"写**契约变更申请**，停下来等编排者；
 - **CF-05**（REST 路径与错误信封）、**CF-06**（MCP 工具 schema）是冻结合同。
 
-### 一个工作区一个会话
-
-**一个 AI 会话 = 一个独占 worktree = 一个分支**。
-在**主工作区**（`/root/xuwenzheng/ace/zace`）改代码是禁止的（只用于集成）。
-
-```bash
-cd /root/xuwenzheng/ace/zace
-bash scripts/lane-worktrees.sh status              # 看哪个 lane 空闲（lane 目录可能已失效，以 git worktree list 为准）
-# 本机可直接开临时 worktree（本轮实践）：
-git worktree add -b feature/task-xxx_<缩写><MMDD> /root/xuwenzheng/ace/zace-<用途> main
-# 干完：基线三条绿 → 回填卡片 → commit →（默认不 push；本仓当前由用户授权 AI 直接推 main）→
-#      git worktree remove /root/xuwenzheng/ace/zace-<用途> && git branch -d feature/task-xxx_<缩写><MMDD>
-```
-
-**教训**（真实发生过）：多个会话共用一个目录时，`git commit` 提交到哪个分支取决于
-"谁最后切了 HEAD"，曾导致提交错位、工作被卷进别人的提交。**务必用独立 worktree。**
-
-### lane worktree 可能是旧提交
-
-新建的 lane 处于 `detached HEAD`，可能**落后于 main 很多**（实测出现过停在 21 个提交之前、
-连任务卡文件都不存在的 lane）。**开工前先 `git log --oneline -1` 核对**，不对就从 `main` 开分支。
-
 ### 基线三条（每次提交前必须绿）
 
 ```bash
@@ -260,8 +238,7 @@ uv run pytest -o addopts="" -q      # 注意：不加 -o addopts="" 看不到汇
 
 | 项 | 值 |
 |---|---|
-| **仓库根** | VPS：`/root/xuwenzheng/ace/zace`（**2026-09-26 复核**）；开发机（WSL）：`/home/xuwenzheng/github/ace/zace`（2026-10-04 复核，注意小写 `ace`；`git worktree list` 里 `.../ACE/zace-lane-*` 均已 prunable）。§6 其余条目是 VPS 的事实 |
-| **泳道工作区** | `/root/xuwenzheng/ace/zace-lane-{a..j}`——**注意**目录里的 `.git` 可能指向已消失的旧路径（以 `git worktree list` 为准）。本轮实践：临时 `git worktree add -b <branch> /root/xuwenzheng/ace/zace-<用途> main`，收工 `git worktree remove` + `git branch -d` |
+| **仓库根** | VPS：`/root/xuwenzheng/ace/zace`（**2026-09-26 复核**）；开发机（WSL）：`/home/xuwenzheng/github/ace/zace`（2026-10-04 复核，注意小写 `ace`）。§6 其余条目是 VPS 的事实 |
 | Python | 3.12（uv 管理；`uv sync --all-packages --all-extras` —— 只 `uv sync --frozen` 不会装 pytest/ruff） |
 | Node / npm | v24.15.0 / 11.12.1（**CI 用 Node 22**；本机 Node 24 跑 web 套件会出现 jsdom/undici 的 `AbortSignal` 报错，别拿它当 web 判据） |
 | **配置分层** | `/etc/zace/zace.env`（0600，含真密钥，不进 Git）→ `configs/profiles/<机器标识>.env`（非密钥调优档，进 Git；见 §3 与 `configs/profiles/README.md`） |
@@ -269,7 +246,7 @@ uv run pytest -o addopts="" -q      # 注意：不加 -o addopts="" 看不到汇
 | **docker** | ✅ **29.1.3 可用，daemon 在跑** —— TASK-092 可本地部分验证 |
 | **Playwright** | ✅ chromium 已装（`~/.cache/ms-playwright/chromium-1243`）；`--with-deps` 需 sudo |
 | **http_proxy** | ⚠️ 已设（`http://127.0.0.1:7890`）—— **连本机服务必须 `NO_PROXY=127.0.0.1,localhost`**（`.env` 里已配） |
-| **embedding key** | ✅ `.env`（仓库根与每个 lane 都有，**已被 gitignore**）：Voyage `voyage-4-lite` 主路径 + 硅基流动 `bge-m3` 备选；两者实测 200 |
+| **embedding key** | ✅ `/etc/zace/zace.env`（0600，**不在仓库、不进 Git**）：Voyage `voyage-4-lite` 主路径 + 硅基流动 `bge-m3` 备选；两者实测 200 |
 | **LLM key** | ✅ `.env` 的 `ANSWER_*`（xiugou / deepseek-v4.1-flash），实测 200 |
 | **基准靶场** | `/root/xuwenzheng/ace/benchmark/{leveldb,HelloAgents,langchain}`（**只读**！不要在里面建文件；旧的 `Agent开发/hello-agents` 靶场已不用） |
 | **密钥文件** | `/etc/zace/zace.env`（0600，生产/基准都用它；仓库根**没有** `.env`）。用法：`set -a; source /etc/zace/zace.env; set +a` |
@@ -343,23 +320,9 @@ startup_timeout_ms = 60000
 
 ---
 
-## 9. 协作纪律速查
-
-| 规则 | 说明 |
-|---|---|
-| 一张卡一个会话 | 不并行做多卡；不顺手重构其它模块 |
-| 只管清单内文件 | 任务卡的"交付物所有权"是硬边界；改公共文件先申请 |
-| 推送 | 泳道模式下**只需本地提交**；本仓当前由用户授权 AI 直接 `git push origin main`（禁止 `--force`、禁止移动已有 tag）。合并/评审由编排者（用户）拍板 |
-| 完成即回填 | 卡片"执行记录" + `docs/tasks/README.md` 对应行改 `review` |
-| 有疑问就停 | 契约/设计冲突、需求不明 → 写进"未决问题"并停下，不要自行拍板 |
-| 不夸大验证 | "跑过了"必须有真实输出；没跑的明确写"未验证" |
-
----
-
 ## 10. 交接时的当前现场（2026-09-26）
 
-- **工作区**：主工作区 `/root/xuwenzheng/ace/zace` 在 `main @ 3953d9a`、干净；本轮的临时 worktree
-  （`zace-perf` / `zace-par` / `zace-cfg`）与对应分支已删除，`git worktree list` 只剩主工作区；
+- **工作区**：`/root/xuwenzheng/ace/zace` 在 `main @ 3953d9a`、干净；
 - **运行中的服务**：`zace-service`（systemd，127.0.0.1:8899，配置 `/etc/zace/zace.env`）。
   ⚠️ **推 main 不会自动部署**：服务端跑的是部署时的代码，升级动作见 `docs/handbook/deployment/vps.md` §9；
 - **临时数据根（可安全删除，不影响仓库）**：`/tmp/p0926-*`、`/tmp/t115b-*`、`/tmp/t116-*`（本轮真实 API 冷启动对照）、
@@ -372,11 +335,11 @@ startup_timeout_ms = 60000
 
 ## 11. 下一步建议（给接手 AI）
 
-1. **先读**：本文件（尤其顶部"2026-09-26 快照"）→ `docs/tasks/README.md` → `docs/plan/orchestration.md`（泳道模式、契约流程）；
+1. **先读**：本文件（尤其顶部"2026-09-26 快照"）→ `docs/tasks/README.md`；
 2. **挑卡**：活跃卡只剩 TASK-093（TASK-023 随 093 回填）；新卡从 `docs/plan/optimization-backlog.md` 挑；
 3. **动性能参数前**：先读 `configs/profiles/README.md`（旋钮含义、内存实测、命名约定、"窗口不能按消费者切小"），
    改完把实测回填到对应档案；
 4. **别踩**：`docs/design/**`、`docs/contracts/**`、`core/zace_core/{types,interfaces,hashing}.py` 是冻结面；
    本机（1.9G）整包 `pytest` 单进程可能被全局 OOM 杀（`exit=137`），按 `core/tests` / `service/tests` / `tests` 分三段跑；
-5. **推送**：用户已授权 AI 直接 `git push origin main`；工作区隔离与合并纪律见 `docs/plan/multi-ai-worktrees.md`。
+5. **推送**：用户已授权 AI 直接 `git push origin main`（禁止 `--force`、禁止移动已有 tag）。
    —— 这些依赖 087/088/091 的产出，做完后需要用户参与评审。

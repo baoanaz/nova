@@ -170,7 +170,7 @@ done
 | **P2-3** 候选对象可变污染 | **推迟** | 未做 | 现象已被 `param-sweep` §2 独立发现并留档，无新增信息 |
 | **P2-4** 图扩展 N+1 SQL | **推迟** | 未做 | 当前池约 120，未成为实测瓶颈 |
 | **P2-6** 拆 assembly + 边际效用装填 | **不采纳** | — | 与 `R29/R30` 冻结纪律及"4 类参数敏感度为 0"的实测冲突；且原报告自述"必须离线 replay 对比，不直接替换" |
-| **P2-7** Answer 归属 core/service | **转契约讨论** | 未做 | 判断正确：`interfaces.py` 与 `Module/06 §5` 说 `llm/` 属 core，实际 `core/zace_core/llm/` **不存在**，全在 `service/zace_service/answer.py`。但这要走 `docs/plan/orchestration.md §4` 契约变更流程，**不自行改实现** |
+| **P2-7** Answer 归属 core/service | **转契约讨论** | 未做 | 判断正确：`interfaces.py` 与 `Module/06 §5` 说 `llm/` 属 core，实际 `core/zace_core/llm/` **不存在**，全在 `service/zace_service/answer.py`。但这要走契约变更流程，**不自行改实现** |
 | **§6-3** 删除 `chain_priority` 越界启发式 | **暂不删** | 未做 | 设计文档已标注"建议删除"，但它现在是 `engine.py` 排序键的首位成分，**且为 09-17 两次修复留下**。删除前必须 replay A/B |
 | **§7** 四阶段 Evidence Runtime | **不整体采纳** | — | 见 §4 |
 

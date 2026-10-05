@@ -25,11 +25,11 @@
 | `web/` | **zace-web** SPA（Module/07）：登录/控制台/接入指南/API Key/历史/设置/管理员后台，只消费 service 的 REST API（Playground 已于 TASK-082 移除） | 可用（已上线） |
 | `benches/` | golden 集与基准跑分（`golden/` 用例、`bakeoff/` 模型选型、`embed-bench/` 索引计量、`results/` 报告与证据） | — |
 | `docs/design/` | 设计文档（`INDEX.md` 为入口，决策以 §3 决策登记表为准） | 活文档 |
-| `docs/contracts/` | 冻结契约（DDL / JSON schema / OpenAPI / MCP tools）——变更须走编排流程 | 冻结 |
-| `docs/plan/` | roadmap / 编排流程 / 多 AI 工作区纪律 / 索引性能计划 / **可优化项待办**（`optimization-backlog.md`） | — |
+| `docs/contracts/` | 冻结契约（DDL / JSON schema / OpenAPI / MCP tools）——变更须先提申请、等裁决 | 冻结 |
+| `docs/plan/` | roadmap / 索引性能计划 / **可优化项待办**（`optimization-backlog.md`） | — |
 | `docs/tasks/` | 任务板与任务卡（实施入口：`README.md` 是任务板） | — |
 | `docs/handbook/` | 操作手册：上手与 Agent 接入、部署（VPS/WSL）、运维（provider 切换、白名单、trace id）、发布（npm）、基准、隐私 | — |
-| `scripts/` | 工具脚本：依赖方向检查、版本/平台子包一致性、客户端发布、泳道管理、冒烟 | — |
+| `scripts/` | 工具脚本：依赖方向检查、版本/平台子包一致性、客户端发布、冒烟 | — |
 | `.github/workflows/` | `ci.yml`（推送触发）+ `release.yml`（`v*` tag 触发六平台构建 + npm 发布） | — |
 | `server.json` | MCP registry 清单（stdio 传输 + runtime 参数） | — |
 
@@ -57,7 +57,7 @@ core/zace_core/            service/zace_service/        client/src/
 ```
 
 `core/{types,interfaces,hashing}.py` 与 `docs/contracts/**` 是**冻结契约**：改它们必须走
-`docs/plan/orchestration.md` §4 的流程，实施任务不得直接改。
+契约变更流程（在任务卡执行记录里提申请、等裁决），实施任务不得直接改。
 
 ### 运行时形态
 

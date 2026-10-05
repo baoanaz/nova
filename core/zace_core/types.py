@@ -1,7 +1,7 @@
 """zace-core 冻结数据类型（CF-08/CF-09）。
 
 来源：docs/design/Module/01 §2/§2.4、Module/02 §4、Module/03 §2、Module/04 §2、Module/06 §1。
-维护者：编排者；变更必须走 docs/plan/orchestration.md §4 契约变更协议。
+维护者：编排者；变更前须在任务卡执行记录里提契约变更申请、等裁决。
 检索侧候选（Candidate）字段名与 docs/contracts/contextpack.schema.json 对齐。
 """
 

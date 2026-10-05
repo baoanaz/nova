@@ -1,8 +1,7 @@
 # zace 任务板
 
 > **实施 AI 的唯一入口清单。** 状态值：`pending / in_progress / review / done / blocked`。
-> 规则：认领与回填流程见 [`../plan/orchestration.md`](../plan/orchestration.md) §2；
-> 完成报告模板见同文 §3；契约纪律见 §4。
+> 规则：完成报告与执行记录写在任务卡底部；契约纪律见 [`../contracts/PROCESS.md`](../contracts/PROCESS.md)。
 >
 > **2026-09-15 重建**：历史任务卡（TASK-001 ~ TASK-108）已全部归档到
 > [`archive/`](archive/)，**不再逐卡维护状态**——它们的代码均已合并进 `main`，
@@ -71,8 +70,6 @@ TASK-109（Evidence-Gap 二轮补检）已于 2026-09-16 合并（`5b60fc4`）�
 
 ## 相关文档
 
-- 编排规程与报告模板 → [`../plan/orchestration.md`](../plan/orchestration.md)
-- 工作区隔离纪律 → [`../plan/multi-ai-worktrees.md`](../plan/multi-ai-worktrees.md)
 - 冻结契约与决策登记 → [`../contracts/PROCESS.md`](../contracts/PROCESS.md)
 - 设计意图与决策 → [`../design/INDEX.md`](../design/INDEX.md)
 - 操作手册（部署/基准/隐私） → [`../handbook/README.md`](../handbook/README.md)

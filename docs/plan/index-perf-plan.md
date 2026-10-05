@@ -2,7 +2,6 @@
 
 > 输入：本文档目录下的 [`index-perf-handoff.md`](index-perf-handoff.md)（2026-09-25 本机实测调研）。
 > 任务卡：[`../tasks/TASK-114-索引冷启动性能优化.md`](../tasks/TASK-114-索引冷启动性能优化.md)。
-> 工作区纪律见根 `AGENTS.md` §0（本会话独占 `zace-perf` worktree，主工作区只做集成）。
 
 ---
 
