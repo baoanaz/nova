@@ -131,6 +131,55 @@ regression is fixed, with 17 passed/4 xfailed in targeted review/batch tests.
 The four xfails document three pre-existing graph ownership/error-handling
 issues; they are not claimed fixed. See `AI3-RECOVERY-REVIEW-2ce75ab.md`.
 
+## Checkpoint: tokenizer integrated, pipeline pending
+
+AI2 `df71b42` was received as `c817e37`. Targeted integrated validation:
+103 core tests passed / 4 pre-existing xfails, plus 33 service usage/deferred-sync
+tests passed. All six full-corpus checks match logical SQLite contents, raw FTS
+text, all 20,931 vectors and Tool retrieval output (elapsed-age display excluded).
+
+| Mode | Run 1 | Run 2 | Run 3 | Median | Saved vs original | Gap to 30 |
+|---|---:|---:|---:|---:|---:|---:|
+| debug | 51.026994 | 48.774738 | 45.117031 | 48.774738 | 2.639285 | 18.774738 |
+| release | 38.288822 | 39.214250 | 39.106592 | 39.106592 | 16.900217 | 9.106592 |
+
+Relative to the SQL version, release median improved 2.179487s while debug
+worsened 2.909225s. These sequential cohorts have visible host variability;
+final interleaved controls and removal of non-contributing changes remain due.
+No <30s claim is made. The measured configuration is the original release
+profile plus graph/SQL/tokenizer changes, without the rejected page-cache change.
+
+**Timing interpretation:** this is offline complete-Tool replay using existing
+real Voyage vectors. Fixture lookup, float materialization, runtime vector writes,
+scan/upload/index/graph/checkpoint/readiness/query/return are timed. Remote
+embedding inference, remote network transfer and HTTP response decoding are not.
+Consequently 39.11s is neither a paid Voyage end-to-end result nor a duration to
+which an independently measured API duration can simply be added (work overlaps).
+No paid embedding calls were made in these experiments.
+
+AI1 delivered `f3dc9fc` on `ai1/bounded-sync-pipeline`, but it is NOT integrated
+or performance-accepted. Its handoff runs a complete ingest for each batch.
+A minimal real Store/resolver comparison demonstrates a semantic blocker:
+
+- caller references bare `helper`; helpers `a.helper` and `b.helper` are in
+  different files from the caller.
+- One final graph pass after all files produces both synthesized target edges.
+- Resolving caller + `a.helper` first, then adding `b.helper`, leaves only the
+  first target edge with parsed provenance. The consumed reference is not retried.
+
+Thus per-batch complete ingest cannot be accepted as equivalent merely because
+its mocked protocol tests pass. Preserve the useful session/seal/backpressure
+work, but ensure graph resolution sees the complete symbol set and preserve file
+ordering/recovery boundaries before integration. Rust compilation, heavy recovery
+tests and full pipeline timings remain outstanding. AI1's branch is retained
+separately as work in progress, not deployed.
+
+At the user's request, implementation pauses here for a local backup and remote
+branch checkpoint. Main worktree changes remain outside this integration branch.
+`paired_acceptance.py` is ready for final control/candidate runs: three trials
+per mode and side with alternating pair order. Its 12-trial scheduling logic was
+validated with a temporary mocked runner; real paired acceptance is NOT yet run.
+
 ## Reproduction
 
 Use `benches/embed-bench/acceptance_suite.py` with `--source` pointing to the
