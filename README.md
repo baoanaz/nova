@@ -36,7 +36,7 @@
 注册账户后，进入 **接入指南** 页面，按步骤完成配置，开始您的第一次使用。
 
 <p align="center">
-  <img src="docs/assets/screenshots/connect.png" alt="nova 接入指南：安装 npm 包、配置 MCP 接入和可选的提示词增强" width="100%">
+  <img src="docs/assets/screenshots/connect-nova.png" alt="NOVA 接入指南：安装 npm 包、配置 MCP 接入和可选的提示词增强" width="100%">
 </p>
 
 ## 本地部署

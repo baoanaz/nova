@@ -12,7 +12,8 @@
 | [screenshots/nova-connect.png](screenshots/nova-connect.png) | 接入指南，圆角卡片与方角控件 | 当前构建，API Key 保持空白 |
 | [screenshots/nova-login-mobile.png](screenshots/nova-login-mobile.png) | 手机登录页 | 当前构建，390px 宽度 |
 | [screenshots/nova-dashboard-mobile.png](screenshots/nova-dashboard-mobile.png) | 手机控制台 | 当前构建，合成账户及指标 |
-| [screenshots/connect.png](screenshots/connect.png) | README 快速开始横向截图 | 用户提供的接入指南页面截图 |
+| [screenshots/connect-nova.png](screenshots/connect-nova.png) | README 快速开始横向截图，NOVA 字标版本 | 用户提供的最新接入指南页面截图 |
+| [screenshots/connect.png](screenshots/connect.png) | 接入指南截图兼容路径 | 用户提供的接入指南页面截图 |
 | [screenshots/dashboard.png](screenshots/dashboard.png) | 控制台页面截图 | 当前 UI 演示构建，内容为合成数据 |
 
 ## 放置约定
