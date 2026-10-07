@@ -7,7 +7,8 @@
 | 路径 | 用途 | 来源 |
 |---|---|---|
 | [logo.svg](logo.svg) | README 项目标识，暖白与珊瑚橙配色、代码括号和偏移阴影 | 本项目绘制，采用项目 Unlicense |
-| [screenshots/dashboard.png](screenshots/dashboard.png) | README 控制台预览 | 当前 UI 演示构建，内容为合成数据 |
+| [screenshots/connect.png](screenshots/connect.png) | README 快速开始横向截图 | 用户提供的接入指南页面截图 |
+| [screenshots/dashboard.png](screenshots/dashboard.png) | 控制台页面截图 | 当前 UI 演示构建，内容为合成数据 |
 
 ## 放置约定
 
