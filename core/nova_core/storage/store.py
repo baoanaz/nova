@@ -616,6 +616,45 @@ class Store:
                 resolved += 1
         return resolved
 
+    def resolve_ref_targets(self, resolutions: Sequence[RefResolution]) -> int:
+        """Atomically resolve multiple targets per reference, without temporary refs.
+
+        Unlike ``resolve_refs``, repeated ref IDs intentionally produce multiple
+        edges. Missing refs are ignored; duplicate edge conflicts keep the old
+        provenance. Every target is counted just as the former seed/resolve loop
+        counted it. A failed batch retains its original references for retry.
+        """
+        if not resolutions:
+            return 0
+        ids = list(dict.fromkeys(item.ref_id for item in resolutions))
+        with transaction(self._conn) as conn:
+            found: dict[int, sqlite3.Row] = {}
+            for start in range(0, len(ids), _SQLITE_PARAM_BATCH):
+                batch = ids[start:start + _SQLITE_PARAM_BATCH]
+                placeholders = ",".join("?" for _ in batch)
+                for row in conn.execute(
+                    "SELECT id, from_symbol, reference_kind, line FROM unresolved_refs "
+                    f"WHERE id IN ({placeholders})", batch,
+                ):
+                    found[int(row["id"])] = row
+            payload = []
+            for item in resolutions:
+                row = found.get(item.ref_id)
+                if row is None:
+                    continue
+                kind = item.kind or _EDGE_KIND_BY_REF_KIND.get(
+                    str(row["reference_kind"]), "references"
+                )
+                payload.append((str(row["from_symbol"]), item.target_fqn, kind,
+                                row["line"], item.provenance))
+            conn.executemany(
+                "INSERT OR IGNORE INTO edges(source, target, kind, line, provenance)"
+                " VALUES(?, ?, ?, ?, ?)", payload,
+            )
+            conn.executemany("DELETE FROM unresolved_refs WHERE id = ?",
+                             [(ref_id,) for ref_id in ids if ref_id in found])
+        return len(payload)
+
     def mark_refs_failed(self, ref_ids: Sequence[int]) -> int:
         """把 ref 行置 ``status='failed'`` 并补写 name_tail（保留供重试）；返回处理条数。"""
         marked = 0
@@ -673,28 +712,28 @@ class Store:
 
         ``refs`` 为 (spec_block_id, symbol_id) 序列；已存在的组合跳过（幂等）。
         """
-        inserted = 0
-        seen: set[tuple[str, str]] = set()
+        unique = list(dict.fromkeys(refs))
+        symbols = list(dict.fromkeys(symbol_id for _, symbol_id in unique))
         with transaction(self._conn) as conn:
-            for spec_block_id, symbol_id in refs:
-                key = (spec_block_id, symbol_id)
-                if key in seen:
-                    continue
-                seen.add(key)
-                exists = conn.execute(
-                    "SELECT 1 FROM spec_references"
-                    " WHERE spec_block_id = ? AND symbol_id = ? LIMIT 1",
-                    (spec_block_id, symbol_id),
-                ).fetchone()
-                if exists is not None:
-                    continue
-                conn.execute(
-                    "INSERT INTO spec_references(spec_block_id, symbol_id, provenance, stale)"
-                    " VALUES(?, ?, 'inferred', 0)",
-                    (spec_block_id, symbol_id),
+            existing: set[tuple[str, str]] = set()
+            for batch in _batches(symbols):
+                placeholders = ",".join("?" for _ in batch)
+                existing.update(
+                    (row["spec_block_id"], row["symbol_id"])
+                    for row in conn.execute(
+                        "SELECT spec_block_id, symbol_id FROM spec_references "
+                        f"WHERE symbol_id IN ({placeholders})", batch,
+                    )
                 )
-                inserted += 1
-        return inserted
+            pending = [pair for pair in unique if pair not in existing]
+            # There is no unique constraint on this table. Preserve pair-level
+            # deduplication and leave existing stale/provenance values untouched.
+            # Plain INSERT also retains NOT NULL/trigger failure behavior.
+            conn.executemany(
+                "INSERT INTO spec_references(spec_block_id, symbol_id, provenance, stale)"
+                " VALUES(?, ?, 'inferred', 0)", pending,
+            )
+        return len(pending)
 
     # ------------------------------------------------------------------ 读路径
 
