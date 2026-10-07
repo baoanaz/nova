@@ -189,7 +189,21 @@ impl RemoteClient {
         Ok(body.project_id)
     }
 
+    /// Begin a durable fenced input session before scanning (also for cache hits).
+    pub async fn begin_sync(&self, project_id: &str) -> Result<()> {
+        let payload = serde_json::json!({
+            "projectId": project_id, "sessionId": self.call.id(), "begin": true,
+        });
+        let response = self.request(self.general.post(self.url("/api/sync/flush")), &payload).await?;
+        let body: serde_json::Value = response.json().await?;
+        if body["sessionId"].as_str() != Some(self.call.id()) {
+            bail!("服务端未确认同步会话，请升级服务端后重试");
+        }
+        Ok(())
+    }
+
     /// `POST /api/sync/batch-upload`：按 ≤1MB 分批；返回 accepted / skipped。
+    /// Call begin_sync first when using this pipeline writer.
     pub async fn upload_files(
         &self,
         project_id: &str,
@@ -204,7 +218,7 @@ impl RemoteClient {
                 let (path, content) = &files[end];
                 // 批字节估算：base64 膨胀 4/3，另加 path 与 JSON 包装余量。
                 let item_bytes = path.len() + content.len() * 4 / 3 + 128;
-                if end > start && bytes + item_bytes > MAX_BATCH_BYTES {
+                if end > start && (bytes + item_bytes > MAX_BATCH_BYTES || end - start >= 64) {
                     break;
                 }
                 bytes += item_bytes;
@@ -224,6 +238,8 @@ impl RemoteClient {
                 "projectId": project_id,
                 "blobs": blobs,
                 "deferIndexing": true,
+                "pipeline": true,
+                "sessionId": self.call.id(),
             });
             let response = self
                 .request(
@@ -256,6 +272,7 @@ impl RemoteClient {
         }
         let payload = serde_json::json!({
             "projectId": project_id, "paths": paths, "deferIndexing": true,
+            "sessionId": self.call.id(),
         });
         let response = self.request(self.general.post(self.url("/api/sync/deletions")), &payload)
             .await?;
@@ -268,16 +285,27 @@ impl RemoteClient {
         &self, project_id: &str, deferred_confirmed: bool,
     ) -> Result<Vec<String>> {
         tokio::time::timeout(
-            INDEX_WAIT_TIMEOUT, self.flush_and_poll(project_id, deferred_confirmed),
+            INDEX_WAIT_TIMEOUT, self.flush_and_poll(project_id, deferred_confirmed, None),
         ).await.map_err(|_| anyhow!(
             "索引等待超过 120 秒，服务端任务继续在后台执行；请稍后再次调用。"
         ))?
     }
 
+    /// Close the input manifest, reconcile orphan uploads, then await persistence.
+    pub async fn wait_for_manifest(&self, project_id: &str, hashes: &[String]) -> Result<Vec<String>> {
+        tokio::time::timeout(
+            INDEX_WAIT_TIMEOUT, self.flush_and_poll(project_id, true, Some(hashes)),
+        ).await.map_err(|_| anyhow!("索引等待超过 120 秒，请稍后重试"))?
+    }
+
     async fn flush_and_poll(
-        &self, project_id: &str, deferred_confirmed: bool,
+        &self, project_id: &str, deferred_confirmed: bool, hashes: Option<&[String]>,
     ) -> Result<Vec<String>> {
-        let payload = serde_json::json!({"projectId": project_id});
+        let mut payload = serde_json::json!({"projectId": project_id});
+        if let Some(hashes) = hashes {
+            payload["sessionId"] = serde_json::json!(self.call.id());
+            payload["blobHashes"] = serde_json::json!(hashes);
+        }
         let response = self.send(
             self.general.post(self.url("/api/sync/flush")), Some(&payload),
         ).await?;
@@ -309,7 +337,10 @@ impl RemoteClient {
 
     /// `POST /api/sync/checkpoint`：提交 scope blob 集合换取 `checkpointId`。
     pub async fn create_checkpoint(&self, project_id: &str, hashes: &[String]) -> Result<String> {
-        let payload = serde_json::json!({"projectId": project_id, "blobHashes": hashes});
+        let payload = serde_json::json!({
+            "projectId": project_id, "blobHashes": hashes, "seal": true,
+            "sessionId": self.call.id(),
+        });
         let response = self
             .request(
                 self.general.post(self.url("/api/sync/checkpoint")),
@@ -320,6 +351,9 @@ impl RemoteClient {
             .json()
             .await
             .context("checkpoint 响应不是合法 JSON")?;
+        if !body.sealed {
+            bail!("服务端未确认最终清单封口，请升级服务端后重试");
+        }
         Ok(body.checkpoint_id)
     }
 
@@ -492,6 +526,8 @@ struct SyncProgress {
 struct CheckpointResponse {
     #[serde(rename = "checkpointId")]
     checkpoint_id: String,
+    #[serde(default)]
+    sealed: bool,
 }
 
 #[derive(Deserialize)]

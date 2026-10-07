@@ -26,7 +26,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.10"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "io-std", "io-util", "sync"] }
 walkdir = "2"
 
 [dev-dependencies]

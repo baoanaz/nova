@@ -9,12 +9,11 @@
 //! 包大小由服务端按证据密度决定，不由调用方猜；结构体仍保留该字段以便接收旧版编辑器
 //! 发来的值（不报错），但不再向 AI 声明。
 //!
-//! 会话状态（进程内 `project_root → SessionState`，Module 05 §3.6）：缓存最后一次的
-//! `projectId` / `scope` / `checkpointId`，避免每次 tool call 都重建 checkpoint。
+//! 每次调用都重新封口清单，不能复用旧 checkpoint 作为当前就绪确认。
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
@@ -123,17 +122,10 @@ pub fn definitions() -> Value {
     ])
 }
 
-#[derive(Debug, Default, Clone)]
-struct SessionState {
-    checkpoint_id: Option<String>,
-    scope: Option<Arc<Vec<String>>>,
-}
-
 /// 工具层（一个进程一个实例；服务端地址 + 可选 token）。
 pub struct ToolLayer {
     remote: RemoteClient,
     cache_root: PathBuf,
-    sessions: Mutex<HashMap<String, SessionState>>,
 }
 
 impl ToolLayer {
@@ -141,7 +133,6 @@ impl ToolLayer {
         Self {
             remote,
             cache_root,
-            sessions: Mutex::new(HashMap::new()),
         }
     }
 
@@ -153,7 +144,7 @@ impl ToolLayer {
     /// "N 次初始化 + 1 次检索"归成一次调用（卡内 §B-1 的问题）。
     ///
     /// 并发安全：callId 是**每次调用局部**的值，不存进 ``self``，因此两个 tool call 并发
-    /// 执行时不会把彼此的 id 串起来（会话缓存 ``self.sessions`` 是跨调用状态，与它无关）。
+    /// 执行时不会把彼此的 id 串起来。
     pub async fn execute(&self, tool_name: &str, arguments: Value) -> Result<String, ToolError> {
         let remote = self.remote.for_call(CallContext::new());
         // 诊断走 stderr（stdout 只出 JSON-RPC 帧）：用户/日志据此把客户端侧与
@@ -242,49 +233,51 @@ impl ToolLayer {
                 ))
             })?;
 
+        remote.begin_sync(&project_id).await
+            .map_err(|error| ToolError::Failed(format!("无法开始同步会话：{error:#}")))?;
+
         // TASK-100：把服务端端点传给缓存（缓存目录按端点分片，且字段自证）。
-        let manager = IndexManager::new(
+        let manager = Arc::new(IndexManager::new(
             root.clone(),
             project_id.clone(),
             self.cache_root.clone(),
             remote.base_url(),
-        );
-        let mut scan = manager
-            .scan()
-            .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
-        require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
-
-        let mut deferred_confirmed = false;
-        // 上传变更（有变更才发请求）。
-        if !scan.to_upload.is_empty() {
-            let payload = crate::index::upload_payload(&scan.to_upload);
+        ));
+        // Two queued batches, one producer batch and one in-flight HTTP batch.
+        // Blocking filesystem traversal never occupies the async runtime thread.
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(2);
+        let scanner = Arc::clone(&manager);
+        let scan_task = tokio::task::spawn_blocking(move || {
+            scanner.scan_batches(|batch| {
+                sender.blocking_send(batch)
+                    .map_err(|_| anyhow::anyhow!("上传已取消"))
+            })
+        });
+        let mut rejected_paths = HashSet::new();
+        while let Some(batch) = receiver.recv().await {
+            let payload = crate::index::upload_payload(&batch);
             let outcome = remote
                 .upload_files(&project_id, &payload)
                 .await
                 .map_err(|error| ToolError::Failed(format!("上传失败：{error:#}")))?;
-            deferred_confirmed |= outcome.indexing_deferred;
-            let rejected = IndexManager::apply_upload_outcome(
-                &mut scan.index,
-                &scan.to_upload,
-                &outcome.accepted,
-                &outcome.skipped_paths,
-            );
-            if !rejected.is_empty() {
-                eprintln!(
-                    "nova-client: 服务端跳过 {} 个文件（示例：{:?}）",
-                    rejected.len(),
-                    rejected
-                        .iter()
-                        .take(3)
-                        .map(|item| &item.path)
-                        .collect::<Vec<_>>()
-                );
+            for file in batch {
+                if !outcome.accepted.contains(&file.blob_hash)
+                    || outcome.skipped_paths.contains(&file.path)
+                {
+                    rejected_paths.insert(file.path);
+                }
             }
+        }
+        let mut scan = scan_task.await
+            .map_err(|error| ToolError::Failed(format!("扫描任务失败：{error:#}")))?
+            .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
+        for path in rejected_paths {
+            scan.index.entries.remove(&path);
         }
 
         // 通知删除（幂等）。
         if !scan.deleted.is_empty() {
-            deferred_confirmed |= remote
+            remote
                 .notify_deletions(&project_id, &scan.deleted)
                 .await
                 .map_err(|error| ToolError::Failed(format!("删除通知失败：{error:#}")))?;
@@ -296,8 +289,17 @@ impl ToolLayer {
             .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
 
         // 每次调用都 flush，包括上传已缓存、但上次索引失败/超时的恢复路径。
-        let skipped = remote.wait_for_indexing(&project_id, deferred_confirmed).await
-            .map_err(|error| ToolError::Failed(format!("索引尚不可用：{error:#}")))?;
+        let skipped = match remote.wait_for_manifest(&project_id, &scan.index.all_blob_hashes()).await {
+            Ok(skipped) => skipped,
+            Err(error) => {
+                if error.to_string().contains("manifest_conflict") {
+                    let paths: Vec<String> = scan.index.entries.keys().cloned().collect();
+                    manager.forget_paths(&paths)
+                        .map_err(|err| ToolError::Failed(format!("缓存失效失败：{err:#}")))?;
+                }
+                return Err(ToolError::Failed(format!("索引尚不可用：{error:#}")));
+            }
+        };
         if !skipped.is_empty() {
             for path in skipped {
                 scan.index.entries.remove(&path);
@@ -306,41 +308,22 @@ impl ToolLayer {
                 .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
         }
 
-        let scope: Arc<Vec<String>> = Arc::new(scan.index.all_blob_hashes());
-        let previous = self.session(&project_id);
-        let checkpoint_id = match previous.checkpoint_id.clone() {
-            Some(id) if previous.scope.as_ref() == Some(&scope) => Some(id),
-            _ => match remote.create_checkpoint(&project_id, &scope).await {
-                Ok(id) => Some(id),
-                Err(error) => {
-                    // checkpoint 是传输优化，失败不阻断检索（降级为服务端不用 checkpoint）。
-                    eprintln!("nova-client: checkpoint 创建失败（不影响检索）：{error:#}");
-                    None
-                }
-            },
+        let scope = scan.index.all_blob_hashes();
+        // This is the final manifest seal, including cached-upload retries. Never
+        // fall back to an unscoped query after a conflict or persistence failure.
+        let checkpoint_id = match remote.create_checkpoint(&project_id, &scope).await {
+            Ok(id) => Some(id),
+            Err(error) => {
+                // A concurrent writer or server restart may have replaced/lost
+                // accepted content. Revalidate by uploading on the next attempt.
+                let paths: Vec<String> = scan.index.entries.keys().cloned().collect();
+                manager.forget_paths(&paths)
+                    .map_err(|err| ToolError::Failed(format!("缓存失效失败：{err:#}")))?;
+                return Err(ToolError::Failed(format!("最终清单封口失败：{error:#}")));
+            }
         };
-        self.store_session(
-            &project_id,
-            SessionState {
-                checkpoint_id: checkpoint_id.clone(),
-                scope: Some(scope),
-            },
-        );
+        require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
         Ok((project_id, checkpoint_id))
-    }
-
-    fn session(&self, project_id: &str) -> SessionState {
-        self.sessions
-            .lock()
-            .ok()
-            .and_then(|sessions| sessions.get(project_id).cloned())
-            .unwrap_or_default()
-    }
-
-    fn store_session(&self, project_id: &str, state: SessionState) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            sessions.insert(project_id.to_string(), state);
-        }
     }
 }
 

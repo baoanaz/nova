@@ -11,8 +11,16 @@ fn server(responses: Vec<(&'static str, u16, Value)>) -> (String, thread::JoinHa
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!("http://{}", listener.local_addr().unwrap());
+    let responses: Vec<_> = responses.into_iter().flat_map(|response| {
+        let resolved = response.0.contains("/api/projects/resolve");
+        let mut steps = vec![response];
+        if resolved {
+            steps.push(("POST /api/sync/flush ", 200, json!({"beginAck":true})));
+        }
+        steps
+    }).collect();
     let handle = thread::spawn(move || {
-        for (expected, code, body) in responses {
+        for (expected, code, mut body) in responses {
             let deadline = Instant::now() + Duration::from_secs(5);
             let (mut stream, _) = loop {
                 if let Ok(connection) = listener.accept() { break connection; }
@@ -39,10 +47,21 @@ fn server(responses: Vec<(&'static str, u16, Value)>) -> (String, thread::JoinHa
             assert!(has_call_id);
             let mut request_body = vec![0; length];
             reader.read_exact(&mut request_body).unwrap();
+            if body["beginAck"] == true {
+                let value: Value = serde_json::from_slice(&request_body).unwrap();
+                assert_eq!(value["begin"], true);
+                body = json!({"sessionId": value["sessionId"]});
+            }
             if expected.contains("batch-upload") {
                 let value: Value = serde_json::from_slice(&request_body).unwrap();
                 assert_eq!(value["deferIndexing"], true);
+                assert_eq!(value["pipeline"], true);
             }
+            if expected.contains("checkpoint") {
+                let value: Value = serde_json::from_slice(&request_body).unwrap();
+                assert_eq!(value["seal"], true);
+            }
+            if code == 0 { continue; } // Drop the connection after consuming the request.
             let payload = body.to_string();
             write!(stream, "HTTP/1.1 {code} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{payload}", payload.len()).unwrap();
         }
@@ -102,7 +121,7 @@ fn failed_index_never_queries_and_retry_uses_cached_upload() {
         ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
         ("POST /api/sync/flush ", 200, json!({})),
         ("GET /api/sync/status/p ", 200, ready()),
-        ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"cp_test"})),
+        ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"cp_test","sealed":true})),
         ("POST /api/query/search ", 200, json!({"markdown":"result","meta":{}})),
     ]);
     let layer = ToolLayer::new(RemoteClient::new(&url, None).unwrap(), cache.path().to_path_buf());
@@ -110,5 +129,72 @@ fn failed_index_never_queries_and_retry_uses_cached_upload() {
     let args = json!({"query":"run","project_root":repo.path().to_string_lossy()});
     assert!(rt.block_on(layer.execute("search_context", args.clone())).is_err());
     assert!(rt.block_on(layer.execute("search_context", args)).is_ok());
+    handle.join().unwrap();
+}
+
+#[test]
+fn disconnected_upload_is_retried_without_committing_local_cache() {
+    let repo = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let source = "def run():\n    return 1\n";
+    std::fs::write(repo.path().join("main.py"), source).unwrap();
+    let hash = nova_client::blobref::blob_hash("main.py", source.as_bytes());
+    let (url, handle) = server(vec![
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/sync/batch-upload ", 0, json!({})),
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/sync/batch-upload ", 200,
+         json!({"accepted":[hash],"skipped":[],"indexingDeferred":true})),
+        ("POST /api/sync/flush ", 200, json!({})),
+        ("GET /api/sync/status/p ", 200, ready()),
+        ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"cp_test","sealed":true})),
+        ("POST /api/query/search ", 200, json!({"markdown":"result","meta":{}})),
+    ]);
+    let layer = ToolLayer::new(RemoteClient::new(&url, None).unwrap(), cache.path().to_path_buf());
+    let args = json!({"query":"run","project_root":repo.path().to_string_lossy()});
+    let rt = runtime();
+    assert!(rt.block_on(layer.execute("search_context", args.clone())).is_err());
+    assert!(rt.block_on(layer.execute("search_context", args)).is_ok());
+    handle.join().unwrap();
+}
+
+#[test]
+fn seal_conflict_never_queries_and_retry_reuploads_after_client_restart() {
+    let repo = tempfile::tempdir().unwrap();
+    let cache = tempfile::tempdir().unwrap();
+    let source = "def run():\n    return 1\n";
+    std::fs::write(repo.path().join("main.py"), source).unwrap();
+    let hash = nova_client::blobref::blob_hash("main.py", source.as_bytes());
+    let accepted = json!({"accepted":[hash],"skipped":[],"indexingDeferred":true});
+    let (url, handle) = server(vec![
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/sync/batch-upload ", 200, accepted.clone()),
+        ("POST /api/sync/flush ", 200, json!({})),
+        ("GET /api/sync/status/p ", 200, ready()),
+        ("POST /api/sync/checkpoint ", 409, json!({"error":"manifest_conflict"})),
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/sync/batch-upload ", 200, accepted),
+        ("POST /api/sync/flush ", 200, json!({})),
+        ("GET /api/sync/status/p ", 200, ready()),
+        ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"cp_test","sealed":true})),
+        ("POST /api/query/search ", 200, json!({"markdown":"result","meta":{}})),
+    ]);
+    let args = json!({"query":"run","project_root":repo.path().to_string_lossy()});
+    let rt = runtime();
+    let layer = ToolLayer::new(RemoteClient::new(&url, None).unwrap(), cache.path().to_path_buf());
+    assert!(rt.block_on(layer.execute("search_context", args.clone())).is_err());
+    drop(layer);
+    let restarted = ToolLayer::new(RemoteClient::new(&url, None).unwrap(), cache.path().to_path_buf());
+    assert!(rt.block_on(restarted.execute("search_context", args)).is_ok());
+    handle.join().unwrap();
+}
+
+#[test]
+fn checkpoint_without_seal_ack_is_rejected() {
+    let (url, handle) = server(vec![
+        ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"legacy"})),
+    ]);
+    let remote = RemoteClient::new(&url, None).unwrap();
+    assert!(runtime().block_on(remote.create_checkpoint("p", &[])).is_err());
     handle.join().unwrap();
 }

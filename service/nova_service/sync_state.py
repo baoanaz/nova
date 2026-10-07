@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -90,6 +91,8 @@ class SyncState:
         self.version = version
         self.branch = branch
         self.commit = commit
+        self.session_id: str | None = None
+        self.input_closed = False
         self._files: dict[str, FileEntry] = dict(files or {})
         self._pending_files: dict[str, str] = {}
         self._pending_deleted: set[str] = set()
@@ -127,6 +130,9 @@ class SyncState:
         state.version = version if isinstance(version, int) else STATE_VERSION
         state.branch = raw.get("branch") if isinstance(raw.get("branch"), str) else None
         state.commit = raw.get("commit") if isinstance(raw.get("commit"), str) else None
+        session_id = raw.get("sessionId")
+        state.session_id = session_id if isinstance(session_id, str) else None
+        state.input_closed = raw.get("inputClosed") is True
         files = raw.get("files")
         if isinstance(files, Mapping):
             for key, value in files.items():
@@ -158,6 +164,8 @@ class SyncState:
             "version": self.version,
             "branch": self.branch,
             "commit": self.commit,
+            "sessionId": self.session_id,
+            "inputClosed": self.input_closed,
             "files": {
                 path: entry.to_json() for path, entry in sorted(self._files.items())
             },
@@ -175,8 +183,16 @@ class SyncState:
         target = self.path
         temporary = target.with_name(target.name + ".tmp")
         try:
-            temporary.write_text(_dumps(self.to_json()), encoding="utf-8")
+            with temporary.open("w", encoding="utf-8") as stream:
+                stream.write(_dumps(self.to_json()))
+                stream.flush()
+                os.fsync(stream.fileno())
             temporary.replace(target)
+            directory_fd = os.open(self._project_dir, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
         except BaseException:
             # 失败即清理临时文件：让磁盘上只有"旧的完整版本"或"新的完整版本"。
             temporary.unlink(missing_ok=True)
@@ -277,6 +293,15 @@ class SyncState:
             self._pending_files.pop(path, None)
             self._pending_deleted.add(path)
             self._skipped_files.discard(path)
+
+    def complete_batch(
+        self, paths: Sequence[str], deleted: Sequence[str], skipped: Sequence[str],
+    ) -> None:
+        """Acknowledge only the batch whose graph/vector/store close has returned."""
+        for path in paths:
+            self._pending_files.pop(path, None)
+        self._pending_deleted.difference_update(deleted)
+        self._skipped_files.update(skipped)
 
     def complete_pending(self, skipped: Sequence[str]) -> None:
         """Only acknowledge after the complete ingest succeeded, under the project lock."""

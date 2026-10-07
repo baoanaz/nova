@@ -17,7 +17,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -72,7 +74,25 @@ class BlobStore:
         if target.is_file():
             return False
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
+        # Publish only a complete, fsynced blob; a disconnected/restarted writer
+        # must never leave a truncated content-addressed target that retries reuse.
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=target.parent, delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+            temporary.replace(target)
+            for directory in (target.parent, self._root, self._root.parent):
+                descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    os.fsync(descriptor)
+                finally:
+                    os.close(descriptor)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return True
 
     def get(self, blob_hash: str) -> bytes:

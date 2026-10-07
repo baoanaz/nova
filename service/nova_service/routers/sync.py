@@ -16,7 +16,10 @@
 - **校验顺序固定**（每种错误都能单独复现）：空批 → 逐条 base64 解码（累计超限立即 413）→
   路径安全 → ``blobHash`` 与 CF-02 的 ``blob_hash(path, content)`` 一致（宁可拒绝，
   也不让账本被污染）；
-- 默认保留请求内索引；``deferIndexing`` 只持久化上传和待处理项，之后显式 ``flush``。
+- 默认保留请求内索引；``deferIndexing`` 持久化上传和待处理项。
+  ``pipeline`` 上传在接收下一批前执行背压，并立即启动单项目后台索引。
+- ``flush(begin=true, sessionId=...)`` 持久化会话；带完整 ``blobHashes`` 的 flush
+  对账遗留上传并封口输入。带 ``seal=true`` 的 checkpoint 是持久化后的最终确认。
 - flush 复用单项目后台 worker；``pendingJobs`` / ``indexProgress`` 如实报告待处理及运行状态。
 - 待处理项持久化在同步账本，失败/服务重启后通过 flush 重试。
 """
@@ -64,6 +67,8 @@ class BatchUploadRequest(BaseModel):
     commit: str | None = None
     blobs: list[BlobPayload] = []
     deferIndexing: bool = False
+    pipeline: bool = False
+    sessionId: str | None = None
 
 
 class CheckpointRequest(BaseModel):
@@ -71,6 +76,8 @@ class CheckpointRequest(BaseModel):
 
     projectId: str | None = None
     blobHashes: list[str] = []
+    seal: bool = False
+    sessionId: str | None = None
 
 
 class DeletionsRequest(BaseModel):
@@ -79,10 +86,24 @@ class DeletionsRequest(BaseModel):
     projectId: str | None = None
     paths: list[str] = []
     deferIndexing: bool = False
+    sessionId: str | None = None
 
 
 class FlushRequest(BaseModel):
     projectId: str | None = None
+    sessionId: str | None = None
+    begin: bool = False
+    blobHashes: list[str] | None = None
+
+
+def _check_session(state: Any, session_id: str | None, *, writing: bool = False) -> None:
+    if session_id is not None:
+        if state.session_id != session_id or (writing and state.input_closed):
+            raise ApiError("sync_conflict", "同步会话已被覆盖或输入已经封口，请重新同步", 409)
+    elif writing:
+        # Legacy writers also fence an in-flight modern session.
+        state.session_id = None
+        state.input_closed = False
 
 
 @router.post("/api/sync/batch-upload")
@@ -98,11 +119,22 @@ def batch_upload(payload: BatchUploadRequest, request: Request) -> dict[str, Any
     if not payload.blobs:
         raise ApiError("empty_batch", "blobs 不能为空（空批不发请求）", 400)
 
+    if payload.pipeline and len(payload.blobs) > 64:
+        raise ApiError("batch_too_large", "流水线单批最多 64 个文件", 413)
     decoded = _decode_blobs(payload.blobs)
     with manager.project_lock(project_id):
         require_project_id(request, project_id)
         _enforce_quota(request, manager, project_id, decoded)
         blobs, state = manager.project_paths(project_id)
+        _check_session(state, payload.sessionId, writing=True)
+        if payload.pipeline and state.pending:
+            # Backpressure before accepting another batch. Content waiting on disk
+            # is bounded too; failed ingestion retains the previous durable batch.
+            report = manager.flush_sync(project_id)
+            if report.errors:
+                raise ApiError("index_failed", "; ".join(report.errors), 503)
+            blobs, state = manager.project_paths(project_id)
+            _check_session(state, payload.sessionId, writing=True)
         known = set(state.files)
         accepted: list[str] = []
         for item in decoded:
@@ -113,6 +145,8 @@ def batch_upload(payload: BatchUploadRequest, request: Request) -> dict[str, Any
         state.set_head(payload.branch, payload.commit)
         state.save()
         report = None if payload.deferIndexing else manager.flush_sync(project_id)
+    if payload.pipeline and payload.deferIndexing:
+        manager.start_sync(project_id)
     return {
         "accepted": accepted,
         "skipped": list(report.skipped_files) if report is not None else [],
@@ -125,11 +159,37 @@ def batch_upload(payload: BatchUploadRequest, request: Request) -> dict[str, Any
 def flush_index(payload: FlushRequest, request: Request) -> dict[str, Any]:
     manager = get_engine_manager(request)
     project_id = require_project_id(request, payload.projectId)
+    if payload.begin or payload.sessionId is not None:
+        with manager.project_lock(project_id):
+            require_project_id(request, project_id)
+            state = manager.sync_state(project_id)
+            if payload.begin:
+                if not payload.sessionId:
+                    raise ApiError("invalid_session", "begin 需要 sessionId", 400)
+                if state.session_id != payload.sessionId:
+                    state.session_id = payload.sessionId
+                    state.input_closed = False
+                    state.save()
+                return {"sessionId": state.session_id, "inputClosed": state.input_closed}
+            _check_session(state, payload.sessionId)
+            if payload.blobHashes is None:
+                raise ApiError("manifest_required", "封口需要完整 blobHashes 清单", 400)
+            expected = set(payload.blobHashes)
+            if not expected.issubset(state.blob_hashes()):
+                raise ApiError("manifest_conflict", "清单包含未持久化或已被覆盖的 blob", 409)
+            if state.input_closed and expected != set(state.blob_hashes()):
+                raise ApiError("manifest_conflict", "同一会话不能更改已封口清单", 409)
+            extra_paths = [path for path, item in state.files.items()
+                           if item.blob_hash not in expected]
+            deleted, _ = state.remove_paths(extra_paths)
+            state.queue_deletions(deleted)
+            state.input_closed = True
+            state.save()
     return {"indexProgress": manager.start_sync(project_id).to_json()}
 
 
 @router.post("/api/sync/checkpoint")
-def create_checkpoint(payload: CheckpointRequest, request: Request) -> dict[str, str]:
+def create_checkpoint(payload: CheckpointRequest, request: Request) -> dict[str, Any]:
     """内容寻址的 checkpoint（同集合必同 id；账本保留最近 ``MAX_CHECKPOINTS`` 个）。"""
     manager = get_engine_manager(request)
     project_id = require_project_id(request, payload.projectId)
@@ -137,9 +197,23 @@ def create_checkpoint(payload: CheckpointRequest, request: Request) -> dict[str,
     with manager.project_lock(project_id):
         require_project_id(request, project_id)
         state = manager.sync_state(project_id)
+        if payload.seal:
+            _check_session(state, payload.sessionId)
+            if payload.sessionId is not None and not state.input_closed:
+                raise ApiError("input_not_closed", "扫描清单尚未封口", 409)
+            if state.pending:
+                raise ApiError("index_not_ready", "待索引批次尚未持久化完成", 409)
+            skipped = set(state.skipped_files)
+            actual = {entry.blob_hash for path, entry in state.files.items()
+                      if path not in skipped}
+            if set(payload.blobHashes) != actual:
+                raise ApiError("manifest_conflict", "最终清单与服务端版本不一致，请重新同步", 409)
         state.record_checkpoint(checkpoint_id, sorted(set(payload.blobHashes)))
         state.save()
-    return {"checkpointId": checkpoint_id}
+    result: dict[str, Any] = {"checkpointId": checkpoint_id}
+    if payload.seal:
+        result["sealed"] = True
+    return result
 
 
 @router.post("/api/sync/deletions")
@@ -154,6 +228,7 @@ def report_deletions(payload: DeletionsRequest, request: Request) -> dict[str, A
     with manager.project_lock(project_id):
         require_project_id(request, project_id)
         blobs, state = manager.project_paths(project_id)
+        _check_session(state, payload.sessionId, writing=True)
         before = state.files
         deleted, unknown = state.remove_paths(payload.paths)
         state.queue_deletions(deleted)

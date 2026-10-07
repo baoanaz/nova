@@ -14,6 +14,7 @@
 //! 忽略语义（D-28 / R42）在 [`crate::ignore`] 模块；本模块只做编排与对账。
 
 use std::collections::{BTreeMap, HashSet};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context, Result};
@@ -169,10 +170,26 @@ impl IndexManager {
     ///
     /// 判定顺序与 core/service 一致：目录剪枝（忽略规则）→ 大小阈值 → 二进制阈值 → 内容。
     pub fn scan(&self) -> Result<ScanResult> {
+        let mut files = Vec::new();
+        let mut result = self.scan_batches(|batch| {
+            files.extend(batch);
+            Ok(())
+        })?;
+        result.to_upload = files;
+        Ok(result)
+    }
+
+    /// Emit bounded content batches during the walk. The returned manifest contains
+    /// metadata only; a failed/cancelled consumer aborts scanning without committing.
+    pub fn scan_batches(
+        &self, mut emit: impl FnMut(Vec<UploadFile>) -> Result<()>,
+    ) -> Result<ScanResult> {
         let previous = self.load()?;
         let previous_entries = previous.entries;
         let mut entries = BTreeMap::new();
         let mut to_upload = Vec::new();
+        let mut batch_bytes = 0usize;
+        let mut uploaded_files = 0usize;
         let mut cached_files = 0usize;
         let mut skipped = Vec::new();
 
@@ -214,7 +231,12 @@ impl IndexManager {
                 });
                 continue;
             }
-            let raw = match std::fs::read(path) {
+            // A file can grow after metadata(); cap the actual read as well.
+            let raw = match std::fs::File::open(path).and_then(|file| {
+                let mut raw = Vec::new();
+                file.take(MAX_FILE_BYTES as u64 + 1).read_to_end(&mut raw)?;
+                Ok(raw)
+            }) {
                 Ok(raw) => raw,
                 Err(_) => {
                     skipped.push(SkippedPath {
@@ -224,6 +246,13 @@ impl IndexManager {
                     continue;
                 }
             };
+            if raw.len() > MAX_FILE_BYTES {
+                skipped.push(SkippedPath {
+                    path: relative,
+                    reason: format!("oversize:{}", raw.len()),
+                });
+                continue;
+            }
             if is_binary(&raw, BINARY_PROBE_BYTES, BINARY_RATIO) {
                 skipped.push(SkippedPath {
                     path: relative,
@@ -248,6 +277,14 @@ impl IndexManager {
             if verified_hit {
                 cached_files += 1;
             } else {
+                if !to_upload.is_empty()
+                    && (batch_bytes + content.len() > 512 * 1024 || to_upload.len() >= 64)
+                {
+                    emit(std::mem::take(&mut to_upload))?;
+                    batch_bytes = 0;
+                }
+                batch_bytes += content.len();
+                uploaded_files += 1;
                 to_upload.push(UploadFile {
                     path: relative.clone(),
                     content,
@@ -257,6 +294,9 @@ impl IndexManager {
             entries.insert(relative, file_entry);
         }
 
+        if !to_upload.is_empty() {
+            emit(std::mem::take(&mut to_upload))?;
+        }
         let deleted: Vec<String> = previous_entries
             .keys()
             .filter(|path| !entries.contains_key(*path))
@@ -273,7 +313,7 @@ impl IndexManager {
             self.project_id,
             entries.len(),
             cached_files,
-            to_upload.len(),
+            uploaded_files,
             deleted.len()
         );
 
@@ -461,6 +501,37 @@ mod tests {
             cache.to_path_buf(),
             "http://127.0.0.1:1",
         )
+    }
+
+    #[test]
+    fn streaming_scan_bounds_batches_and_keeps_only_manifest() -> Result<()> {
+        let project = tempfile::tempdir()?;
+        let cache = tempfile::tempdir()?;
+        for i in 0..130 {
+            fs::write(project.path().join(format!("{i:03}.txt")), "payload")?;
+        }
+        let mut batches = Vec::new();
+        let scan = manager(project.path(), cache.path()).scan_batches(|batch| {
+            assert!(batch.len() <= 64);
+            assert!(batch.iter().map(|file| file.content.len()).sum::<usize>() <= 512 * 1024);
+            batches.push(batch.len());
+            Ok(())
+        })?;
+        assert_eq!(batches, [64, 64, 2]);
+        assert!(scan.to_upload.is_empty());
+        assert_eq!(scan.index.entries.len(), 130);
+        Ok(())
+    }
+
+    #[test]
+    fn streaming_consumer_failure_aborts_without_cache_commit() -> Result<()> {
+        let project = tempfile::tempdir()?;
+        let cache = tempfile::tempdir()?;
+        fs::write(project.path().join("a.txt"), "payload")?;
+        let manager = manager(project.path(), cache.path());
+        assert!(manager.scan_batches(|_| Err(anyhow!("disconnected"))).is_err());
+        assert!(manager.load()?.entries.is_empty());
+        Ok(())
     }
 
     #[test]

@@ -74,7 +74,7 @@ fn handle(mut stream: TcpStream, seen: Arc<Mutex<Vec<Seen>>>) {
         call_id: call_id.clone(),
     });
 
-    let payload = response_json(&request_line);
+    let payload = response_json(&request_line, &body);
     let header_id = call_id.unwrap_or_else(|| "server-generated".to_string());
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
@@ -87,17 +87,22 @@ fn handle(mut stream: TcpStream, seen: Arc<Mutex<Vec<Seen>>>) {
 }
 
 /// 按路径给一份形状够用的响应（客户端只解析它要的那几个字段）。
-fn response_json(request_line: &str) -> String {
+fn response_json(request_line: &str, body: &[u8]) -> String {
     if request_line.contains("/api/projects/resolve") {
         r#"{"projectId":"proj-test"}"#.to_string()
     } else if request_line.contains("/api/sync/batch-upload") {
-        r#"{"accepted":[],"skipped":[],"report":{"added":0,"modified":0,"deleted":0,"chunksNew":0,"chunksReused":0,"chunksRemoved":0,"filesParsed":0,"errors":[],"skippedFiles":[]}}"#
-            .to_string()
+        let body: Value = serde_json::from_slice(body).expect("upload JSON");
+        let accepted: Vec<_> = body["blobs"].as_array().expect("blobs").iter()
+            .map(|blob| blob["blobHash"].clone()).collect();
+        serde_json::json!({"accepted":accepted,"skipped":[],"indexingDeferred":true}).to_string()
+    } else if request_line.contains("/api/sync/flush") {
+        let body: Value = serde_json::from_slice(body).expect("flush JSON");
+        serde_json::json!({"sessionId":body["sessionId"]}).to_string()
     } else if request_line.contains("/api/sync/status/") {
         r#"{"pendingJobs":0,"indexProgress":{"state":"done","error":null},"skippedFiles":[]}"#
             .to_string()
     } else if request_line.contains("/api/sync/checkpoint") {
-        r#"{"checkpointId":"cp_test"}"#.to_string()
+        r#"{"checkpointId":"cp_test","sealed":true}"#.to_string()
     } else if request_line.contains("/api/query/search") {
         r#"{"markdown":"markdown","meta":{}}"#.to_string()
     } else if request_line.contains("/api/query/ask") {

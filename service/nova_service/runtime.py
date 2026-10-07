@@ -279,31 +279,52 @@ class EngineManager:
         return self._lock_for(project_id)
 
     def flush_sync(self, project_id: str) -> IngestReport:
-        """Ingest one durable pending set; exceptions leave it available for retry."""
+        """Drain durable work in bounded ingests; acknowledge after persistence only."""
+        from dataclasses import fields
+
+        total = IngestReport()
         with self._lock_for(project_id):
             state = self.sync_state(project_id)
-            if not state.pending:
-                return IngestReport()
-            source = self.blob_source(project_id)
-            files = state.files
-            added: list[BlobInput] = []
-            modified: list[BlobInput] = []
-            for path, kind in sorted(state.pending_files.items()):
-                item = BlobInput(path=path, content=source.read(path),
-                                 blob_hash=files[path].blob_hash)
-                (added if kind == "added" else modified).append(item)
-            report = self.ingest(project_id, ChangeSet(
-                added=tuple(added), modified=tuple(modified), deleted=state.pending_deleted,
-                branch=state.branch, commit_id=state.commit,
-            ))
-            if not report.errors:
-                state.complete_pending(report.skipped_files)
+            while state.pending:
+                source = self.blob_source(project_id)
+                files = state.files
+                added: list[BlobInput] = []
+                modified: list[BlobInput] = []
+                selected: list[str] = []
+                byte_count = 0
+                for path, kind in sorted(state.pending_files.items()):
+                    size = files[path].size
+                    if selected and (len(selected) >= 64 or byte_count + size > 1024 * 1024):
+                        break
+                    item = BlobInput(path=path, content=source.read(path),
+                                     blob_hash=files[path].blob_hash)
+                    (added if kind == "added" else modified).append(item)
+                    selected.append(path)
+                    byte_count += size
+                deleted = state.pending_deleted[:64]
+                report = self.ingest(project_id, ChangeSet(
+                    added=tuple(added), modified=tuple(modified), deleted=deleted,
+                    branch=state.branch, commit_id=state.commit,
+                ))
+                # Preserve the public aggregate report while keeping source bytes
+                # and core parse/embed work bounded to one ingest at a time.
+                combined = {}
+                for field in fields(report):
+                    left, right = getattr(total, field.name), getattr(report, field.name)
+                    if field.name in ("invalidation", "languages"):
+                        combined[field.name] = right
+                    else:
+                        combined[field.name] = left + right
+                total = IngestReport(**combined)
+                if report.errors:
+                    return total
+                state.complete_batch(selected, deleted, report.skipped_files)
                 state.save()
-                with self._locks_guard:
-                    previous = self._indexers.get(project_id)
-                    if previous is not None and not previous.running and previous.progress().error:
-                        self._indexers.pop(project_id, None)
-            return report
+            with self._locks_guard:
+                previous = self._indexers.get(project_id)
+                if previous is not None and not previous.running and previous.progress().error:
+                    self._indexers.pop(project_id, None)
+            return total
 
     def start_sync(self, project_id: str) -> IndexProgress:
         """Start or join a single background flush; no in-memory queue to lose on restart."""
@@ -376,7 +397,10 @@ class EngineManager:
             state = None if running else self.sync_state(project_id)
             return {
                 "projectId": project_id,
-                "pendingJobs": int(running or (state is not None and state.pending)),
+                "pendingJobs": int(running or (state is not None and (
+                    state.pending or (state.session_id is not None and not state.input_closed)
+                ))),
+                "inputClosed": state.input_closed if state is not None else False,
                 "indexProgress": progress.to_json(),
                 "skippedFiles": [] if state is None else list(state.skipped_files),
             }
@@ -391,8 +415,11 @@ class EngineManager:
             "symbols": status.symbols,
             "edges": status.edges,
             "pendingJobs": max(
-                status.pending_jobs, int(state.pending or progress.state == "running")
+                status.pending_jobs,
+                int(state.pending or progress.state == "running"
+                    or (state.session_id is not None and not state.input_closed)),
             ),
+            "inputClosed": state.input_closed,
             "indexingFiles": list(status.indexing_files),
             "indexProgress": progress.to_json(),
             "skippedFiles": list(state.skipped_files),
