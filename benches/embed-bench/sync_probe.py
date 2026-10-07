@@ -18,8 +18,8 @@ import time
 from pathlib import Path
 
 from coldstart_probe import install_patches, meter
-from replay import ReplayEmbedding
 from nova_core.engine import Engine
+from replay import ReplayEmbedding
 
 
 def deny_external(event, args):
