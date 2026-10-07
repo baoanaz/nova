@@ -90,10 +90,12 @@ def test_write_batch_isolates_failed_file(
 
     real_insert_fts = store_module._insert_fts_row
 
-    def flaky_insert_fts(conn: sqlite3.Connection, rowid: int, chunk: ChunkDef) -> None:
+    def flaky_insert_fts(
+        conn: sqlite3.Connection, rowid: int, chunk: ChunkDef, segments=None
+    ) -> None:
         if chunk.file_path == "src/b.py":
             raise RuntimeError("fts boom")
-        real_insert_fts(conn, rowid, chunk)
+        real_insert_fts(conn, rowid, chunk, segments)
 
     monkeypatch.setattr(store_module, "_insert_fts_row", flaky_insert_fts)
 

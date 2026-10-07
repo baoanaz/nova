@@ -231,18 +231,23 @@ def _insert_rows(
     return result
 
 
-def _insert_fts_row(conn: sqlite3.Connection, rowid: int, chunk: ChunkDef) -> None:
+def _fts_segments(chunk: ChunkDef) -> tuple[str, str, str]:
+    """一个 chunk 的 FTS 分词三元组（content / signature / docstring）。"""
+    return segment(chunk.content), segment(chunk.signature), segment(chunk.docstring)
+
+
+def _insert_fts_row(
+    conn: sqlite3.Connection,
+    rowid: int,
+    chunk: ChunkDef,
+    segments: tuple[str, str, str] | None = None,
+) -> None:
     """写入 jieba 预分词文本（D-20/D-45）；渲染一律读 chunks.content 原文。"""
+    content_seg, signature_seg, docstring_seg = segments or _fts_segments(chunk)
     conn.execute(
         "INSERT INTO chunks_fts(rowid, content_seg, signature_seg, docstring_seg, file_path) "
         "VALUES (?, ?, ?, ?, ?)",
-        (
-            rowid,
-            segment(chunk.content),
-            segment(chunk.signature),
-            segment(chunk.docstring),
-            chunk.file_path,
-        ),
+        (rowid, content_seg, signature_seg, docstring_seg, chunk.file_path),
     )
 
 
@@ -333,6 +338,7 @@ class Store:
         commit: str | None = None,
         *,
         generated: bool = False,
+        fts_segments: Sequence[tuple[str, str, str]] | None = None,
     ) -> FileDelta:
         """单事务写入/替换一个文件的全部索引行，返回 content_hash 对账结果。
 
@@ -345,6 +351,8 @@ class Store:
         - ``generated``（TASK-REVIEW-RUNTIME P2-5）由**扫描/索引期**传入（见
           :mod:`nova_core.pipeline.generated`）。此列以前硬编码为 0，导致 rerank 只能靠
           文件名约定代理，无法识别内容 banner（如 ``DO NOT EDIT`` 头）。
+        - ``fts_segments``：与 ``chunks`` 对齐、**已用** :func:`segment` 算好的 FTS 分词三元组
+          （解析预取子进程产出，见 ``pipeline.prepare``）；缺省时在此现算，结果相同。
 
         **冷启动快路径（TASK-114 / P1-3）**：先按主键探测 ``files`` 是否有本路径。
         没有 ⇒ 本文件从未入库 ⇒ 旧 chunks/symbols/spec_blocks/unresolved_refs 必然为空
@@ -353,6 +361,14 @@ class Store:
         """
         file_path = parsed.path
         new_chunks = list(chunks)
+        if fts_segments is not None and len(fts_segments) != len(new_chunks):
+            raise ValueError(
+                f"fts_segments 行数 {len(fts_segments)} 与 chunks 行数 {len(new_chunks)} 不一致"
+            )
+        segments = (
+            list(fts_segments) if fts_segments is not None
+            else [_fts_segments(chunk) for chunk in new_chunks]
+        )
         for chunk in new_chunks:
             if chunk.file_path != file_path:
                 raise ValueError(
@@ -441,14 +457,14 @@ class Store:
             rowids = {str(row["id"]): int(row["rowid"]) for row in chunk_rows}
             chunk_ids = set(rowids)
             if len(new_chunks) == 1:
-                _insert_fts_row(conn, rowids[new_chunks[0].id], new_chunks[0])
+                _insert_fts_row(conn, rowids[new_chunks[0].id], new_chunks[0], segments[0])
             else:
                 _insert_rows(
                     conn,
                     "INSERT INTO chunks_fts(rowid, content_seg, signature_seg,"
                     " docstring_seg, file_path)",
-                    [(rowids[c.id], segment(c.content), segment(c.signature),
-                      segment(c.docstring), c.file_path) for c in new_chunks],
+                    [(rowids[c.id], *seg, c.file_path)
+                     for c, seg in zip(new_chunks, segments, strict=True)],
                 )
 
             symbol_rows = []

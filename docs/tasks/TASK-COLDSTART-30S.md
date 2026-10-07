@@ -262,3 +262,63 @@ not fixed: `upsert_matrix(new_ids=…)` relies on the caller's per-ingest id
 uniqueness (guaranteed today by splitter/PK/path dedup); exception types for null
 or non-numeric vectors changed (no caller depends on them); base64 vs JSON
 bit-equality from the real Voyage service is unverified.
+
+## Round 5 candidate: parse/split/segment in worker processes (NOT yet measured)
+
+Motivation from Round 4: ~33s wall vs ~26 service core-seconds on 2 vCPU — the
+Python work is still effectively single-core. Parsing (tree-sitter extraction),
+chunk splitting, file hashing, `is_generated` and FTS segmentation are pure
+functions of file content, so `nova_core.pipeline.prepare` computes them in a
+persistent `spawn` process pool, in the main thread's processing order, up to 64
+files ahead. The main thread still applies every file in the original sorted
+order inside the same write batch with the same per-file SAVEPOINTs; graph
+resolution, vector submission and recovery semantics are untouched.
+
+- Equivalence: any worker exception returns "miss" and the original inline code
+  path runs, reproducing the same error records; a crashed pool
+  (`BrokenProcessPool`, e.g. OOM kill) falls back inline for the rest of the
+  ingest; prepared results are discarded if the language (R1 `.h` lift) differs.
+  `Store.apply_file_change(fts_segments=…)` accepts the precomputed segments.
+  A test indexes 64 real files plus binary/oversize/syntax-error/Chinese/`.h`
+  samples both ways and asserts identical rows in every logical table (only
+  `indexed_at` excluded) and identical reports; another kills the pool mid-ingest.
+- Enablement: `NOVA_PARSE_WORKERS` (default `min(2, cpu_count)`, `0` disables).
+  Used when the pool was prewarmed by startup preload (new `parse_worker` step),
+  or cold when an ingest has ≥500 files. Each worker holds ~120 MB RSS after
+  warmup (jieba dictionary + grammars): about +240 MB with two workers.
+- Local evidence (dev box pinned to 2 cores with `taskset`, cheap fake embedding,
+  433 repo files / 7,043 chunks, identical DB hash each time): inline 6.2–6.9s;
+  one worker 5.5–5.7s (main-thread CPU 6.6 → 1.5s, worker became the bottleneck);
+  two workers 3.8–3.9s.
+- Measurement: worker CPU is NOT in `RUSAGE_SELF`. `sync_probe.py` now also records
+  `server_children_cpu_s` (live descendant CPU from `/proc`, delta over the timed
+  window). Report total service CPU as `server_cpu_s + server_children_cpu_s`.
+- Known cosmetic issue: when uvicorn re-raises SIGTERM on shutdown, Python's
+  resource tracker may warn about leaked semaphores; workers exit with the parent
+  (verified no orphan processes).
+
+Independent read-only review findings, all fixed before commit:
+
+1. Recursion-depth divergence (HIGH). Extractors recurse and
+   `TreeSitterParser.parse` turns `RecursionError` into a fallback result, so output
+   depended on the caller's stack depth (reproduced at ~480 nesting levels). The
+   main thread now passes the inline `parser.parse` call depth and recursion limit;
+   the worker pads its stack to the same depth (or misses → inline). A test with
+   Python classes and C++ namespaces nested 100–985 deep straddles the threshold
+   and asserts identical rows/reports; it fails with the alignment removed.
+2. Spawn re-imported the entry module (MEDIUM): under the `nova-service` console
+   script each worker loaded uvicorn/fastapi/MCP (~176 MB). Heavy imports in
+   `nova_service/__main__.py` are now function-local (881 → 92 modules on import);
+   measured worker RSS under the console script ~122 MB.
+3. Worker initializer failures are swallowed (pool stays usable).
+
+Validation: 1426 core+service tests passed / 4 documented xfails; ruff and the
+dependency-direction check pass. The equivalence test pins one embedding
+consumer because `chunks_deduped` varies with the two-consumer race (documented
+in `embedding_sink`, unrelated to prefetch).
+
+**Requested VPS verification:** same protocol as Round 4 (content comparison
+first). Suggested cohorts, interleaved where possible: control `46edccc`,
+candidate default (2 workers), candidate `NOVA_PARSE_WORKERS=1`, and candidate
+`NOVA_PARSE_WORKERS=0` (equals Round 4 code path). Please record peak RSS of the
+whole cgroup (workers are separate processes) and `server_children_cpu_s`.

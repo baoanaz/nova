@@ -42,6 +42,7 @@ R4（``FileDelta`` 三集合）、R8（imports 边缘）、R10（向量相似度
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -64,6 +65,7 @@ from nova_core.pipeline.ignore import (
     IndexScope,
     oversize_reason,
 )
+from nova_core.pipeline.prepare import PreparedFile, PrepareStream, stack_depth
 from nova_core.pipeline.source import SourceProvider
 from nova_core.storage import Store
 from nova_core.types import ChangeSet, ChunkDef, ParsedFile
@@ -293,21 +295,29 @@ class Indexer:
 
         indexed: list[_Indexed] = []
         removed_ids: list[str] = []
+        # 解析/切分/分词在子进程里按处理顺序领先预取；主线程只消费结果并写 SQLite
+        # （见 pipeline.prepare：结果与内联逐字节相同，任何失败都回退内联）。
+        prepared = PrepareStream(self._prefetch_tasks(inputs, repo_is_cpp))
         with EmbeddingPipeline(
             self._embedding, self._vectors, cache=self._cache, workers=self._workers
         ) as pipeline:
             # 一轮文件共用一个写事务；每文件的失败隔离由内层 SAVEPOINT 保证（Store.write_batch）。
             with self._store.write_batch():
-                for item in inputs:
-                    result = self._index_file(item, repo_is_cpp, acc)
-                    if result is None:
-                        continue
-                    indexed.append(result)
-                    acc.chunks_reused += len(result.chunks) - len(result.new_ids)
-                    # 重建后的新表也按文件立即投递；补嵌阶段只处理尚未投递的存量文件。
-                    pipeline.submit(result.chunks)
-                    if not rebuild_vectors:
-                        removed_ids.extend(result.removed_ids)
+                try:
+                    for item in inputs:
+                        result = self._index_file(
+                            item, repo_is_cpp, acc, prepared.take(item.path)
+                        )
+                        if result is None:
+                            continue
+                        indexed.append(result)
+                        acc.chunks_reused += len(result.chunks) - len(result.new_ids)
+                        # 重建后的新表也按文件立即投递；补嵌阶段只处理尚未投递的存量文件。
+                        pipeline.submit(result.chunks)
+                        if not rebuild_vectors:
+                            removed_ids.extend(result.removed_ids)
+                finally:
+                    prepared.close()
                 if rebuild_vectors:
                     self._rebuild_vectors(
                         acc, pipeline, {result.parsed.path for result in indexed}
@@ -364,6 +374,27 @@ class Indexer:
             items[blob.path] = _Input(path=blob.path, data=blob.content, kind="modified")
         return [items[path] for path in sorted(items)]
 
+    def _prefetch_tasks(
+        self, inputs: Sequence[_Input], repo_is_cpp: bool
+    ) -> list[tuple[str, bytes, str | None, int, int]]:
+        """值得预取的文件（会被 :meth:`_index_file` 真正解析的那些），保持处理顺序。
+
+        **必须由** :meth:`_run` **直接调用**：本帧与 :meth:`_index_file` 同深，内联路径里调用
+        ``parser.parse`` 的是再深一层的 :meth:`_parse`——子进程据此对齐递归深度。
+        """
+        parse_depth = stack_depth() + 1
+        limit = sys.getrecursionlimit()
+        tasks: list[tuple[str, bytes, str | None, int, int]] = []
+        for item in inputs:
+            # 只用廉价的大小判定过滤（超限文件不浪费子进程时间）；二进制判定留给主线程，
+            # 子进程遇到 NUL 直接返回未命中。
+            if not self._scope.should_read(item.path, len(item.data))[0]:
+                continue
+            tasks.append(
+                (item.path, item.data, _language_for(item.path, repo_is_cpp), parse_depth, limit)
+            )
+        return tasks
+
     def _source_size(self, path: str) -> int | None:
         """``source.file_size(path)``（可选协议）；不支持时返回 ``None``（安全降级）。"""
         probe = getattr(self._source, "file_size", None)
@@ -374,7 +405,13 @@ class Indexer:
         except Exception:  # noqa: BLE001 - 元数据探测失败不该影响索引（继续走 read 兜底）
             return None
 
-    def _index_file(self, item: _Input, repo_is_cpp: bool, acc: _Accumulator) -> _Indexed | None:
+    def _index_file(
+        self,
+        item: _Input,
+        repo_is_cpp: bool,
+        acc: _Accumulator,
+        prepared: PreparedFile | None = None,
+    ) -> _Indexed | None:
         # §B 阈值（R43）：大小在读取**之前**可判（``_collect_inputs`` 已按 ``_safe_read`` 拿到字节，
         # 这里用真实长度即可），二进制需要内容——两者都必须在"入库"之前拦掉，否则噪声文件既吃
         # 解析时间又进检索池。
@@ -386,23 +423,41 @@ class Indexer:
         if not decodable:
             acc.skip(item.path, binary_reason_value or SKIP_REASON_BINARY)
             return None
-        text = _decode(item.data)
-        if text is None:
-            acc.skip(item.path, SKIP_REASON_BINARY)
-            return None
         language = _language_for(item.path, repo_is_cpp)
-        parsed = self._parse(item.path, text, language, acc)
-        try:
-            chunks = tuple(split_file(parsed, text))
-            delta = self._store.apply_file_change(
-                parsed,
-                chunks,
-                file_content_hash(item.data),
-                generated=is_generated(item.path, text),
-            )
-        except Exception as exc:  # 单文件切分/落库失败 → 如实记录并跳过（TASK-018 §C）
-            acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
-            return None
+        if prepared is not None and prepared.language == language:
+            # 子进程预取命中：与下方内联分支计算同样的产物（含 parse_errors 的记录口径）。
+            parsed = prepared.parsed
+            if parsed.parse_errors:
+                acc.errors.append(f"{item.path}: " + "; ".join(parsed.parse_errors))
+            chunks = prepared.chunks
+            try:
+                delta = self._store.apply_file_change(
+                    parsed,
+                    chunks,
+                    prepared.content_hash,
+                    generated=prepared.generated,
+                    fts_segments=prepared.segments,
+                )
+            except Exception as exc:  # 同内联分支：单文件落库失败 → 如实记录并跳过
+                acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
+                return None
+        else:
+            text = _decode(item.data)
+            if text is None:
+                acc.skip(item.path, SKIP_REASON_BINARY)
+                return None
+            parsed = self._parse(item.path, text, language, acc)
+            try:
+                chunks = tuple(split_file(parsed, text))
+                delta = self._store.apply_file_change(
+                    parsed,
+                    chunks,
+                    file_content_hash(item.data),
+                    generated=is_generated(item.path, text),
+                )
+            except Exception as exc:  # 单文件切分/落库失败 → 如实记录并跳过（TASK-018 §C）
+                acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
+                return None
         if item.kind == "added":
             acc.added += 1
         else:

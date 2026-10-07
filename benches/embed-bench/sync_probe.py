@@ -29,9 +29,29 @@ def deny_external(event, args):
             raise RuntimeError('Offline benchmark forbids external network connections')
 
 
+def _live_children_cpu_s():
+    """CPU of live descendant processes (e.g. parse workers): RUSAGE_* misses unreaped ones."""
+    tick = os.sysconf('SC_CLK_TCK')
+    pending, total = [os.getpid()], 0.0
+    while pending:
+        pid = pending.pop()
+        try:
+            for task in os.listdir(f'/proc/{pid}/task'):
+                with open(f'/proc/{pid}/task/{task}/children') as handle:
+                    pending.extend(int(child) for child in handle.read().split())
+            if pid != os.getpid():
+                with open(f'/proc/{pid}/stat') as handle:
+                    fields = handle.read().rsplit(')', 1)[1].split()
+                total += (int(fields[11]) + int(fields[12])) / tick
+        except OSError:
+            continue
+    return total
+
+
 def snapshot():
     usage = resource.getrusage(resource.RUSAGE_SELF)
     return {'cpu_s': usage.ru_utime + usage.ru_stime,
+            'children_cpu_s': _live_children_cpu_s(),
             'peak_rss_mib': usage.ru_maxrss / 1024,
             'phases_s': dict(meter.phases)}
 
@@ -112,6 +132,9 @@ def run_client(args, provider):
                 response = json.loads(result.stdout)
                 after = http.get('/bench/metrics').raise_for_status().json()
                 payload = {'wall_s': wall, 'server_cpu_s': after['cpu_s']-before['cpu_s'],
+                           # Parse workers are separate processes; absent on older servers.
+                           'server_children_cpu_s': after.get('children_cpu_s', 0.0)
+                           - before.get('children_cpu_s', 0.0),
                            'server': after, 'client_exit': result.returncode,
                            'client_error': response.get('error') or
                            response.get('result', {}).get('isError', False)}
@@ -119,6 +142,7 @@ def run_client(args, provider):
                 if result.returncode or payload['client_error']:
                     raise RuntimeError('Client benchmark failed; see client.jsonl and service.log')
                 print(json.dumps({'wall_s': wall, 'server_cpu_s': payload['server_cpu_s'],
+                                  'server_children_cpu_s': payload['server_children_cpu_s'],
                                   'ingests': len(after['ingests']),
                                   'peak_rss_mib': after['peak_rss_mib']}))
         finally:

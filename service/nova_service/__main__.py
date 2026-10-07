@@ -30,19 +30,21 @@ import sys
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-import uvicorn
-from nova_core.preload import preload_runtime
-
-from nova_service.app import create_app
-from nova_service.cli_hint import format_snippets, mcp_url
 from nova_service.config import (
     DATA_ROOT_ENV,
     LOCAL_RESCAN_INTERVAL_ENV,
     Settings,
 )
-from nova_service.metadb import MetaDB
-from nova_service.runtime import AttachResult, EngineManager
+
+if TYPE_CHECKING:
+    from nova_service.runtime import AttachResult
+
+# 重依赖（uvicorn / app / runtime / core）都在函数内导入：解析预取子进程以 spawn 启动，
+# 会把入口模块当作 ``__mp_main__`` 重新导入（部署用的 ``nova-service`` console script
+# 顶层就是 ``from nova_service.__main__ import main``）。顶层导入整套服务会让每个子进程
+# 多常驻约 54 MB。
 
 __all__ = ["build_parser", "main"]
 
@@ -62,6 +64,8 @@ def _preload() -> None:
     """
     if os.environ.get(PRELOAD_ENV, "").strip().lower() in ("0", "false", "no", "off"):
         return
+    from nova_core.preload import preload_runtime
+
     preload_runtime()
 
 
@@ -132,6 +136,7 @@ def _add_common_arguments(
 
 def main(argv: Sequence[str] | None = None) -> int:
     """启动 uvicorn（前台阻塞）。"""
+    from nova_service.cli_hint import format_snippets  # 经 nova_service.mcp 导入较重，见文件头
     args = build_parser().parse_args(list(argv) if argv is not None else None)
     base = Settings.from_env()
     settings = replace(
@@ -146,6 +151,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
     if args.command == "local":
         return _run_local(args, base, settings)
+    import uvicorn
+    from nova_core.pipeline import prepare
+
+    from nova_service.app import create_app
+
     if args.reload:
         os.environ[DATA_ROOT_ENV] = str(settings.data_root)
         print(format_snippets(settings.port, host=settings.host), flush=True)
@@ -160,20 +170,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     print(format_snippets(settings.port, host=settings.host), flush=True)
+    app = create_app(settings)  # 先建 app：它配置日志，预加载的耗时日志才可见
     _preload()
-    uvicorn.run(
-        create_app(settings),
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level,
-        access_log=False,
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+            access_log=False,
+        )
+    finally:
+        prepare.shutdown()  # 解析预取子进程随服务退出
     return 0
 
 
 def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) -> int:
     """``nova-service local --repo``：绑定仓库 + 后台索引 + 立刻监听（TASK-034 §D）。"""
+    import uvicorn
+    from nova_core.pipeline import prepare
+
+    from nova_service.app import create_app
     from nova_service.indexer import LocalRootError
+    from nova_service.metadb import MetaDB
+    from nova_service.runtime import EngineManager
 
     settings = replace(settings, local_mode=True)
     app = create_app(settings)
@@ -198,13 +218,16 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
         print(f"[错误] {exc}", file=sys.stderr)
         return 2
     _print_ready(settings, attached, indexed=not args.no_index)
-    uvicorn.run(
-        app,
-        host=settings.host,
-        port=settings.port,
-        log_level=settings.log_level,
-        access_log=False,
-    )
+    try:
+        uvicorn.run(
+            app,
+            host=settings.host,
+            port=settings.port,
+            log_level=settings.log_level,
+            access_log=False,
+        )
+    finally:
+        prepare.shutdown()  # 解析预取子进程随服务退出
     return 0
 
 
@@ -215,6 +238,8 @@ def _print_ready(settings: Settings, attached: AttachResult, *, indexed: bool) -
     若走 stdout 缓冲（nohup/重定向到文件时的默认），用户会先看到服务日志、
     要等缓冲区凑满才看到就绪信息。
     """
+    from nova_service.cli_hint import format_snippets, mcp_url
+
     project_id = attached.project_id
     progress = attached.index_progress
     lines = [
