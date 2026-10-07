@@ -49,10 +49,7 @@ from nova_core.chunking import (
     IndexFingerprint,
     Invalidation,
     check_fingerprint,
-    link_spec_references,
-    resolve_edges,
-    resolve_pending,
-    retry_failed,
+    resolve_graph,
     split_file,
     stored_fingerprint,
     write_fingerprint,
@@ -516,22 +513,11 @@ class Indexer:
     # ------------------------------------------------------------------ 二阶段解析
 
     def _resolve(self, acc: _Accumulator, parsed_files: Sequence[ParsedFile]) -> None:
-        pending = resolve_pending(self._store)
-        names = [
-            symbol.name for parsed in parsed_files for symbol in parsed.symbols
-        ] + [symbol.fqn for parsed in parsed_files for symbol in parsed.symbols]
-        retried = retry_failed(self._store, names) if names else None
-        edges = resolve_edges(self._store)
-        specs = link_spec_references(self._store, parsed_files)
-
-        acc.unresolved_resolved += pending.resolved
-        if retried is not None:
-            acc.unresolved_resolved += retried.resolved
-        acc.edges_retargeted += edges.edges_retargeted
-        acc.spec_refs += specs.spec_refs
-        acc.ambiguous_refs += len(pending.ambiguous) + len(edges.ambiguous)
-        if retried is not None:
-            acc.ambiguous_refs += len(retried.ambiguous)
+        report = resolve_graph(self._store, parsed_files)
+        acc.unresolved_resolved += report.resolved
+        acc.edges_retargeted += report.edges_retargeted
+        acc.spec_refs += report.spec_refs
+        acc.ambiguous_refs += len(report.ambiguous)
 
 
 # ---------------------------------------------------------------------------

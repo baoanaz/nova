@@ -25,6 +25,7 @@ from nova_core.chunking.resolver import (
     ResolveReport,
     link_spec_references,
     resolve_edges,
+    resolve_graph,
     resolve_pending,
     retry_failed,
 )
@@ -61,6 +62,7 @@ __all__ = [
     "embedding_text",
     "link_spec_references",
     "resolve_edges",
+    "resolve_graph",
     "resolve_pending",
     "retry_failed",
     "spec_block_id",

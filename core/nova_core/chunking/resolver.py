@@ -25,9 +25,9 @@ R8（imports 边 target_name 形态与相对导入语义由本卡处理）。
    匹配符号：fqn 精确优先，否则同名全部挂上（宁多勿漏，D-06 弱引用）；``provenance`` 恒
    ``inferred``（由 ``Store.add_spec_refs`` 强制），符号删除/改名的级联 ``stale`` 归 TASK-001 路径。
 
-Store API 边界（已记入任务卡执行记录）：``Store.resolve_refs`` 对同一条 ref 只落一条边
-（写边后立即删行），因此"全连"由本模块对额外目标重新播种 pending 引用再解析实现；
-``Store`` 目前没有"直接批量加边"的原语，若要更干净的实现需走 L2 契约扩展。
+Store API 边界：``resolve_refs`` 保持单目标语义；多义全连使用
+``resolve_ref_targets`` 在一个事务内写全部目标并消费原引用，失败时保留引用供重试。
+不创建短暂的 pending 引用，不改变候选匹配、冲突处理或边的 provenance。
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from nova_core.storage import (
     SymbolRow,
     UnresolvedRefRow,
 )
-from nova_core.types import ParsedFile, UnresolvedRef
+from nova_core.types import ParsedFile
 
 __all__ = [
     "AmbiguousRef",
@@ -54,6 +54,7 @@ __all__ = [
     "link_spec_references",
     "name_tail",
     "resolve_edges",
+    "resolve_graph",
     "resolve_pending",
     "retry_failed",
 ]
@@ -102,17 +103,20 @@ def name_tail(name: str) -> str:
 
 
 def resolve_pending(
-    store: Store, *, file_paths: Sequence[str] | None = None
+    store: Store, *, file_paths: Sequence[str] | None = None,
+    _index: _SymbolIndex | None = None,
 ) -> ResolveReport:
     """解析全部 ``status='pending'`` 引用（索引后调用）；``file_paths`` 可限定文件子集。"""
     rows = store.unresolved_refs(status="pending")
     if file_paths is not None:
         wanted = set(file_paths)
         rows = [row for row in rows if row.file_path in wanted]
-    return _resolve_rows(store, rows, origin="pending")
+    return _resolve_rows(store, rows, origin="pending", index=_index)
 
 
-def retry_failed(store: Store, new_symbol_names: Sequence[str]) -> ResolveReport:
+def retry_failed(
+    store: Store, new_symbol_names: Sequence[str], *, _index: _SymbolIndex | None = None,
+) -> ResolveReport:
     """新符号出现后只重试相关 ``failed`` 引用（按 ``name_tail`` 命中的才重试）。"""
     keys = {name_tail(name) for name in new_symbol_names}
     keys |= {name for name in new_symbol_names}
@@ -123,7 +127,7 @@ def retry_failed(store: Store, new_symbol_names: Sequence[str]) -> ResolveReport
         for row in store.unresolved_refs(status="failed")
         if row.name_tail in keys or row.reference_name in keys
     ]
-    report = _resolve_rows(store, rows, origin="failed")
+    report = _resolve_rows(store, rows, origin="failed", index=_index)
     return ResolveReport(
         resolved=report.resolved,
         failed=report.failed,
@@ -132,9 +136,11 @@ def retry_failed(store: Store, new_symbol_names: Sequence[str]) -> ResolveReport
     )
 
 
-def resolve_edges(store: Store, *, kinds: Sequence[str] | None = None) -> ResolveReport:
+def resolve_edges(
+    store: Store, *, kinds: Sequence[str] | None = None, _index: _SymbolIndex | None = None,
+) -> ResolveReport:
     """把裸名边（target 尚未落成 fqn）重定向到唯一命中的符号 fqn。"""
-    index = _SymbolIndex(store)
+    index = _index or _SymbolIndex(store)
     updates: list[EdgeTargetUpdate] = []
     ambiguous: list[AmbiguousRef] = []
     unresolved = 0
@@ -169,9 +175,11 @@ def resolve_edges(store: Store, *, kinds: Sequence[str] | None = None) -> Resolv
     )
 
 
-def link_spec_references(store: Store, parsed_files: Sequence[ParsedFile]) -> ResolveReport:
+def link_spec_references(
+    store: Store, parsed_files: Sequence[ParsedFile], *, _index: _SymbolIndex | None = None,
+) -> ResolveReport:
     """把 SpecBlock 的 ``mentioned`` 匹配到符号并写 ``spec_references``（D-06 弱引用）。"""
-    index = _SymbolIndex(store)
+    index = _index or _SymbolIndex(store)
     pairs: list[tuple[str, str]] = []
     for parsed in parsed_files:
         if parsed.fallback:
@@ -185,15 +193,37 @@ def link_spec_references(store: Store, parsed_files: Sequence[ParsedFile]) -> Re
     return ResolveReport(spec_refs=added)
 
 
+def resolve_graph(store: Store, parsed_files: Sequence[ParsedFile]) -> ResolveReport:
+    """Run the graph passes with one short-lived cache of unchanged symbols."""
+    index = _SymbolIndex(store)
+    pending = resolve_pending(store, _index=index)
+    names = [symbol.name for parsed in parsed_files for symbol in parsed.symbols]
+    names += [symbol.fqn for parsed in parsed_files for symbol in parsed.symbols]
+    retried = retry_failed(store, names, _index=index) if names else ResolveReport()
+    edges = resolve_edges(store, _index=index)
+    specs = link_spec_references(store, parsed_files, _index=index)
+    return ResolveReport(
+        resolved=pending.resolved + retried.resolved,
+        failed=pending.failed + retried.failed,
+        retried=retried.retried,
+        edges_retargeted=edges.edges_retargeted,
+        edges_unresolved=edges.edges_unresolved,
+        edges_skipped=edges.edges_skipped,
+        spec_refs=specs.spec_refs,
+        ambiguous=pending.ambiguous + edges.ambiguous + retried.ambiguous,
+    )
+
+
 # ---------------------------------------------------------------------------
 # 内部：引用行解析
 # ---------------------------------------------------------------------------
 
 
 def _resolve_rows(
-    store: Store, rows: Sequence[UnresolvedRefRow], *, origin: str
+    store: Store, rows: Sequence[UnresolvedRefRow], *, origin: str,
+    index: _SymbolIndex | None = None,
 ) -> ResolveReport:
-    index = _SymbolIndex(store)
+    index = index or _SymbolIndex(store)
     singles: list[RefResolution] = []
     failed_ids: list[int] = []
     ambiguous: list[AmbiguousRef] = []
@@ -227,53 +257,12 @@ def _resolve_rows(
 def _resolve_multi(
     store: Store, multis: Sequence[tuple[UnresolvedRefRow, tuple[SymbolRow, ...]]]
 ) -> int:
-    """多义引用全连（``provenance='synthesized'``）。
-
-    ``Store.resolve_refs`` 对一条 ref 只落一条边（写边后删行），因此除首个目标外的每个目标，
-    都先按原引用签名重新播种一条 pending 行、再解析一次；净效果是 N 条边 + 0 条残留引用。
-    """
-    resolved = 0
-    for row, targets in multis:
-        first = store.resolve_refs(
-            [RefResolution(ref_id=row.id, target_fqn=targets[0].fqn, provenance="synthesized")]
-        )
-        if not first:  # ref 行已被其它路径消费
-            continue
-        resolved += first
-        for target in targets[1:]:
-            seeded = _seed_ref_id(store, row)
-            if seeded is None:
-                break
-            resolved += store.resolve_refs(
-                [RefResolution(ref_id=seeded, target_fqn=target.fqn, provenance="synthesized")]
-            )
-    return resolved
-
-
-def _seed_ref_id(store: Store, row: UnresolvedRefRow) -> int | None:
-    """按原签名重新播种一条 pending 引用并返回其 id（找不到返回 None）。"""
-    store.upsert_unresolved(
-        [
-            UnresolvedRef(
-                from_fqn=row.from_symbol,
-                name=row.reference_name,
-                kind=row.reference_kind,
-                line=row.line,
-            )
-        ],
-        row.file_path,
-        row.language,
-    )
-    signature = (row.from_symbol, row.reference_name, row.reference_kind, row.line)
-    for candidate in reversed(store.unresolved_refs(status="pending", file_path=row.file_path)):
-        if (
-            candidate.from_symbol,
-            candidate.reference_name,
-            candidate.reference_kind,
-            candidate.line,
-        ) == signature:
-            return candidate.id
-    return None
+    """多义引用全连：批量写边，原引用仅在整批成功后删除。"""
+    return store.resolve_ref_targets([
+        RefResolution(ref_id=row.id, target_fqn=target.fqn, provenance="synthesized")
+        for row, targets in multis
+        for target in targets
+    ])
 
 
 # ---------------------------------------------------------------------------
