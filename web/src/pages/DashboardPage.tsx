@@ -99,13 +99,13 @@ export function DashboardPage() {
   const { account: profile, index, usage } = data;
 
   return (
-    <Page>
+    <Page className="dashboard-page">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <h1 className="text-lg font-semibold">控制台</h1>
         <RangePicker days={days} onChange={setDays} />
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title="账户资料" icon="user">
           <Row label="账户" value={profile.name} />
           <Row
@@ -140,37 +140,39 @@ export function DashboardPage() {
       </div>
 
       <Panel title={`工具调用（近 ${data.days} 天）`} icon="activity">
-        {/* 保留三类统计与原有口径，每个指标用独立数据框展示。 */}
-        <StatRow
-          label="仓库初始化"
-          items={[
-            ["次数", `${index.total} 次`],
-            [
-              "平均耗时",
-              index.avgDurationMs === null ? "—" : formatDuration(index.avgDurationMs),
-            ],
-            [
-              "最快 / 最慢",
-              index.minDurationMs == null
-                ? "—"
-                : `${formatDuration(index.minDurationMs)} / ${formatDuration(index.maxDurationMs ?? 0)}`,
-            ],
-          ]}
-        />
-        <StatRow
-          label="检索"
-          items={[
-            ["次数", `${usage.total} 次`],
-            ["平均耗时", usage.avgLatencyMs === null ? "—" : `${usage.avgLatencyMs} ms`],
-          ]}
-        />
-        <StatRow
-          label="Tool 调用"
-          items={[
-            ["成功", String(usage.succeeded + index.succeeded), "ok"],
-            ["失败", String(usage.failed + index.failed), "bad"],
-          ]}
-        />
+        {/* 桌面横向排列三类统计，手机纵向；保留全部指标与原有口径。 */}
+        <div className="grid gap-3 lg:grid-cols-3">
+          <StatRow
+            label="仓库初始化"
+            items={[
+              ["次数", `${index.total} 次`],
+              [
+                "平均耗时",
+                index.avgDurationMs === null ? "—" : formatDuration(index.avgDurationMs),
+              ],
+              [
+                "最快 / 最慢",
+                index.minDurationMs == null
+                  ? "—"
+                  : `${formatDuration(index.minDurationMs)} / ${formatDuration(index.maxDurationMs ?? 0)}`,
+              ],
+            ]}
+          />
+          <StatRow
+            label="检索"
+            items={[
+              ["次数", `${usage.total} 次`],
+              ["平均耗时", usage.avgLatencyMs === null ? "—" : `${usage.avgLatencyMs} ms`],
+            ]}
+          />
+          <StatRow
+            label="Tool 调用"
+            items={[
+              ["成功", String(usage.succeeded + index.succeeded), "ok"],
+              ["失败", String(usage.failed + index.failed), "bad"],
+            ]}
+          />
+        </div>
 
         {usage.total === 0 && index.total === 0 && (
           <p className="mt-3 text-xs text-ink-muted">
@@ -184,14 +186,14 @@ export function DashboardPage() {
 
 function Panel({ title, icon, children }: { title: string; icon: IconName; children: React.ReactNode }) {
   return (
-    <section className="min-w-0 border-2 border-ink-line bg-paper-card p-5 shadow-sm md:p-6">
+    <section className="dashboard-panel min-w-0 border-2 border-ink-line bg-paper-card p-4 shadow-sm">
       <h2 className="panel-heading mb-5 text-base font-semibold text-ink-primary"><Icon name={icon} />{title}</h2>
       {children}
     </section>
   );
 }
 
-/** 工具调用按类别分组，每项指标独立成框，保留未测量值和成功／失败语义。 */
+/** 三类统计各用一个方框，指标按行排列，保留未测量值和成功／失败语义。 */
 function StatRow({
   label,
   items,
@@ -200,17 +202,17 @@ function StatRow({
   items: [string, string, ("ok" | "bad")?][];
 }) {
   return (
-    <section className="mb-5 border-b border-dashed border-ink-line pb-5 last:mb-0 last:border-b-0 last:pb-0">
-      <h3 className="mb-3 text-sm font-semibold text-ink-primary">{label}</h3>
-      <dl className={`grid gap-3 ${items.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+    <section className="min-w-0 border border-ink-line bg-paper-raised p-3">
+      <h3 className="mb-2 text-sm font-semibold text-ink-primary">{label}</h3>
+      <dl>
         {items.map(([key, value, tone]) => (
           <div
             key={key}
-            className="min-w-0 rounded-lg border border-ink-line bg-paper-raised p-4"
+            className="flex min-w-0 items-baseline justify-between gap-3 border-b border-ink-line/70 py-1.5 last:border-b-0"
           >
-            <dt className="text-xs text-ink-muted">{key}</dt>
+            <dt className="shrink-0 text-xs text-ink-muted">{key}</dt>
             <dd
-              className={`mt-2 break-words font-mono text-xl font-semibold leading-snug tabular-nums ${
+              className={`min-w-0 break-words text-right font-mono text-base font-semibold leading-snug tabular-nums ${
                 tone === "ok"
                   ? "text-success-text"
                   : tone === "bad"
@@ -272,7 +274,7 @@ export function formatQuota(size: number): string {
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/70 py-2.5 last:border-b-0">
+    <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/70 py-1 last:border-b-0">
       <span className="shrink-0 text-xs text-ink-muted">{label}</span>
       <span className="min-w-0 break-words text-right text-sm text-ink-primary">{value}</span>
     </div>

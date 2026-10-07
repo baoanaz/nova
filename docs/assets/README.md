@@ -8,7 +8,8 @@
 |---|---|---|
 | [nova-logo.webp](nova-logo.webp) | NOVA 人像与星球标志，登录页和侧栏使用同源素材 | 用户提供的橙金色 `LOGO/LOGO3.png`；使用授权由素材权利人保留 |
 | [screenshots/nova-login.png](screenshots/nova-login.png) | NOVA 登录页 | 当前构建，空表单，不含凭据 |
-| [screenshots/nova-dashboard.png](screenshots/nova-dashboard.png) | NOVA 控制台首页 | 当前构建，合成账户及指标 |
+| [screenshots/nova-dashboard.png](screenshots/nova-dashboard.png) | NOVA 紧凑控制台首页 | 当前构建，合成账户及指标；1280×720、1366×768 一屏验证通过 |
+| [screenshots/nova-connect.png](screenshots/nova-connect.png) | 接入指南，圆角卡片与方角控件 | 当前构建，API Key 保持空白 |
 | [screenshots/nova-login-mobile.png](screenshots/nova-login-mobile.png) | 手机登录页 | 当前构建，390px 宽度 |
 | [screenshots/nova-dashboard-mobile.png](screenshots/nova-dashboard-mobile.png) | 手机控制台 | 当前构建，合成账户及指标 |
 | [screenshots/connect.png](screenshots/connect.png) | README 快速开始横向截图 | 用户提供的接入指南页面截图 |

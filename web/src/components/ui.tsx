@@ -35,7 +35,7 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="min-w-0 border-2 border-ink-line bg-paper-card shadow-sm">
+    <section className="min-w-0 overflow-hidden rounded-xl border-2 border-ink-line bg-paper-card shadow-sm">
       {(title || actions) && (
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-line bg-paper-raised px-5 py-4">
           <h2 className="text-base font-semibold text-ink-primary">{title}</h2>
@@ -169,8 +169,8 @@ export function LoadingBlock({ text = "加载中…" }: { text?: string }) {
  * 为什么不用“按页面类型自动判断”：用户明确说“只有历史记录调宽即可”，
  * 自动判断会在新页面出现时默默给出错误宽度；显式声明让每个页面自己负责。
  */
-export function Page({ children }: { children: ReactNode }) {
-  return <div className="page-content mx-auto max-w-5xl">{children}</div>;
+export function Page({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`page-content mx-auto max-w-5xl ${className}`}>{children}</div>;
 }
 
 export function WidePage({ children }: { children: ReactNode }) {

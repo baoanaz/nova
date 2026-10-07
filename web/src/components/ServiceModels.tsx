@@ -37,7 +37,7 @@ export function ServiceModels() {
 
   return (
     <section
-      className="min-w-0 border-2 border-ink-line bg-paper-card p-5 shadow-sm md:p-6"
+      className="dashboard-panel min-w-0 border-2 border-ink-line bg-paper-card p-4 shadow-sm"
       data-testid="service-models"
     >
       <h2 className="panel-heading mb-5 text-base font-semibold text-ink-primary"><Icon name="cpu" />服务模型</h2>
@@ -46,7 +46,7 @@ export function ServiceModels() {
       {!failed && meta === null && <p className="text-xs text-ink-muted">读取中…</p>}
 
       {meta !== null && (
-        <div className="space-y-5">
+        <div className="grid gap-3 sm:grid-cols-2">
           <ModelGroup
             heading="LLM"
             configured={meta.config.llm.configured}
@@ -90,7 +90,7 @@ function ModelGroup({
           <span className="text-xs text-warning-text">未配置</span>
         )}
       </div>
-      <dl className="space-y-1">
+      <dl>
         {items.map(([key, value]) => (
           <div key={key} className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/60 py-1.5 last:border-b-0">
             <dt className="shrink-0 text-xs text-ink-muted">{key}</dt>

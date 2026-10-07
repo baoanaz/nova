@@ -22,7 +22,7 @@
 @layer components {
   .brand-mark { @apply h-11 w-11 shrink-0 rounded-lg object-cover; }
   .sidebar-link {
-    @apply flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 font-medium;
+    @apply flex min-h-11 items-center gap-3 border border-transparent px-3 py-2.5 font-medium;
     transition: background-color 150ms, color 150ms;
   }
   .sidebar-link:hover { @apply bg-paper-card text-ink-primary; }
@@ -30,7 +30,7 @@
   .ui-button,
   .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):not([role="switch"]):not([aria-pressed]) {
     min-height: 2.5rem;
-    border-radius: 0.5rem;
+    border-radius: 0;
     transition: background-color 150ms, border-color 150ms;
   }
   .ui-button:hover:not(:disabled),
@@ -39,15 +39,17 @@
   }
   .page-content { @apply min-w-0 space-y-7; }
   .page-content h1 { @apply text-2xl font-semibold tracking-tight md:text-3xl; }
-  .page-content :where(section, div).bg-paper-card.shadow-sm { @apply rounded-xl; border-width: 1px; }
+  .page-content :where(section, div).bg-paper-card.shadow-sm { @apply rounded-xl; border-width: 2px; }
   .page-content :where(section, div).bg-paper-card.shadow-sm > h2 { @apply mb-5 text-base; }
+  .page-content.dashboard-page { @apply space-y-4; }
+  .page-content.dashboard-page .dashboard-panel > h2 { @apply mb-3; }
   .page-content table { font-variant-numeric: tabular-nums; }
   .page-content thead { @apply bg-paper-raised text-ink-muted; }
   .page-content tbody tr:hover { background: theme("colors.paper.base"); }
   .page-content :where(th, td) { padding-top: 0.85rem; padding-bottom: 0.85rem; }
   .panel-heading { @apply flex items-center gap-2.5; }
   .panel-heading > svg { @apply text-ink-muted; }
-  .range-picker { @apply inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-ink-control bg-paper-raised p-1; }
+  .range-picker { @apply inline-flex max-w-full flex-wrap gap-1 border border-ink-control bg-paper-raised p-1; }
   .range-picker button { @apply min-h-8 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium; }
 
   .login-art {

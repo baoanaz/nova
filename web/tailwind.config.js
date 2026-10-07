@@ -7,7 +7,7 @@ export default {
         sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
       },
-      borderRadius: { DEFAULT: "0.5rem", sm: "0.25rem", md: "0.625rem", lg: "0.75rem", xl: "1rem", "2xl": "1.25rem" },
+      borderRadius: { DEFAULT: "0", sm: "0", md: "0.625rem", lg: "0.75rem", xl: "1rem", "2xl": "1.25rem" },
       boxShadow: {
         sm: "0 4px 20px rgb(39 22 16 / 0.06)",
         xl: "0 24px 64px rgb(39 22 16 / 0.12)",
