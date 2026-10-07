@@ -5,15 +5,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from zace_core.parsing.base import FileContext
-from zace_core.parsing.c import (
+from nova_core.parsing.base import FileContext
+from nova_core.parsing.c import (
     CParser,
     IncludeDirective,
     filter_visible,
     parse_include_directive,
     resolve_include,
 )
-from zace_core.types import EdgeDef, ParsedFile, SymbolDef
+from nova_core.types import EdgeDef, ParsedFile, SymbolDef
 
 SAMPLE_DIR = Path(__file__).parent / "samples" / "c"
 SAMPLE_PREFIX = "core/tests/parsing/samples/c/"

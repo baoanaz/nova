@@ -1,8 +1,8 @@
 """TASK-090 验收：请求日志持久化与 trace id 查询。
 
 对应任务卡"验收标准（DoD）"逐条。方案（§A 裁定）：**文件轮转 sink**
-（``{data_root}/logs/request.log``，JSONL）——理由见 ``zace_service/requestlog.py`` 的模块 docstring
-与任务卡执行记录：本地模式按 R34/``test_tenancy`` 不该建 ``zace-meta.db``，DB 方案会让本地模式
+（``{data_root}/logs/request.log``，JSONL）——理由见 ``nova_service/requestlog.py`` 的模块 docstring
+与任务卡执行记录：本地模式按 R34/``test_tenancy`` 不该建 ``nova-meta.db``，DB 方案会让本地模式
 彻底没有日志。
 
 覆盖矩阵：
@@ -31,17 +31,17 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_service import logging as zace_logging
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.requestlog import (
+from nova_core.engine import Engine
+from nova_service import logging as nova_logging
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.requestlog import (
     MAX_TRACEBACK_CHARS,
     RequestLogEntry,
     lookup,
     read_entries,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import DeterministicBigramEmbedding, make_client, make_invite
 
@@ -158,7 +158,7 @@ def test_user_id_is_recorded(cloud_env: SimpleNamespace) -> None:
     """已认证请求 → 记录里带 ``userId``（便于按用户排查；DoD 第 1 条的 userId 项）。
 
     为什么用 ``/api/projects`` 而不是 ``/healthz``：**免鉴权路径（``PUBLIC_PATHS``）不解析身份**
-    （鉴权中间件直接放行，不写 ``request.state.zace_user``），所以拿健康检查端点断言 ``userId``
+    （鉴权中间件直接放行，不写 ``request.state.nova_user``），所以拿健康检查端点断言 ``userId``
     会永远为 ``null``。这不是缺陷（探活本来就不需要身份），但断言必须选一个真的走鉴权的端点。
     """
     ok = cloud_env.client.get("/api/projects", headers=cloud_env.alice)
@@ -170,7 +170,7 @@ def test_user_id_is_recorded(cloud_env: SimpleNamespace) -> None:
 
 def test_project_id_is_recorded(cloud_env: SimpleNamespace) -> None:
     """路径参数里的 projectId 记进日志（业务报错时知道是哪个项目）。"""
-    from zace_core.hashing import blob_hash  # noqa: F401  （仅为保持导入语义明确）
+    from nova_core.hashing import blob_hash  # noqa: F401  （仅为保持导入语义明确）
 
     resolved = cloud_env.client.post(
         "/api/projects/resolve",
@@ -269,10 +269,10 @@ def test_secrets_never_reach_the_log(tmp_path: Path) -> None:
 
 def test_redaction_also_covers_bare_keys_without_key_name(tmp_path: Path) -> None:
     """裸 key（没有 ``api_key=`` 这类键名）也要脱敏——``redact_text`` 的键名规则罩不住。"""
-    from zace_service.requestlog import redact_request_text
+    from nova_service.requestlog import redact_request_text
 
     assert redact_request_text(FAKE_API_KEY) == "***"
-    assert redact_request_text("zace_ABCDEFGHIJKLMNOP 无效") == "*** 无效"
+    assert redact_request_text("nova_ABCDEFGHIJKLMNOP 无效") == "*** 无效"
 
 
 # --------------------------------------------------------------- DoD：窗口（有界保留）
@@ -287,7 +287,7 @@ def test_window_prunes_oldest(tmp_path: Path) -> None:
     1. 造 3 个"旧"轮转文件 + 1 个"新"文件 → 清理后只剩新的，旧 requestId 查不到；
     2. ``backup_count`` 之外的文件不参与查询（体积上界的可观测面）。
     """
-    from zace_service.logging import prune_log_files
+    from nova_service.logging import prune_log_files
 
     ns = _local(tmp_path)
     with make_client(ns.app) as client:
@@ -393,7 +393,7 @@ def test_unauthenticated_request_has_no_owner(cloud_env: SimpleNamespace) -> Non
 
 def test_request_log_endpoint_requires_auth_in_cloud_mode(cloud_env: SimpleNamespace) -> None:
     """云瑞形态：该端点必须在受保护区域（**不得**进 ``PUBLIC_PATHS``）。"""
-    from zace_service.app import PUBLIC_PATHS
+    from nova_service.app import PUBLIC_PATHS
 
     assert not any("/api/request-log" in path for path in PUBLIC_PATHS)
     cloud_env.client.cookies.clear()  # 清掉 session cookie，确保真的是"无凭据"
@@ -414,7 +414,7 @@ def test_log_survives_restart(tmp_path: Path) -> None:
         assert response.status_code == 404
 
     # 模拟重启：新 app、新 logger 配置（文件 handler 重新挂载到同一路径）
-    zace_logging.configure_logging(
+    nova_logging.configure_logging(
         settings.log_level,
         log_path=settings.request_log_path,
         max_bytes=settings.log_max_bytes,
@@ -448,7 +448,7 @@ def _entry(**overrides: object) -> RequestLogEntry:
         "request_id": "trace-unit",
         "ts": "2026-01-01T00:00:00Z",
         "level": "info",
-        "logger": "zace_service.requestlog",
+        "logger": "nova_service.requestlog",
         "message": "request",
         "method": "GET",
         "path": "/healthz",
@@ -503,12 +503,12 @@ def test_related_logs_carry_handler_stack(tmp_path: Path) -> None:
     为什么需要它：``errors.py`` 的异常处理器自己打堆栈（``exc_info=exc``），堆栈落在**另一条**
     记录上；只回主条目的话，用户报 503 却看到空堆栈。
     """
-    from zace_service.errors import ApiError, map_engine_error
+    from nova_service.errors import ApiError, map_engine_error
 
     ns = _local(tmp_path)
     with make_client(ns.app) as client:
         # 直接驱动映射（TASK-035 的 503 路径），模拟处理器打完堆栈后的两条记录
-        from zace_service.requestlog import capture_request
+        from nova_service.requestlog import capture_request
 
         mapping = map_engine_error(OSError("disk full"))
         assert isinstance(mapping, ApiError) and mapping.status == 507

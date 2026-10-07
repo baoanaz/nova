@@ -16,9 +16,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from zace_core.cli.app import main
-from zace_core.engine import Engine
-from zace_core.interfaces import EmbeddingProfile
+from nova_core.cli.app import main
+from nova_core.engine import Engine
+from nova_core.interfaces import EmbeddingProfile
 
 #: 测试用 embedding 维度（小维度让 LanceDB 与断言都轻量）。
 TEST_DIM = 16
@@ -141,8 +141,8 @@ def provider() -> CountingEmbedding:
 
 @pytest.fixture
 def data_root(tmp_path: Path) -> Path:
-    """引擎数据根（每个测试独立，避免 ~/.zace 被污染）。"""
-    return tmp_path / "zace-data"
+    """引擎数据根（每个测试独立，避免 ~/.nova 被污染）。"""
+    return tmp_path / "nova-data"
 
 
 @pytest.fixture

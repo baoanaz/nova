@@ -29,8 +29,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
-from zace_core.engine import Engine  # noqa: E402
-from zace_core.interfaces import EmbeddingProfile  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_core.interfaces import EmbeddingProfile  # noqa: E402
 
 
 class InstantProvider:

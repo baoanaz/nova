@@ -6,8 +6,8 @@ import json
 import sys
 from pathlib import Path
 
-from zace_core.cli.eval import Expectation, GoldenCase
-from zace_core.types import EvidenceItem
+from nova_core.cli.eval import Expectation, GoldenCase
+from nova_core.types import EvidenceItem
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT / "benches" / "golden") not in sys.path:

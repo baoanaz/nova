@@ -11,7 +11,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from zace_core.cli.eval import (
+from nova_core.cli.eval import (
     CaseResult,
     Expectation,
     GoldenCase,
@@ -251,7 +251,7 @@ def test_negative_passed_only_without_answer_and_with_reported_gap() -> None:
 
 
 def test_first_hit_rank_requires_path_and_symbol() -> None:
-    from zace_core.types import EvidenceItem
+    from nova_core.types import EvidenceItem
 
     item = EvidenceItem(
         id="E1",

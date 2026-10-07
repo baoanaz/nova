@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.vectors.cache import EmbeddingCache, EmbeddingCacheError, cache_key
+from nova_core.vectors.cache import EmbeddingCache, EmbeddingCacheError, cache_key
 
 DIM = 4
 MODEL = "api:test-model"

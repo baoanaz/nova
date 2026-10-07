@@ -2,11 +2,11 @@
 
 用法：
 
-    ZACE_EMBED_SMOKE=1 uv run pytest core/tests/embedding/test_smoke_local_model.py -q -s
+    NOVA_EMBED_SMOKE=1 uv run pytest core/tests/embedding/test_smoke_local_model.py -q -s
 
 可调环境变量：
-- ``ZACE_EMBED_SLUG``：模型 slug（默认 ``multilingual-e5-small``；可换 ``arctic-embed-xs``）；
-- ``ZACE_EMBED_CACHE``：模型缓存目录（默认 ``/tmp/zace-embedding-cache``，**不落仓库**）。
+- ``NOVA_EMBED_SLUG``：模型 slug（默认 ``multilingual-e5-small``；可换 ``arctic-embed-xs``）；
+- ``NOVA_EMBED_CACHE``：模型缓存目录（默认 ``/tmp/nova-embedding-cache``，**不落仓库**）。
 
 CI 默认跳过（无网络、且模型文件体积远大于仓库允许的产物）；真实结果回填到
 TASK-008 任务卡"执行记录"，供 TASK-015 bake-off 复用机器规格与耗时基线。
@@ -19,13 +19,13 @@ import time
 
 import numpy as np
 import pytest
-from zace_core.embedding import create_provider, get_local_spec
+from nova_core.embedding import create_provider, get_local_spec
 
-SMOKE_ENABLED = os.environ.get("ZACE_EMBED_SMOKE") == "1"
+SMOKE_ENABLED = os.environ.get("NOVA_EMBED_SMOKE") == "1"
 
 pytestmark = pytest.mark.skipif(
     not SMOKE_ENABLED,
-    reason="真实模型冒烟默认跳过；设 ZACE_EMBED_SMOKE=1 启用（需联网下载模型）",
+    reason="真实模型冒烟默认跳过；设 NOVA_EMBED_SMOKE=1 启用（需联网下载模型）",
 )
 
 #: 冒烟样本：一句中文 + 一行代码（卡内 DoD 要求）。
@@ -34,8 +34,8 @@ CODE = "def refresh_token(self) -> str:"
 
 
 def test_real_model_embeds_chinese_and_code() -> None:
-    slug = os.environ.get("ZACE_EMBED_SLUG", "multilingual-e5-small")
-    cache_dir = os.environ.get("ZACE_EMBED_CACHE", "/tmp/zace-embedding-cache")
+    slug = os.environ.get("NOVA_EMBED_SLUG", "multilingual-e5-small")
+    cache_dir = os.environ.get("NOVA_EMBED_CACHE", "/tmp/nova-embedding-cache")
     spec = get_local_spec(slug)
 
     started = time.perf_counter()

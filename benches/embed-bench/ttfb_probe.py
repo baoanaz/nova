@@ -123,7 +123,7 @@ def main() -> int:
     key = os.environ.get("EMBED_API_KEY", "")
     if not key or key == PLACEHOLDER_KEY:
         print(
-            "缺少 EMBED_API_KEY（示例：set -a; source /etc/zace/zace.env; set +a）", file=sys.stderr
+            "缺少 EMBED_API_KEY（示例：set -a; source /etc/nova/nova.env; set +a）", file=sys.stderr
         )
         return 2
 

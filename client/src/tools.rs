@@ -158,7 +158,7 @@ impl ToolLayer {
         let remote = self.remote.for_call(CallContext::new());
         // 诊断走 stderr（stdout 只出 JSON-RPC 帧）：用户/日志据此把客户端侧与
         // 服务端 ``GET /api/calls/{callId}`` 对上（TASK-099 §G 要抓的就是它）。
-        eprintln!("zace-client: callId={} tool={tool_name}", remote.call_id());
+        eprintln!("nova-client: callId={} tool={tool_name}", remote.call_id());
         match tool_name {
             "search_context" => {
                 let args: SearchArguments = decode(tool_name, arguments)?;
@@ -271,7 +271,7 @@ impl ToolLayer {
             );
             if !rejected.is_empty() {
                 eprintln!(
-                    "zace-client: 服务端跳过 {} 个文件（示例：{:?}）",
+                    "nova-client: 服务端跳过 {} 个文件（示例：{:?}）",
                     rejected.len(),
                     rejected
                         .iter()
@@ -314,7 +314,7 @@ impl ToolLayer {
                 Ok(id) => Some(id),
                 Err(error) => {
                     // checkpoint 是传输优化，失败不阻断检索（降级为服务端不用 checkpoint）。
-                    eprintln!("zace-client: checkpoint 创建失败（不影响检索）：{error:#}");
+                    eprintln!("nova-client: checkpoint 创建失败（不影响检索）：{error:#}");
                     None
                 }
             },

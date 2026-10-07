@@ -1,8 +1,8 @@
 //! 远端同步层（CF-05 的 client 侧）：`resolve` → `batch-upload` → `deletions` → `checkpoint`。
 //!
-//! **与参考实现（notace）的关键差异**（zace 的 CF-05 已经定型，不能照搬 notace 的形态）：
+//! **与参考实现（notace）的关键差异**（nova 的 CF-05 已经定型，不能照搬 notace 的形态）：
 //!
-//! | 主题 | notace | zace（本模块） |
+//! | 主题 | notace | nova（本模块） |
 //! |---|---|---|
 //! | 项目定位 | 只传 blob 名单，服务端自己认 | **先 `POST /api/projects/resolve`**（D-29 identityKey）拿 `projectId`（云端 MCP 的正解，见就绪度报告 §2） |
 //! | blob 内容 | 明文 JSON（`content` 字段） | **base64**（CF-05：`contentB64`，JSON 二进制安全编码） |
@@ -414,7 +414,7 @@ impl RemoteClient {
 fn build_client(timeout: Duration) -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .timeout(timeout)
-        .user_agent(concat!("zace-client/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("nova-client/", env!("CARGO_PKG_VERSION")))
         .build()
         .context("failed to build the HTTP client")
 }
@@ -532,10 +532,10 @@ impl AskResponse {
     /// 比让模型自己去解读 JSON 可靠（也与 ``search_context`` 返回 Markdown 的形态一致）。
     fn into_text(self) -> String {
         if let Some(answer) = self.answer {
-            return format!("[zace] status={}\n\n{answer}", self.status);
+            return format!("[nova] status={}\n\n{answer}", self.status);
         }
         let mut parts = vec![format!(
-            "[zace] status={}（证据不足：按 D-24 不调用 LLM，以下是尽力而为的上下文）",
+            "[nova] status={}（证据不足：按 D-24 不调用 LLM，以下是尽力而为的上下文）",
             self.status
         )];
         if !self.missing_evidence.is_empty() {
@@ -620,10 +620,10 @@ mod tests {
     #[test]
     fn base_url_requires_scheme_and_drops_trailing_slash() {
         assert_eq!(
-            normalize_base_url("https://zace.example.com/").unwrap(),
-            "https://zace.example.com"
+            normalize_base_url("https://nova.example.com/").unwrap(),
+            "https://nova.example.com"
         );
-        assert!(normalize_base_url("zace.example.com").is_err());
+        assert!(normalize_base_url("nova.example.com").is_err());
         assert!(normalize_base_url("   ").is_err());
     }
 

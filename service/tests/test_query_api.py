@@ -21,19 +21,19 @@ import jsonschema
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.types import ChangeSet
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.packmeta import DECISION_SUMMARY_LIMIT, meta_field_names
-from zace_service.routers.query import (
+from nova_core.engine import Engine
+from nova_core.types import ChangeSet
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.packmeta import DECISION_SUMMARY_LIMIT, meta_field_names
+from nova_service.routers.query import (
     DEGRADED_NOTICE,
     INSUFFICIENT_NOTICE,
     MAX_MAX_TOKENS,
     MAX_QUERY_CHARS,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     REPO_ROOT,

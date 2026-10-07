@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.storage import Store
-from zace_core.types import ChunkDef, ParsedFile, SpecBlockDef, SymbolDef
+from nova_core.storage import Store
+from nova_core.types import ChunkDef, ParsedFile, SpecBlockDef, SymbolDef
 
 
 def _seed_spec_and_code(

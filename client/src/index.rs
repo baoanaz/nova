@@ -1,6 +1,6 @@
 //! 本地索引缓存与扫描（Module 05 §3.2 / D-27 懒同步的本地侧）。
 //!
-//! **缓存位置**：`~/.cache/zace/<projectId>/index.json`，**不进工作区**。
+//! **缓存位置**：`~/.cache/nova/<projectId>/index.json`，**不进工作区**。
 //! 这是对参考实现（notace 放 `.not-ace-tool/index.json` 于项目内）的**有意改进**（`Background/01` §7-1）：
 //! 不污染工作区、不与 `.gitignore` 纠缠，且同一仓库的不同 checkout 天然隔离（projectId 由 D-29 决定，
 //! 而 D-29 含相对路径）。
@@ -40,7 +40,7 @@ pub struct FileEntry {
     pub blob_hash: String,
 }
 
-/// 本地索引（`~/.cache/zace/<serverKey>/<projectId>/index.json`）。
+/// 本地索引（`~/.cache/nova/<serverKey>/<projectId>/index.json`）。
 ///
 /// TASK-100 修正（用户 2026-09-14 报告的"每次调用都重新初始化"）：
 /// 缓存以前只按 `projectId` 分目录，**没有区分"这份缓存属于哪台服务端"**。
@@ -136,7 +136,7 @@ pub struct IndexManager {
 }
 
 impl IndexManager {
-    /// `cache_root` = 缓存根（通常是 `~/.cache/zace`）；实际写 `<cache_root>/<projectId>/`。
+    /// `cache_root` = 缓存根（通常是 `~/.cache/nova`）；实际写 `<cache_root>/<projectId>/`。
     pub fn new(root: PathBuf, project_id: String, cache_root: PathBuf, endpoint: &str) -> Self {
         let rules = IgnoreRules::load(&root);
         let config_hash = config_fingerprint(&rules);
@@ -176,7 +176,7 @@ impl IndexManager {
         let mut cached_files = 0usize;
         let mut skipped = Vec::new();
 
-        // 忽略语义（D-28 / TASK-097）：第 0 层白名单（强制包含）> `.zaceignore` > `.gitignore`
+        // 忽略语义（D-28 / TASK-097）：第 0 层白名单（强制包含）> `.novaignore` > `.gitignore`
         // > 内置目录剪枝。前两层的遍历由 `walker()` 完成；第 0 层由 `allowlist_walk()` 追加，
         // 因此这里迭代两者的**并集**，并用 `seen` 按路径去重（既未被忽略又命中白名单的文件
         // 会同时出现在两个 walker 里）。
@@ -269,7 +269,7 @@ impl IndexManager {
         //
         // 打到 stderr（不能打到 stdout：stdout 是 MCP 的 JSON-RPC 通道，写脏会破协议）。
         eprintln!(
-            "zace-client: 扫描完成 project={} 文件={} 命中缓存={} 待上传={} 待删除={}",
+            "nova-client: 扫描完成 project={} 文件={} 命中缓存={} 待上传={} 待删除={}",
             self.project_id,
             entries.len(),
             cached_files,
@@ -400,7 +400,7 @@ fn config_fingerprint(rules: &IgnoreRules) -> String {
         "v{CACHE_VERSION}:{MAX_FILE_BYTES}:{BINARY_RATIO}:{BINARY_PROBE_BYTES}:{}",
         rules.fingerprint()
     );
-    blob_hash("zace-client-config", material.as_bytes())
+    blob_hash("nova-client-config", material.as_bytes())
 }
 
 /// 服务端端点的缓存目录名（TASK-100）：取端点哈希的前 16 hex。
@@ -408,7 +408,7 @@ fn config_fingerprint(rules: &IgnoreRules) -> String {
 /// 为什么不直接用 base_url 做目录名：它可能很长、含 `:`/`/`（部分平台不合法字符），
 /// 也可能内嵌凭据。哈希同时解决了这三个问题；16 hex（64 bit）足够区分本地几台服务。
 fn server_cache_key(endpoint: &str) -> String {
-    let digest = blob_hash("zace-client-endpoint", endpoint.as_bytes());
+    let digest = blob_hash("nova-client-endpoint", endpoint.as_bytes());
     digest.chars().take(16).collect()
 }
 

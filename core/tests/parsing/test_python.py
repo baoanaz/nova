@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from zace_core.parsing.python import PythonParser
-from zace_core.types import EdgeDef, ParsedFile, SymbolDef, UnresolvedRef
+from nova_core.parsing.python import PythonParser
+from nova_core.types import EdgeDef, ParsedFile, SymbolDef, UnresolvedRef
 
 SAMPLE_DIR = Path(__file__).parent / "samples" / "python"
 SAMPLE_PREFIX = "core/tests/parsing/samples/python/"
@@ -172,10 +172,10 @@ def test_parse_is_deterministic(parser: PythonParser) -> None:
 
 
 def test_self_hosting_types_and_hashing(parser: PythonParser) -> None:
-    """自举：用本抽取器解析 zace 自己的冻结契约文件。"""
+    """自举：用本抽取器解析 nova 自己的冻结契约文件。"""
     types_pf = parser.parse(
-        "core/zace_core/types.py",
-        (REPO_ROOT / "core/zace_core/types.py").read_text(encoding="utf-8"),
+        "core/nova_core/types.py",
+        (REPO_ROOT / "core/nova_core/types.py").read_text(encoding="utf-8"),
     )
     assert types_pf.fallback is False
     assert symbol(types_pf, "ChunkDef").kind == "class"
@@ -183,8 +183,8 @@ def test_self_hosting_types_and_hashing(parser: PythonParser) -> None:
     assert symbol(types_pf, "SymbolDef").end_line > symbol(types_pf, "SymbolDef").start_line
 
     hashing_pf = parser.parse(
-        "core/zace_core/hashing.py",
-        (REPO_ROOT / "core/zace_core/hashing.py").read_text(encoding="utf-8"),
+        "core/nova_core/hashing.py",
+        (REPO_ROOT / "core/nova_core/hashing.py").read_text(encoding="utf-8"),
     )
     assert hashing_pf.fallback is False
     assert symbol(hashing_pf, "chunk_content_hash").kind == "function"

@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """按题库里**标注的工具**跑分：`search` 走检索，`ask` 走 service 的 grounded 总结。
 
-为什么单独一个脚本：`zace-core eval` 只覆盖 search（检索命中率）；
+为什么单独一个脚本：`nova-core eval` 只覆盖 search（检索命中率）；
 而题库里有一批题标注为 `ask`（需要跨文件综合解释），必须走
-`service/zace_service/answer.py` 的真实 LLM 路径才测得准。判定口径：
+`service/nova_service/answer.py` 的真实 LLM 路径才测得准。判定口径：
 
 - `search` 组：复用 core 的 `first_hit_rank` —— 期望路径出现在**装填顺序** top-k 内即命中；
 - `ask` 组：同一条 query 先检索再喂给 LLM，分开记录：
@@ -16,7 +16,7 @@
     uv run python benches/golden/qa_probe.py \
         --golden benches/golden/langchain/langchain.jsonl \
         --project-id ca2050db0db5b1e2 \
-        --data /root/.zace/bench/voyage-4-lite-d1024 \
+        --data /root/.nova/bench/voyage-4-lite-d1024 \
         --out benches/results/raw/qa-probe/langchain.json
 """
 
@@ -34,16 +34,16 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "core"))
 sys.path.insert(0, str(ROOT / "service"))
 
-from zace_core.cli.eval import (  # noqa: E402
+from nova_core.cli.eval import (  # noqa: E402
     first_hit_rank,
     load_cases,
     ordered_evidence,
     run_golden,
 )
-from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
-from zace_core.engine import Engine  # noqa: E402
-from zace_service.answer import AnswerError, answer_question, build_provider  # noqa: E402
-from zace_service.config import Settings  # noqa: E402
+from nova_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_service.answer import AnswerError, answer_question, build_provider  # noqa: E402
+from nova_service.config import Settings  # noqa: E402
 
 _CITATION_RE = re.compile(r"\[([EF]\d+)\]")
 

@@ -24,14 +24,14 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_service import audit as audit_module
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.llmconfig import SOURCE_SERVER, SOURCE_USER, resolve_llm_config
-from zace_service.metadb import MetaDB
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_service import audit as audit_module
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.llmconfig import SOURCE_SERVER, SOURCE_USER, resolve_llm_config
+from nova_service.metadb import MetaDB
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -195,7 +195,7 @@ def test_answerable_false_stores_null_text_but_records_status(env: SimpleNamespa
 
 def test_llm_failure_stores_null_text_with_degraded_status(env: SimpleNamespace) -> None:
     """第三条分支（§A 的 ``degraded``）：调了 LLM 但失败 → 正文 NULL + 状态如实。"""
-    from zace_service.answer import AnswerUnavailableError
+    from nova_service.answer import AnswerUnavailableError
 
     provider = FakeAnswerProvider(error=AnswerUnavailableError("模型不可达"))
     _inject_provider(env, provider)
@@ -360,7 +360,7 @@ def test_call_timeline_is_scoped_to_owner(tmp_path: Path) -> None:
 
         # 注册会把浏览器 session 切到新用户。隔离用例直接为两位用户各铸一枚 token，避免
         # TestClient 的单 cookie jar 把 token 错记到最后登录的人名下。
-        from zace_service.auth import create_api_token
+        from nova_service.auth import create_api_token
 
         alice_raw, alice_digest, alice_prefix = create_api_token()
         db.create_token(alice_id, token_hash=alice_digest, prefix=alice_prefix, name="a")
@@ -489,7 +489,7 @@ def test_key_is_never_echoed_by_any_endpoint(env: SimpleNamespace) -> None:
     断言方式：把 key 造成一个**带长度特征的独特串**，然后逐个端点比对——只要响应体里出现
     该串、它的前缀、或"长度"这个数字，断言立刻失败。
     """
-    secret = "sk-zace-t099-SECRET-abcdefghijklmnop"
+    secret = "sk-nova-t099-SECRET-abcdefghijklmnop"
     saved = env.client.put(
         "/api/auth/llm-config",
         json={
@@ -521,7 +521,7 @@ def test_key_is_never_echoed_by_any_endpoint(env: SimpleNamespace) -> None:
 
 def test_key_is_never_echoed_after_save_into_meta_and_errors(env: SimpleNamespace) -> None:
     """再守两条容易漏的路径：保存**之后**的 ``/api/meta``，以及错误响应。"""
-    secret = "sk-zace-t099-NOTHERE-0123456789"
+    secret = "sk-nova-t099-NOTHERE-0123456789"
     env.client.put(
         "/api/auth/llm-config",
         json={"model": "m", "baseUrl": "https://a/v1", "apiKey": secret},
@@ -540,7 +540,7 @@ def test_key_does_not_appear_in_logs(
     """日志面同样不能落 key（走 ``redact_text`` 的第二道防线）。"""
     import logging
 
-    secret = "sk-zace-t099-LOG-abcdefghijkl"
+    secret = "sk-nova-t099-LOG-abcdefghijkl"
     with caplog.at_level(logging.INFO):
         env.client.put(
             "/api/auth/llm-config",
@@ -564,7 +564,7 @@ def test_user_config_takes_effect_and_falls_back(tmp_path: Path, monkeypatch) ->
     ``provider_for_request`` 的**真实返回值**——它是 REST/MCP 两面共用的解析入口，
     断言它的 ``model`` 就等于断言"这次 ask 会拿哪个模型去请求"。
     """
-    from zace_service.llmconfig import provider_for_request
+    from nova_service.llmconfig import provider_for_request
 
     monkeypatch.delenv("ANSWER_BASE_URL", raising=False)
     monkeypatch.delenv("ANSWER_API_KEY", raising=False)
@@ -637,7 +637,7 @@ def test_unconfigured_everywhere_reports_missing_fields(tmp_path: Path) -> None:
 
 def test_resolved_config_public_json_has_no_key() -> None:
     """``to_public_json`` 是唯一允许出网的形态——它连 key 的字段都没有。"""
-    from zace_service.llmconfig import ResolvedLlmConfig
+    from nova_service.llmconfig import ResolvedLlmConfig
 
     resolved = ResolvedLlmConfig(
         base_url="https://a/v1",
@@ -655,7 +655,7 @@ def test_resolved_config_public_json_has_no_key() -> None:
 
 def test_mcp_ask_uses_the_user_config(tmp_path: Path) -> None:
     """MCP 面（``ask_project``）同样吃用户配置：``build_answer_provider`` 的解析链路一致。"""
-    from zace_service.mcp import build_answer_provider
+    from nova_service.mcp import build_answer_provider
 
     settings = _settings_for(
         tmp_path / "data",
@@ -717,7 +717,7 @@ def test_migration_upgrades_legacy_db_for_call_id_and_answer(tmp_path: Path) -> 
     这是卡内点名要写的用例（旧库直接打开会因列不存在而 ``no such column`` 失败——
     TASK-094 §C 实测踩过，本卡不得重蹈）。
     """
-    db_path = tmp_path / "data" / "zace-meta.db"
+    db_path = tmp_path / "data" / "nova-meta.db"
     _legacy_db(db_path)
 
     before = sqlite3.connect(db_path)
@@ -767,11 +767,11 @@ def test_migration_upgrades_legacy_db_for_call_id_and_answer(tmp_path: Path) -> 
 def test_legacy_db_serves_upload_with_call_id_end_to_end(tmp_path: Path) -> None:
     """端到端：旧库 + 新代码起服务 → 上传与检索正常，且新记录带上 callId。"""
     data_root = tmp_path / "data"
-    _legacy_db(data_root / "zace-meta.db")
+    _legacy_db(data_root / "nova-meta.db")
     app, manager, client = _build(tmp_path)
     with client:
         # 旧库被替换成本用例的 app 库（同一路径）：确认迁移真的发生在应用启动路径上。
-        assert (data_root / "zace-meta.db").is_file()
+        assert (data_root / "nova-meta.db").is_file()
         project_id = manager.resolve_project("identity:legacy099", "legacy099").project_id
         upload_files(manager, project_id, SAMPLE_FILES)
         response = client.post(

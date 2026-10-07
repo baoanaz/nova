@@ -22,8 +22,8 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from zace_core.pipeline import Allowlist, DirectorySource, IgnoreRules
-from zace_core.pipeline.ignore import (
+from nova_core.pipeline import Allowlist, DirectorySource, IgnoreRules
+from nova_core.pipeline.ignore import (
     ALLOWLIST_ENV_VAR,
     ALLOWLIST_SCOPE_ENV_VAR,
     ALLOWLIST_SCOPES,
@@ -104,7 +104,7 @@ def test_hidden_ai_dir_skills_are_rescued(allowlist_root: Path, listed: tuple[st
     """真实形态：``.claude/skills/<分类>/<技能>/SKILL.md`` 与同目录辅助文件都在。
 
     这是用户提出需求时的原话场景（``.gitignore`` 里写了 ``.claude/``，里面的 SKILL.md
-    就索引不到）。zace 本来就不因"隐藏"跳过（``.hidden(false)``），所以这一条测的纯粹是
+    就索引不到）。nova 本来就不因"隐藏"跳过（``.hidden(false)``），所以这一条测的纯粹是
     "被 gitignore 排除"这条通路。
     """
     assert ".claude/skills/review/SKILL.md" in listed
@@ -169,7 +169,7 @@ def test_lookthrough_does_enter_ignored_dirs_with_a_matching_child(
 def test_lookthrough_depth_is_bounded(tmp_path: Path) -> None:
     """下钻是**有界**的：比上限更深的 ``skills/`` 不会被发现（``shallow`` 为 0 层，最直观）。
 
-    这一条同时锁定了 ``ZACE_ALLOWLIST_SCOPE=shallow`` 的语义：白名单只压 ``.gitignore`` 的
+    这一条同时锁定了 ``NOVA_ALLOWLIST_SCOPE=shallow`` 的语义：白名单只压 ``.gitignore`` 的
     **文件级**规则，不改变目录剪枝。
     """
     root = tmp_path / "repo"
@@ -236,7 +236,7 @@ def test_gitignored_scope_does_not_change_builtin_pruning(tmp_path: Path) -> Non
 
 
 def test_lookthrough_depth_env_is_honoured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``ZACE_ALLOWLIST_SCOPE`` / ``ZACE_ALLOWLIST_DEPTH`` 可直接配置，非法值回落默认。
+    """``NOVA_ALLOWLIST_SCOPE`` / ``NOVA_ALLOWLIST_DEPTH`` 可直接配置，非法值回落默认。
 
     非法范围取值必须回落 ``deep``（默认），不能意外变成 ``none``（那会让白名单静默失效）。
     """
@@ -274,7 +274,7 @@ def test_empty_allowlist_restores_task_037_behaviour(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# §A-2 配置方式：.zaceinclude / 环境变量 / 默认清单
+# §A-2 配置方式：.novainclude / 环境变量 / 默认清单
 # ---------------------------------------------------------------------------
 
 
@@ -292,14 +292,14 @@ def test_default_allowlist_contents_are_locked() -> None:
     assert DEFAULT_LOOKTHROUGH_DEPTH >= 2, "至少能覆盖 ``hacks/skills/x`` 这种两层形态"
 
 
-def test_zaceinclude_adds_custom_patterns(tmp_path: Path) -> None:
-    """``.zaceinclude`` 里自定义的模式生效（卡内 DoD 的 ``my-notes/*.md`` 形态）。"""
+def test_novainclude_adds_custom_patterns(tmp_path: Path) -> None:
+    """``.novainclude`` 里自定义的模式生效（卡内 DoD 的 ``my-notes/*.md`` 形态）。"""
     root = tmp_path / "repo"
     write_repo(
         root,
         {
             ".gitignore": "my-notes/\n",
-            ".zaceinclude": "# 我的笔记也要索引\nmy-notes\n",
+            ".novainclude": "# 我的笔记也要索引\nmy-notes\n",
             "my-notes/todo.md": "# 待办\n",
             "other/skip.md": "# 无关\n",
         },
@@ -309,14 +309,14 @@ def test_zaceinclude_adds_custom_patterns(tmp_path: Path) -> None:
     assert "other/skip.md" in listed, "未命中白名单的普通文件照旧（本来就不被忽略）"
 
 
-def test_zaceinclude_can_cancel_a_builtin_entry(tmp_path: Path) -> None:
+def test_novainclude_can_cancel_a_builtin_entry(tmp_path: Path) -> None:
     """``!`` 前缀取消内置项：白名单是"包含"清单，用户必须能关掉不需要的（```!skills```）。"""
     root = tmp_path / "repo"
     write_repo(
         root,
         {
             ".gitignore": "hacks/\n",
-            ".zaceinclude": "!skills\n",
+            ".novainclude": "!skills\n",
             "hacks/skills/SKILL.md": "# 不要它\n",
             "AGENTS.md": "# 仍旧要\n",
         },
@@ -327,7 +327,7 @@ def test_zaceinclude_can_cancel_a_builtin_entry(tmp_path: Path) -> None:
 
 
 def test_env_allowlist_is_merged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``ZACE_INDEX_ALLOWLIST``（逗号分隔）与内置、``.zaceinclude`` **取并集**。"""
+    """``NOVA_INDEX_ALLOWLIST``（逗号分隔）与内置、``.novainclude`` **取并集**。"""
     root = tmp_path / "repo"
     write_repo(
         root,
@@ -342,13 +342,13 @@ def test_env_allowlist_is_merged(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     assert "env-notes/a.md" in listed
 
     monkeypatch.delenv(ALLOWLIST_ENV_VAR)
-    write_repo(root, {".zaceinclude": "inc-notes\n"})
+    write_repo(root, {".novainclude": "inc-notes\n"})
     assert "inc-notes/b.md" in DirectorySource(root).list_files()
     assert "env-notes/a.md" not in DirectorySource(root).list_files(), "env 撤掉后不该还在"
 
 
-def test_missing_zaceinclude_is_not_an_error(tmp_path: Path) -> None:
-    """``.zaceinclude`` 不存在 → 用内置默认，不报错（与忽略文件同口径）。"""
+def test_missing_novainclude_is_not_an_error(tmp_path: Path) -> None:
+    """``.novainclude`` 不存在 → 用内置默认，不报错（与忽略文件同口径）。"""
     root = tmp_path / "repo"
     write_repo(root, {"AGENTS.md": "# a\n", ".gitignore": "AGENTS.md\n"})
     assert DirectorySource(root).list_files() == (".gitignore", "AGENTS.md")
@@ -414,13 +414,13 @@ def test_case_insensitive_matching(allowlist_root: Path) -> None:
     assert "Skills/local/test.py" in listed, "目录名也大小写不敏感"
 
 
-def test_allowlist_applies_to_zaceignore_too(tmp_path: Path) -> None:
-    """白名单压过**第 1 层** ``.zaceignore``（不只是 ``.gitignore``）——否则"强制包含"名不副实。"""
+def test_allowlist_applies_to_novaignore_too(tmp_path: Path) -> None:
+    """白名单压过**第 1 层** ``.novaignore``（不只是 ``.gitignore``）——否则"强制包含"名不副实。"""
     root = tmp_path / "repo"
     write_repo(
         root,
         {
-            ".zaceignore": "AGENTS.md\n",
+            ".novaignore": "AGENTS.md\n",
             "AGENTS.md": "# 指令\n",
             "other.md": "# 其他\n",
             ".gitignore": "other.md\n",
@@ -428,7 +428,7 @@ def test_allowlist_applies_to_zaceignore_too(tmp_path: Path) -> None:
     )
     listed = DirectorySource(root).list_files()
     assert "AGENTS.md" in listed
-    assert "other.md" not in listed, "未命中白名单的 .zaceignore 条目照旧生效"
+    assert "other.md" not in listed, "未命中白名单的 .novaignore 条目照旧生效"
 
 
 def test_allowlist_does_not_bypass_size_or_binary_thresholds(tmp_path: Path) -> None:
@@ -436,7 +436,7 @@ def test_allowlist_does_not_bypass_size_or_binary_thresholds(tmp_path: Path) -> 
 
     这一条防止"白名单"被误解为"无论如何都要索引"——R43 的 ``skipped_files`` 诚实性不变。
     """
-    from zace_core.pipeline import IndexScope
+    from nova_core.pipeline import IndexScope
 
     scope = IndexScope(max_bytes=16)
     ok, reason = scope.should_read("hacks/skills/SKILL.md", 32)
@@ -497,7 +497,7 @@ def test_walk_does_not_enumerate_pruned_dirs(
 #: 语义漂移会让其中一边的期望清单失败，这正是对照测试要抓的）。
 PARITY_REPO = {
     ".gitignore": "hacks/\nlogs/\nAI-notes.tmp\n.claude/\n.codex/\n",
-    ".zaceinclude": "my-notes\n",
+    ".novainclude": "my-notes\n",
     "hacks/skills/SKILL.md": "# 技能\n",
     "hacks/skills/learned/helper.py": "HELPER = 1\n",
     ".claude/settings.json": "{}\n",
@@ -521,8 +521,8 @@ PARITY_EXPECTED = (
     ".claude/skills/review/SKILL.md",
     ".claude/skills/review/reference.md",
     ".gitignore",
+    ".novainclude",
     ".pi/agent/skills/learned/SKILL.md",
-    ".zaceinclude",
     "AGENTS.md",
     "HANDOFF.md",
     "README.md",

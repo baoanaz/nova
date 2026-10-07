@@ -6,12 +6,12 @@ from pathlib import Path
 
 import httpx
 import pytest
-from zace_core.embedding.api import OpenAiCompatibleEmbeddingProvider
-from zace_core.embedding.base import EmbeddingConfigError, LocalModelUnavailableError
-from zace_core.embedding.factory import EmbeddingConfig, create_provider
-from zace_core.embedding.local import LocalOnnxEmbeddingProvider
-from zace_core.embedding.registry import DEFAULT_LOCAL_SLUG
-from zace_core.interfaces import EmbeddingProvider
+from nova_core.embedding.api import OpenAiCompatibleEmbeddingProvider
+from nova_core.embedding.base import EmbeddingConfigError, LocalModelUnavailableError
+from nova_core.embedding.factory import EmbeddingConfig, create_provider
+from nova_core.embedding.local import LocalOnnxEmbeddingProvider
+from nova_core.embedding.registry import DEFAULT_LOCAL_SLUG
+from nova_core.interfaces import EmbeddingProvider
 
 from .conftest import StubOnnxSession
 

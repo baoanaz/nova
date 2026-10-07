@@ -1,6 +1,6 @@
 # 基准测试
 
-本目录包括检索质量回归与索引性能计量。外部靶场只读，源码和索引不提交到 zace。
+本目录包括检索质量回归与索引性能计量。外部靶场只读，源码和索引不提交到 nova。
 安装见 [ENVIRONMENT.txt](../ENVIRONMENT.txt)，报告索引见 [results/README.md](results/README.md)。
 
 ## 入口
@@ -14,11 +14,11 @@
 | 模型选型工具 | `bakeoff/` |
 
 当前默认清单只包含公共靶场和本仓自检。内部问答、用例、报告与清单已迁至
-`$HOME/.key/zace/benchmarks/`，需要时显式指定外部清单：
+`$HOME/.key/nova/benchmarks/`，需要时显式指定外部清单：
 
 ```bash
 uv run python benches/run.py --list-targets
-uv run python benches/run.py --targets-file "$HOME/.key/zace/benchmarks/targets.json" --list-targets
+uv run python benches/run.py --targets-file "$HOME/.key/nova/benchmarks/targets.json" --list-targets
 ```
 
 不自动加载私有清单，不在公开仓库中保存内部源码、问题、参考答案或路径结构。
@@ -32,7 +32,7 @@ uv run python benches/run.py --targets-file "$HOME/.key/zace/benchmarks/targets.
 | `leveldb-v1` | primary | 见 `targets.json` |
 | `helloagents-v1` | primary | 见 `targets.json` |
 | `langchain-v1` | primary，质量回归 | `41d3572` |
-| `zace` | dogfood | 当前工作树 |
+| `nova` | dogfood | 当前工作树 |
 
 性能复测使用 LangChain `e75dae1f`（2986 文件 / 20931 chunks），
 不能与质量清单 `41d3572`（2950 文件 / 20673 chunks）的数字混用。
@@ -46,7 +46,7 @@ uv run python benches/run.py --targets-file "$HOME/.key/zace/benchmarks/targets.
 
 ```bash
 set -a; source .env; set +a
-uv run zace-core ingest --repo <公共靶场路径> --data .local/bench/quality
+uv run nova-core ingest --repo <公共靶场路径> --data .local/bench/quality
 uv run python benches/run.py --golden benches/golden/<公开用例目录> \
   --repo <公共靶场路径> --data .local/bench/quality --report .local/bench/quality/report.md
 ```
@@ -84,7 +84,7 @@ uv run python benches/run.py --target langchain-v1 \
 索引、侧车和配置的模型/维度指纹必须一致。
 
 ```bash
-uv run zace-core eval --repo <靶场路径> --data <索引根> --project-id <id> \
+uv run nova-core eval --repo <靶场路径> --data <索引根> --project-id <id> \
   --golden <用例目录> --report .local/bench/preheat.md \
   --vector-cache .local/bench/query-vectors.json
 ```

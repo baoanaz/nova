@@ -8,15 +8,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.chunking import (
+from nova_core.chunking import (
     link_spec_references,
     resolve_edges,
     resolve_pending,
     retry_failed,
 )
-from zace_core.hashing import file_content_hash
-from zace_core.storage import Store
-from zace_core.types import EdgeDef, ParsedFile, UnresolvedRef
+from nova_core.hashing import file_content_hash
+from nova_core.storage import Store
+from nova_core.types import EdgeDef, ParsedFile, UnresolvedRef
 
 SymbolSpecs = Callable[[str, list[tuple[str, str, str, int, int, bool]]], None]
 
@@ -331,7 +331,7 @@ def test_link_spec_references_ignores_paths_and_expressions(
 
 
 def _symbol(name: str, fqn: str, start: int, end: int):  # type: ignore[no-untyped-def]
-    from zace_core.types import SymbolDef
+    from nova_core.types import SymbolDef
 
     return SymbolDef(name=name, fqn=fqn, kind="function", start_line=start, end_line=end)
 

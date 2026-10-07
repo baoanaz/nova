@@ -21,12 +21,12 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import EngineError
-from zace_service import mcp as mcp_module
-from zace_service.app import create_app
-from zace_service.cli_hint import editor_config_snippets, format_snippets, mcp_url
-from zace_service.config import Settings
-from zace_service.mcp import (
+from nova_core.engine import EngineError
+from nova_service import mcp as mcp_module
+from nova_service.app import create_app
+from nova_service.cli_hint import editor_config_snippets, format_snippets, mcp_url
+from nova_service.config import Settings
+from nova_service.mcp import (
     ASK_TOOL,
     MCP_MOUNT_PATH,
     SEARCH_TOOL,
@@ -35,7 +35,7 @@ from zace_service.mcp import (
     mount,
     session_lifespan,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     REPO_ROOT,
@@ -167,7 +167,7 @@ def _initialize(client: TestClient):
         {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "zace-tests", "version": "0"},
+            "clientInfo": {"name": "nova-tests", "version": "0"},
         },
     )
 
@@ -178,7 +178,7 @@ def _connected(client: TestClient) -> str:
     assert response.status_code == 200, response.text
     session_id = response.headers.get("mcp-session-id")
     assert session_id, "initialize 必须返回 mcp-session-id（否则会话建不起来，见 lifespan 纪律）"
-    assert _payload(response)["result"]["serverInfo"]["name"] == "zace"
+    assert _payload(response)["result"]["serverInfo"]["name"] == "nova"
 
     notified = client.post(
         MCP_MOUNT_PATH,
@@ -309,7 +309,7 @@ def test_advertised_url_works_without_redirect(mcp_env: SimpleNamespace, path: s
         "params": {
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
-            "clientInfo": {"name": "zace-tests", "version": "0"},
+            "clientInfo": {"name": "nova-tests", "version": "0"},
         },
     }
     response = mcp_env.client.post(
@@ -329,7 +329,7 @@ def test_search_context_returns_rendered_evidence(mcp_env: SimpleNamespace) -> N
     assert result.get("isError") is not True, _text(result)
     text = _text(result)
     assert f"{SAMPLE_MODULE_PATH}:" in text, "证据行必须是渲染后的 路径:行号"
-    assert text.startswith("[zace] answerable="), "首行是 zace 状态（answerable/confidence）"
+    assert text.startswith("[nova] answerable="), "首行是 nova 状态（answerable/confidence）"
     assert "confidence=" in text.splitlines()[0]
     assert "## Relevant Context" in text
 
@@ -360,7 +360,7 @@ def test_ask_project_is_explicitly_degraded(mcp_env: SimpleNamespace) -> None:
     assert text.startswith("未配置总结模型")
     assert "ANSWER_BASE_URL" in text, "要告诉管理员缺什么，不要只说没有"
     assert "## Relevant Context" in text
-    assert "[zace] answerable=true" in text, "降级包仍带状态行（TASK-032 的既有口径）"
+    assert "[nova] answerable=true" in text, "降级包仍带状态行（TASK-032 的既有口径）"
 
 
 def test_ask_project_returns_llm_answer_when_configured(mcp_env: SimpleNamespace) -> None:
@@ -377,7 +377,7 @@ def test_ask_project_returns_llm_answer_when_configured(mcp_env: SimpleNamespace
         local_mode=True,
         local_rescan_interval_s=0.0,
         answer_base_url="http://llm.invalid/v1",
-        answer_api_key="zace_fake",
+        answer_api_key="nova_fake",
         answer_model="fake-model",
     )
     mcp_env.app.state.answer_provider = _FakeProvider()
@@ -419,7 +419,7 @@ def test_ask_project_short_circuits_when_evidence_insufficient(
         local_mode=True,
         local_rescan_interval_s=0.0,
         answer_base_url="http://llm.invalid/v1",
-        answer_api_key="zace_fake",
+        answer_api_key="nova_fake",
         answer_model="fake-model",
     )
     mcp_env.app.state.answer_provider = _RecordingProvider()
@@ -441,7 +441,7 @@ def test_ask_project_short_circuits_when_evidence_insufficient(
     assert calls == [], "证据不足时不得调用 LLM（D-24 短路）"
     assert "证据不足" in text, "要如实说明为何没给结论"
     assert "## Relevant Context" in text, "仍要给出可直接使用的上下文包"
-    assert "[zace] answerable=false" in text
+    assert "[nova] answerable=false" in text
 
 
 # --------------------------------------------------------------------------- 并发与新鲜度
@@ -561,7 +561,7 @@ def test_unknown_project_root_is_actionable(mcp_env: SimpleNamespace, tmp_path: 
     assert result["isError"] is True
     text = _text(result)
     assert "未知项目" in text
-    assert "zace-service local --repo" in text
+    assert "nova-service local --repo" in text
     assert str(unknown) in text
 
 
@@ -728,7 +728,7 @@ def test_json_response_mode_is_available(make_env: Callable[..., SimpleNamespace
         response = _initialize(client)
         assert response.status_code == 200, response.text
         assert response.headers["content-type"].startswith("application/json")
-        assert response.json()["result"]["serverInfo"]["name"] == "zace"
+        assert response.json()["result"]["serverInfo"]["name"] == "nova"
         session_id = response.headers["mcp-session-id"]
         assert _list_tools(client, session_id)  # 同一 session 上工具仍可用
 
@@ -755,7 +755,7 @@ def test_cli_hint_snippets_contain_the_endpoint_and_no_secret() -> None:
     for snippet in snippets.values():
         assert url in snippet
         assert "token" not in snippet.lower()
-    assert '"zace"' in next(iter(snippets.values()))
+    assert '"nova"' in next(iter(snippets.values()))
 
     text = format_snippets(8787)
     assert url in text
@@ -765,8 +765,8 @@ def test_cli_hint_snippets_contain_the_endpoint_and_no_secret() -> None:
 def test_mcp_config_cli_prints_snippets_without_server(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """``zace-service mcp-config --port 8787`` 只打片段，不起服务。"""
-    from zace_service.__main__ import main
+    """``nova-service mcp-config --port 8787`` 只打片段，不起服务。"""
+    from nova_service.__main__ import main
 
     assert main(["mcp-config", "--port", "8787"]) == 0
     printed = capsys.readouterr().out

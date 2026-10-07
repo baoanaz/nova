@@ -1,6 +1,6 @@
 # langchain 基准题库（20 题）
 
-> 靶场：`langchain` @ `41d3572`｜projectId `ca2050db0db5b1e2`｜索引：`/root/.zace/bench/voyage-4-lite-d1024`（复用，不重建）
+> 靶场：`langchain` @ `41d3572`｜projectId `ca2050db0db5b1e2`｜索引：`/root/.nova/bench/voyage-4-lite-d1024`（复用，不重建）
 > ⚠️ 出题时避开了**未进索引**的文件：`libs/core/langchain_core/runnables/base.py` 在索引时被跳过（体积/解析策略），
 > 所以 Runnable/LCEL 相关题目只落在 `branch.py` / `fallbacks.py` / `retry.py` 等已索引文件上。
 > 每题给出建议工具（`search` / `ask`）、人工核实的参考答案与依据路径；机器可跑版本见同目录 `langchain.jsonl`。

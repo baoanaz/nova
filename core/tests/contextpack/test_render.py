@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zace_core.contextpack import (
+from nova_core.contextpack import (
     BudgetConfig,
     IndexSignals,
     assemble,
     render_evidence_for_prompt,
     render_markdown,
 )
-from zace_core.types import Flow, FlowNode, Freshness, SpecBlockDef
+from nova_core.types import Flow, FlowNode, Freshness, SpecBlockDef
 
 NOW = 1_760_000_300
 

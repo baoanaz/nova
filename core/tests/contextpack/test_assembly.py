@@ -7,7 +7,7 @@ import time
 from dataclasses import replace
 
 import pytest
-from zace_core.contextpack import (
+from nova_core.contextpack import (
     DEEP_BUDGET,
     FAST_BUDGET,
     BudgetConfig,
@@ -20,8 +20,8 @@ from zace_core.contextpack import (
     evidence_markdown_lines,
     render_markdown,
 )
-from zace_core.contextpack.assembly import _single_file_cap
-from zace_core.types import Flow, FlowNode, Freshness, SpecBlockDef
+from nova_core.contextpack.assembly import _single_file_cap
+from nova_core.types import Flow, FlowNode, Freshness, SpecBlockDef
 
 
 def _long(store, seed_file, sym, path: str, fqn: str, start: int, chars: int) -> None:

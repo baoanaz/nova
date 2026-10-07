@@ -1,19 +1,19 @@
 [package]
-name = "zace-client"
+name = "nova-client"
 version = "0.0.8"
 edition = "2021"
-description = "zace MCP stdio client: local scan/hash/upload proxy for a remote zace-service"
+description = "nova MCP stdio client: local scan/hash/upload proxy for a remote nova-service"
 license = "Unlicense"
 # 为什么是 Rust（D-39 / Module/05）：MCP 最终形态是本地 client（stdio 对编辑器 + HTTPS 对远端
 # service）。本地 MCP（service 直出 Streamable HTTP，R38）只作短期验证。
 # 落点说明见 docs/tasks/TASK-040R-client骨架与同步代理.md「执行记录」。
 
 [lib]
-name = "zace_client"
+name = "nova_client"
 path = "src/lib.rs"
 
 [[bin]]
-name = "zace-client"
+name = "nova-client"
 path = "src/main.rs"
 
 [dependencies]

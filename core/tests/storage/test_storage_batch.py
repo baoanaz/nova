@@ -15,9 +15,9 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from zace_core.storage import Store
-from zace_core.storage.db import connect, ensure_database
-from zace_core.types import ChunkDef, ParsedFile
+from nova_core.storage import Store
+from nova_core.storage.db import connect, ensure_database
+from nova_core.types import ChunkDef, ParsedFile
 
 
 @pytest.fixture
@@ -86,7 +86,7 @@ def test_write_batch_isolates_failed_file(
     broken = make_chunk(path="src/b.py", fqn="b", content="def b():\n    return 2\n")
     third = make_chunk(path="src/c.py", fqn="c", content="def c():\n    return 3\n")
 
-    from zace_core.storage import store as store_module
+    from nova_core.storage import store as store_module
 
     real_insert_fts = store_module._insert_fts_row
 

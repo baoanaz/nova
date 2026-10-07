@@ -10,8 +10,8 @@
 
 from __future__ import annotations
 
-from zace_core.retrieval import CHANNEL_BM25, recall_bm25
-from zace_core.text import segment
+from nova_core.retrieval import CHANNEL_BM25, recall_bm25
+from nova_core.text import segment
 
 from .conftest import (
     MODULE_PATH,

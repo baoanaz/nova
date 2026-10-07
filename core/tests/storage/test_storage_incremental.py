@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from zace_core.storage import Store
-from zace_core.text import segment
-from zace_core.types import ChunkDef, ParsedFile
+from nova_core.storage import Store
+from nova_core.text import segment
+from nova_core.types import ChunkDef, ParsedFile
 
 
 def test_first_write_marks_everything_new(

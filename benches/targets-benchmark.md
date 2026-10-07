@@ -18,7 +18,7 @@
 ## 路径与 commit（设备绑定）
 
 三个靶场位于**仓库外部** `/home/xuwenzheng/2_github/AI/ACE/benchmark/`，**只读**：
-不在其中建文件、不修改、不把源码纳入 zace 仓库。
+不在其中建文件、不修改、不把源码纳入 nova 仓库。
 
 | 仓库 | commit（2026-09-15 记录） | 远端 | 目录体积 | 其中 `.git` |
 |---|---|---|---|---|
@@ -51,7 +51,7 @@
 
 > 设备：`vps-la-2c2g`（2 vCPU / 1.9 GiB / 内核 5.15.0-191 / 洛杉矶）｜embedding：`api:voyage-4-lite@1024`
 > 五项留档指标（Total Tokens / TPM / Chunks / Response MB / API→VPS MB/s）与内存约束见
-> `benches/results/index-cost-model-vps.md`；机器可读清单：`/root/.zace/bench/voyage-4-lite-d1024/INDEXES.json`。
+> `benches/results/index-cost-model-vps.md`；机器可读清单：`/root/.nova/bench/voyage-4-lite-d1024/INDEXES.json`。
 
 **三个索引已建好并落在持久目录，未来测试一律复用（不再 ingest）**：
 
@@ -62,11 +62,11 @@
 | 大 | `langchain` | `41d3572` | `ca2050db0db5b1e2` | 20,673 | 179 MB | 115.9s | 928.0 MB |
 
 数据根按**模型 + 维度**分目录（`<model>-d<dim>`）：换模型或换维度即换数据根，互不污染、
-也不会因指纹不符触发 D-07 重嵌。当前根：`/root/.zace/bench/voyage-4-lite-d1024`。
+也不会因指纹不符触发 D-07 重嵌。当前根：`/root/.nova/bench/voyage-4-lite-d1024`。
 
 ```bash
-DATA=/root/.zace/bench/voyage-4-lite-d1024
-uv run zace-core search "<query>" --project-id ca2050db0db5b1e2 \
+DATA=/root/.nova/bench/voyage-4-lite-d1024
+uv run nova-core search "<query>" --project-id ca2050db0db5b1e2 \
   --repo /root/xuwenzheng/ACE/benchmark/langchain --data "$DATA"
 ```
 

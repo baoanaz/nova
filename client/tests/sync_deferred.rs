@@ -4,8 +4,8 @@ use std::net::TcpListener;
 use std::thread;
 use std::time::{Duration, Instant};
 use serde_json::{json, Value};
-use zace_client::remote::RemoteClient;
-use zace_client::tools::ToolLayer;
+use nova_client::remote::RemoteClient;
+use nova_client::tools::ToolLayer;
 
 fn server(responses: Vec<(&'static str, u16, Value)>) -> (String, thread::JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -90,7 +90,7 @@ fn failed_index_never_queries_and_retry_uses_cached_upload() {
     let cache = tempfile::tempdir().unwrap();
     let source = "def run():\n    return 1\n";
     std::fs::write(repo.path().join("main.py"), source).unwrap();
-    let hash = zace_client::blobref::blob_hash("main.py", source.as_bytes());
+    let hash = nova_client::blobref::blob_hash("main.py", source.as_bytes());
     let (url, handle) = server(vec![
         ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
         ("POST /api/sync/batch-upload ", 200,

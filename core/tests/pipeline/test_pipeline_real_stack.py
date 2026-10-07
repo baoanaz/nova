@@ -9,11 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from zace_core.embedding import LocalOnnxEmbeddingProvider
-from zace_core.pipeline import DirectorySource, Indexer
-from zace_core.storage import Store
-from zace_core.types import ChangeSet
-from zace_core.vectors import VectorStore
+from nova_core.embedding import LocalOnnxEmbeddingProvider
+from nova_core.pipeline import DirectorySource, Indexer
+from nova_core.storage import Store
+from nova_core.types import ChangeSet
+from nova_core.vectors import VectorStore
 
 from .conftest import DOC_MD, PY_MODULE, write_repo
 

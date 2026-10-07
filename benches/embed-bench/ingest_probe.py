@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """持久索引构建 + 计量留档：走**真实 ingest 路径**建索引，同时记录 provider 侧计量。
 
-为什么需要它：``zace-core ingest`` 只打印文件 / chunk / 向量计数，**不记录**
+为什么需要它：``nova-core ingest`` 只打印文件 / chunk / 向量计数，**不记录**
 "这次索引实际下载了多少响应体、API 报了多少 token、嵌入阶段墙钟多少"。
 而这三项正是 TASK-102 耗时模型的输入（Chunks / Response MB / API→本机 MB/s / Total Tokens），
 事后无法从索引反推（``index.db`` 只存向量，不存请求流水）。
@@ -19,9 +19,9 @@
 - 失败**如实退出非零**，不写半截记录。
 
 用法：
-    set -a; source /etc/zace/zace.env; set +a
+    set -a; source /etc/nova/nova.env; set +a
     uv run python benches/embed-bench/ingest_probe.py \
-        --repo /path/to/repo --data /root/.zace/bench/voyage-4-lite-d1024 \
+        --repo /path/to/repo --data /root/.nova/bench/voyage-4-lite-d1024 \
         --out benches/results/raw/ingest-vps/leveldb.json
 """
 
@@ -43,11 +43,11 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
 import httpx  # noqa: E402
-from zace_core.chunking.fingerprint import stored_fingerprint  # noqa: E402
-from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
-from zace_core.engine import Engine  # noqa: E402
-from zace_core.pipeline.embedding_sink import embed_window_size  # noqa: E402
-from zace_core.storage import Store  # noqa: E402
+from nova_core.chunking.fingerprint import stored_fingerprint  # noqa: E402
+from nova_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_core.pipeline.embedding_sink import embed_window_size  # noqa: E402
+from nova_core.storage import Store  # noqa: E402
 
 
 def union_seconds(intervals: Sequence[tuple[float, float]]) -> float:
@@ -75,7 +75,7 @@ class UpsertMeter:
         self.rows = 0
 
     def patch(self) -> None:
-        from zace_core.vectors import VectorStore  # noqa: PLC0415
+        from nova_core.vectors import VectorStore  # noqa: PLC0415
 
         original = VectorStore.upsert
         meter = self

@@ -1,11 +1,11 @@
 [project]
-name = "zace-service"
+name = "nova-service"
 version = "0.0.1"
-description = "zace 服务化外壳（Module/06）：HTTP API / 鉴权 / 租户映射 / 索引 job / 审计"
+description = "nova 服务化外壳（Module/06）：HTTP API / 鉴权 / 租户映射 / 索引 job / 审计"
 requires-python = ">=3.12"
 license = "Unlicense"
 dependencies = [
-    "zace-core",
+    "nova-core",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "pydantic>=2.7",
@@ -22,14 +22,14 @@ dev = ["pytest>=8", "pytest-xdist>=3.6", "ruff>=0.6", "httpx>=0.27"]
 
 [project.scripts]
 # TASK-030：服务入口（argparse + uvicorn.run）。仅新增 scripts 段，依赖清单不变（不新增第三方依赖）。
-zace-service = "zace_service.__main__:main"
+nova-service = "nova_service.__main__:main"
 
 [tool.uv.sources]
-zace-core = { workspace = true }
+nova-core = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["zace_service"]
+packages = ["nova_service"]

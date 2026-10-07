@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.embedding.base import EmbeddingConfigError
-from zace_core.embedding.registry import (
+from nova_core.embedding.base import EmbeddingConfigError
+from nova_core.embedding.registry import (
     API_MODEL_ALIASES,
     API_MODELS,
     DEFAULT_LOCAL_SLUG,
@@ -85,7 +85,7 @@ def test_alias_targets_are_registered_keys() -> None:
 
 
 def test_request_name_is_the_provider_facing_name() -> None:
-    """注册表 key 是 zace 侧的，发给 API 的必须是 provider 认的名字。"""
+    """注册表 key 是 nova 侧的，发给 API 的必须是 provider 认的名字。"""
     assert API_MODELS["bge-m3"].api_model == "BAAI/bge-m3"
     # 未设 request_name 的条目回落 name
     assert API_MODELS["text-embedding-3-small"].api_model == "text-embedding-3-small"

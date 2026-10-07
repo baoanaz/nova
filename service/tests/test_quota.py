@@ -29,13 +29,13 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_service import quota as quota_module
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.quota import (
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_service import quota as quota_module
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.quota import (
     STATUS_EXCEEDED,
     STATUS_OK,
     STATUS_WARNING,
@@ -45,7 +45,7 @@ from zace_service.quota import (
     status_from_sizes,
     warning_for,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -174,7 +174,7 @@ def _build_env(tmp_path: Path, *, tag: str = "env", **overrides: object) -> Env:
         engine_factory=lambda root: Engine.open(root, provider=DeterministicBigramEmbedding()),
     )
     app = create_app(settings)
-    # 本地模式默认不建库（R34），但审计/历史/配额归属都要它：与 ``zace-service local`` 的实际
+    # 本地模式默认不建库（R34），但审计/历史/配额归属都要它：与 ``nova-service local`` 的实际
     # 启动路径一致（__main__ 里同样显式注入）。
     app.state.meta_db = MetaDB.open(settings.meta_db_path)
     app.state.engine_manager = manager
@@ -448,7 +448,7 @@ def test_warning_appears_in_mcp_tool_content(env: Env) -> None:
     assert "请提醒用户" in text, "文案要能被 Agent 直接转述给用户"
     assert format_bytes(used) in text
     # 告警是**追加**在原有内容之后：正文仍逐字来自 render_markdown（D-21 不动）。
-    assert text.startswith("[zace] answerable=")
+    assert text.startswith("[nova] answerable=")
     assert "## Relevant Context" in text
     assert text.index("### Meta") < text.index(STORAGE_WARNING_HEADING)
 
@@ -598,7 +598,7 @@ def test_quota_failure_is_logged(
         raise OSError("模拟")
 
     monkeypatch.setattr(quota_module, "project_usage_bytes", boom)
-    with caplog.at_level("WARNING", logger="zace_service.quota"):
+    with caplog.at_level("WARNING", logger="nova_service.quota"):
         warning_for(env.manager, env.settings, project_id=env.project_id)
 
     assert any("配额判定失败" in record.message for record in caplog.records)
@@ -733,7 +733,7 @@ def test_migration_upgrades_legacy_db_without_losing_rows(tmp_path: Path) -> Non
     3. 旧行仍在，新列为 ``NULL``（"旧版本/没测过"就是 ``NULL``，不编造）；
     4. 新旧数据能共存，且按新列索引真的查得动。
     """
-    db_path = tmp_path / "data" / "zace-meta.db"
+    db_path = tmp_path / "data" / "nova-meta.db"
     _legacy_db(db_path)
 
     before = sqlite3.connect(db_path)
@@ -799,7 +799,7 @@ def test_migration_upgrades_legacy_db_without_losing_rows(tmp_path: Path) -> Non
 def test_legacy_db_app_serves_queries_and_records_trace(tmp_path: Path) -> None:
     """端到端：旧库 + 新代码起服务 → 查询照常，且**新审计带 trace id**（旧行原样保留）。"""
     data_root = tmp_path / "data"
-    _legacy_db(data_root / "zace-meta.db")
+    _legacy_db(data_root / "nova-meta.db")
 
     settings = _settings_for(data_root)
     manager = EngineManager.open(
@@ -887,9 +887,9 @@ def test_config_parses_quota_env_and_rejects_nonsense() -> None:
     """§B1 环境变量：0 = 不限；非法值显式报错（不静默取默认——配置写错会静默误导）。"""
     settings = Settings.from_env(
         {
-            "ZACE_STORAGE_LIMIT_PER_PROJECT_BYTES": "1048576",
-            "ZACE_STORAGE_LIMIT_PER_USER_BYTES": "0",
-            "ZACE_STORAGE_WARN_RATIO": "0.5",
+            "NOVA_STORAGE_LIMIT_PER_PROJECT_BYTES": "1048576",
+            "NOVA_STORAGE_LIMIT_PER_USER_BYTES": "0",
+            "NOVA_STORAGE_WARN_RATIO": "0.5",
         }
     )
     assert settings.storage_limit_per_project_bytes == MB
@@ -900,17 +900,17 @@ def test_config_parses_quota_env_and_rejects_nonsense() -> None:
     # 两侧都为 0 → 不限（enabled=False，判定恒 ok）。
     unlimited = Settings.from_env(
         {
-            "ZACE_STORAGE_LIMIT_PER_PROJECT_BYTES": "0",
-            "ZACE_STORAGE_LIMIT_PER_USER_BYTES": "0",
+            "NOVA_STORAGE_LIMIT_PER_PROJECT_BYTES": "0",
+            "NOVA_STORAGE_LIMIT_PER_USER_BYTES": "0",
         }
     )
     assert unlimited.storage_quota_enabled is False
 
     for bad in (
-        {"ZACE_STORAGE_WARN_RATIO": "0"},  # 0 会被读成"一超就告警"，是反向开关
-        {"ZACE_STORAGE_WARN_RATIO": "1.5"},
-        {"ZACE_STORAGE_LIMIT_PER_USER_BYTES": "-1"},
-        {"ZACE_STORAGE_LIMIT_PER_PROJECT_BYTES": "abc"},
+        {"NOVA_STORAGE_WARN_RATIO": "0"},  # 0 会被读成"一超就告警"，是反向开关
+        {"NOVA_STORAGE_WARN_RATIO": "1.5"},
+        {"NOVA_STORAGE_LIMIT_PER_USER_BYTES": "-1"},
+        {"NOVA_STORAGE_LIMIT_PER_PROJECT_BYTES": "abc"},
     ):
         with pytest.raises(ValueError):
             Settings.from_env(bad)

@@ -1,4 +1,4 @@
-# zace workspace 根配置（虚拟根，非包；包成员见 core/ 与 service/）
+# nova workspace 根配置（虚拟根，非包；包成员见 core/ 与 service/）
 # 用法：uv sync --all-packages --all-extras
 
 [tool.uv.workspace]

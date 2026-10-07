@@ -12,8 +12,8 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from zace_core.types import VectorRow
-from zace_core.vectors import DimensionMismatchError, VectorStore, VectorStoreError
+from nova_core.types import VectorRow
+from nova_core.vectors import DimensionMismatchError, VectorStore, VectorStoreError
 
 DIM = 8
 
@@ -180,7 +180,7 @@ def test_closed_store_rejects_operations(tmp_path: Path) -> None:
 
 @pytest.mark.slow
 def test_scale_smoke_10k_rows_dim_384(tmp_path: Path) -> None:
-    """规模冒烟：10k 行 dim=384 upsert + 10 次查询（默认跳过：ZACE_RUN_SLOW=1 启用）。"""
+    """规模冒烟：10k 行 dim=384 upsert + 10 次查询（默认跳过：NOVA_RUN_SLOW=1 启用）。"""
     dim = 384
     rng = np.random.default_rng(20260910)
     rows = [

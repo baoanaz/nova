@@ -15,17 +15,17 @@ use std::process::{Command, Stdio};
 
 /// 拉起二进制、喂入若干帧、返回 `(stdout, stderr, exit_ok)`。
 fn run_binary(requests: &[&str], base_url: &str) -> (String, String, bool) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_zace-client"))
-        .env("ZACE_BASE_URL", base_url)
+    let mut child = Command::new(env!("CARGO_BIN_EXE_nova-client"))
+        .env("NOVA_BASE_URL", base_url)
         .env(
-            "ZACE_CLIENT_CACHE",
-            std::env::temp_dir().join("zace-stdio-test-cache"),
+            "NOVA_CLIENT_CACHE",
+            std::env::temp_dir().join("nova-stdio-test-cache"),
         )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("zace-client 二进制应能启动");
+        .expect("nova-client 二进制应能启动");
 
     {
         let stdin = child.stdin.as_mut().expect("stdin 已管道化");
@@ -78,7 +78,7 @@ fn stdout_carries_only_json_rpc_frames() {
     // initialize
     assert_eq!(frames[0]["id"], 1);
     assert_eq!(frames[0]["result"]["protocolVersion"], "2025-11-25");
-    assert_eq!(frames[0]["result"]["serverInfo"]["name"], "zace");
+    assert_eq!(frames[0]["result"]["serverInfo"]["name"], "nova");
 
     // tools/list：恰好两个 CF-06 工具，字段齐全
     let tools = frames[1]["result"]["tools"]
@@ -167,8 +167,8 @@ fn malformed_json_produces_a_parse_error_without_killing_the_loop() {
 
 #[test]
 fn missing_base_url_fails_loudly_on_stderr_with_clean_stdout() {
-    let output = Command::new(env!("CARGO_BIN_EXE_zace-client"))
-        .env_remove("ZACE_BASE_URL")
+    let output = Command::new(env!("CARGO_BIN_EXE_nova-client"))
+        .env_remove("NOVA_BASE_URL")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

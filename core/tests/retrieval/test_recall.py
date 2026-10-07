@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zace_core.retrieval import (
+from nova_core.retrieval import (
     CHANNEL_BM25,
     CHANNEL_EXACT,
     CHANNEL_INFERRED,

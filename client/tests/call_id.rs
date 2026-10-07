@@ -18,7 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 
 use serde_json::Value;
-use zace_client::tools::ToolLayer;
+use nova_client::tools::ToolLayer;
 
 /// 一次请求里我们关心的部分（方法与请求头）。
 #[derive(Debug, Clone)]
@@ -136,7 +136,7 @@ fn call_ids(seen: &[Seen]) -> Vec<Option<String>> {
 fn every_request_of_one_tool_call_carries_the_same_call_id() {
     let (base_url, seen, cache) = fixture();
     let repo = repo_dir();
-    let remote = zace_client::remote::RemoteClient::new(&base_url, None).expect("client");
+    let remote = nova_client::remote::RemoteClient::new(&base_url, None).expect("client");
     let layer = ToolLayer::new(remote, cache.path().to_path_buf());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -178,7 +178,7 @@ fn every_request_of_one_tool_call_carries_the_same_call_id() {
 fn two_tool_calls_use_different_call_ids() {
     let (base_url, seen, cache) = fixture();
     let repo = repo_dir();
-    let remote = zace_client::remote::RemoteClient::new(&base_url, None).expect("client");
+    let remote = nova_client::remote::RemoteClient::new(&base_url, None).expect("client");
     let layer = ToolLayer::new(remote, cache.path().to_path_buf());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -208,7 +208,7 @@ fn two_tool_calls_use_different_call_ids() {
 fn ask_tool_also_carries_the_call_id() {
     let (base_url, seen, cache) = fixture();
     let repo = repo_dir();
-    let remote = zace_client::remote::RemoteClient::new(&base_url, None).expect("client");
+    let remote = nova_client::remote::RemoteClient::new(&base_url, None).expect("client");
     let layer = ToolLayer::new(remote, cache.path().to_path_buf());
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -239,9 +239,9 @@ fn ask_tool_also_carries_the_call_id() {
 fn response_call_id_header_is_readable_by_the_same_name() {
     // 服务端把同一个头回写（TASK-090 既有行为）；这里确认客户端不会因为大小写
     // 或拼写差异而拿不到它——名字必须是 `X-Request-Id`（服务端 app.py 的常量）。
-    assert_eq!(zace_client::remote::CALL_ID_HEADER, "X-Request-Id");
-    let ctx = zace_client::remote::CallContext::new();
+    assert_eq!(nova_client::remote::CALL_ID_HEADER, "X-Request-Id");
+    let ctx = nova_client::remote::CallContext::new();
     let value: Value = serde_json::json!(ctx.id());
     assert!(value.as_str().is_some_and(|text| text.contains('-')));
-    assert!(zace_client::remote::RemoteClient::new("http://127.0.0.1:1", None).is_ok());
+    assert!(nova_client::remote::RemoteClient::new("http://127.0.0.1:1", None).is_ok());
 }

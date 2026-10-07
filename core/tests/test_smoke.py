@@ -1,4 +1,4 @@
-from zace_core import __version__
+from nova_core import __version__
 
 
 def test_package_importable() -> None:

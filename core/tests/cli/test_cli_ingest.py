@@ -10,8 +10,8 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from zace_core.storage import Store
-from zace_core.vectors import VectorStore
+from nova_core.storage import Store
+from nova_core.vectors import VectorStore
 
 from .conftest import LOGGING_PY, REPO_FILES, TEST_DIM
 

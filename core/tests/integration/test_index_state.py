@@ -19,15 +19,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zace_core.engine import Engine
-from zace_core.pipeline.index_state import (
+from nova_core.engine import Engine
+from nova_core.pipeline.index_state import (
     IndexState,
     building_state,
     failed_state,
     read_index_state,
     write_index_state,
 )
-from zace_core.storage import Store
+from nova_core.storage import Store
 
 from .conftest import DESIGN_DOC, QUERY, TOKEN_MODULE, DeterministicBigramEmbedding
 
@@ -39,8 +39,8 @@ def _engine(tmp_path: Path) -> tuple[Engine, str]:
 
 
 def _upload(engine: Engine, project_id: str) -> None:
-    from zace_core.hashing import blob_hash
-    from zace_core.types import BlobInput, ChangeSet
+    from nova_core.hashing import blob_hash
+    from nova_core.types import BlobInput, ChangeSet
 
     files = {"src/token_service.py": TOKEN_MODULE, "docs/token.md": DESIGN_DOC}
     payloads = [(path, data.encode("utf-8")) for path, data in files.items()]
@@ -76,7 +76,7 @@ def test_failed_ingest_marks_failed_and_reraises(tmp_path: Path, monkeypatch) ->
     """不变量 2：索引抛错 → failed，且异常原样向上抛（观测不得吞掉真实失败）。"""
     engine, project_id = _engine(tmp_path)
 
-    import zace_core.pipeline.indexer as indexer_mod
+    import nova_core.pipeline.indexer as indexer_mod
 
     def boom(self, changes):  # noqa: ANN001, ARG001
         raise RuntimeError("模拟索引崩溃")

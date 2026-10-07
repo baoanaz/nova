@@ -1,6 +1,6 @@
 """TASK-035 §C 回归：``Engine.apply_changes`` 公开面（替代跨包调 ``Engine._ingest``）。
 
-**立项理由**：``zace_service.runtime.EngineManager.ingest`` 原先直接调 ``Engine._ingest``
+**立项理由**：``nova_service.runtime.EngineManager.ingest`` 原先直接调 ``Engine._ingest``
 （跨包调私有方法）。本卡在 core 侧补一个公开包装 ``apply_changes``，签名与 ``_ingest`` 一致，
 **``_ingest`` 保留为内部实现**（``ingest`` 仍在用），service 改调公开方法。
 
@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_core.pipeline import IngestReport
-from zace_core.storage import Store
-from zace_core.types import BlobInput, ChangeSet
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_core.pipeline import IngestReport
+from nova_core.storage import Store
+from nova_core.types import BlobInput, ChangeSet
 
 from .conftest import DESIGN_DOC, QUERY, TOKEN_MODULE, DeterministicBigramEmbedding
 from .test_ingest_source import LedgerSource

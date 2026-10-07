@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from zace_core.engine import (
+from nova_core.engine import (
     DATA_ROOT_ENV,
     DEFAULT_DATA_ROOT,
     PROJECT_META_FILENAME,
@@ -21,7 +21,7 @@ from zace_core.engine import (
     repo_identity,
     resolve_data_root,
 )
-from zace_core.interfaces import ContextEngine
+from nova_core.interfaces import ContextEngine
 
 
 def _git_repo(path: Path, *, remote: str | None) -> Path:
@@ -60,9 +60,9 @@ def test_same_repo_path_resolves_to_same_project(repo: Path, engine: Engine) -> 
 
 def test_git_remote_identity_is_shared_across_checkout_paths(tmp_path: Path) -> None:
     """D-29 的核心价值：两台机器/两个路径 clone 同一 repo → 同一个项目。"""
-    remote = "https://example.com/team/zace.git"
-    left = _git_repo(tmp_path / "machine-a" / "zace", remote=remote)
-    right = _git_repo(tmp_path / "machine-b" / "workspace" / "zace", remote=remote)
+    remote = "https://example.com/team/nova.git"
+    left = _git_repo(tmp_path / "machine-a" / "nova", remote=remote)
+    right = _git_repo(tmp_path / "machine-b" / "workspace" / "nova", remote=remote)
 
     assert repo_identity(left).identity_key == repo_identity(right).identity_key
     assert project_id_for(repo_identity(left).identity_key) == project_id_for(
@@ -167,8 +167,8 @@ def test_different_branches_of_same_remote_get_distinct_identity(tmp_path: Path)
     实测事故：main 与 feature/cvi-agent 共用一个 projectId，索引混合 353 文件，
     检索返回**当前 checkout 不存在**的文件，且 ``index: fresh`` 仍显示正常。
     """
-    remote = "https://example.com/team/zace.git"
-    repo = _git_repo(tmp_path / "zace", remote=remote)
+    remote = "https://example.com/team/nova.git"
+    repo = _git_repo(tmp_path / "nova", remote=remote)
     try:
         _commit_all(repo)
         subprocess.run(
@@ -198,15 +198,15 @@ def test_different_branches_of_same_remote_get_distinct_identity(tmp_path: Path)
 
 def test_same_branch_in_two_checkouts_shares_identity(tmp_path: Path) -> None:
     """D-29 的核心价值必须保留：同分支的第二个 checkout 仍共享索引（不重复付费）。"""
-    remote = "https://example.com/team/zace.git"
-    left = _git_repo(tmp_path / "machine-a" / "zace", remote=remote)
+    remote = "https://example.com/team/nova.git"
+    left = _git_repo(tmp_path / "machine-a" / "nova", remote=remote)
     try:
         _commit_all(left)
         subprocess.run(
             ["git", "-C", str(left), "branch", "-M", "main"], check=True, capture_output=True
         )
         (tmp_path / "machine-b" / "ws").mkdir(parents=True, exist_ok=True)
-        right = tmp_path / "machine-b" / "ws" / "zace"
+        right = tmp_path / "machine-b" / "ws" / "nova"
         subprocess.run(
             ["git", "clone", "-q", str(left), str(right)], check=True, capture_output=True
         )
@@ -224,8 +224,8 @@ def test_same_branch_in_two_checkouts_shares_identity(tmp_path: Path) -> None:
 
 def test_branch_identity_material_matches_documented_formula(tmp_path: Path) -> None:
     """身份材料的拼接口径必须可复算（``remote + repo路径 + \\x00 + branch``）。"""
-    remote = "https://example.com/team/zace.git"
-    repo = _git_repo(tmp_path / "zace", remote=remote)
+    remote = "https://example.com/team/nova.git"
+    repo = _git_repo(tmp_path / "nova", remote=remote)
     try:
         _commit_all(repo)
         subprocess.run(
@@ -247,8 +247,8 @@ def test_branch_switch_surfaces_index_displacement_warning(
     projectId，索引为空；下一次 ingest 会**静默**重嵌整仓（靶场实测 4.58M token）。
     本卡不做"接管旧索引"（冻结设计，换分支是否复用旧目录需编排者裁决），但至少不再沉默。
     """
-    remote = "https://example.com/team/zace.git"
-    root = _git_repo(tmp_path / "zace", remote=remote)
+    remote = "https://example.com/team/nova.git"
+    root = _git_repo(tmp_path / "nova", remote=remote)
     try:
         _commit_all(root)
         subprocess.run(

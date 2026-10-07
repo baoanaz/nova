@@ -8,14 +8,14 @@
 | # | 契约 | 文件 | 设计来源 | 主要消费者 |
 |---|---|---|---|---|
 | CF-01 | index.db DDL（表/列/索引/语义） | `docs/contracts/index-schema.sql` | Module/01 §3.3 | 001/006/007/010/011 |
-| CF-02 | 三种 hash 语义与函数 | `core/zace_core/hashing.py` | Module/01 §2.4、D-43 | 001/007/009；Phase 2 client |
+| CF-02 | 三种 hash 语义与函数 | `core/nova_core/hashing.py` | Module/01 §2.4、D-43 | 001/007/009；Phase 2 client |
 | CF-03 | ContextPack JSON 合同 | `docs/contracts/contextpack.schema.json` | Module/03 §2、D-21 | 012/013；Phase 2/3 service/web |
-| CF-04 | 检索候选内部结构（Candidate/Flow/MissingEvidence） | `core/zace_core/types.py` | Module/02 §4、Module/03 §2 | 010/011/012 |
+| CF-04 | 检索候选内部结构（Candidate/Flow/MissingEvidence） | `core/nova_core/types.py` | Module/02 §4、Module/03 §2 | 010/011/012 |
 | CF-05 | REST API 形态（路径/方法/关键 payload） | `docs/contracts/openapi.yaml` | Module/06 §2.1、D-37 | Phase 2 service/client/web |
 | CF-06 | MCP 工具 schema | `docs/contracts/mcp-tools.json` | Module/05 §2.1、D-12 | Phase 2 client |
-| CF-07 | ContextEngine 接口面 | `core/zace_core/interfaces.py` | Module/06 §1、D-34 | 007/013；Phase 2 service |
-| CF-08 | 索引侧数据类型（ParsedFile/Symbol/Edge/Chunk/FileDelta） | `core/zace_core/types.py` | Module/01 §2 | 002..007/009 |
-| CF-09 | Provider 接口（Embedding/Answer/Parser） | `core/zace_core/interfaces.py` | Module/01/04、D-44 | 002..005/008；Phase 3 |
+| CF-07 | ContextEngine 接口面 | `core/nova_core/interfaces.py` | Module/06 §1、D-34 | 007/013；Phase 2 service |
+| CF-08 | 索引侧数据类型（ParsedFile/Symbol/Edge/Chunk/FileDelta） | `core/nova_core/types.py` | Module/01 §2 | 002..007/009 |
+| CF-09 | Provider 接口（Embedding/Answer/Parser） | `core/nova_core/interfaces.py` | Module/01/04、D-44 | 002..005/008；Phase 3 |
 
 > CF-09 变更（2026-09-10，L2，编排者）：`EmbeddingProvider` 新增 `embed_query()`——e5 类模型 query/passage 前缀不同，检索侧必须走专用方法；索引侧一律 `embed()`。实现（TASK-008）已含此方法，本次仅补契约；同时统一 `model_id` 命名示例为 `local:<slug>`。
 
@@ -69,7 +69,7 @@
 
 | # | 议题 | 裁定 | 影响 |
 |---|---|---|---|
-| R14 | **兜底切分行号回跳（阻断 M1）**：`fallback.py::_split` 在分隔符分支递归时忽略基偏移（顶层 offset=0 使既有测试全绿）；`uv.lock` 形状的文件产生两个 `{path}:(module):1` → `chunks.id` 主键冲突 → `zace-core ingest --repo .` 在真实仓库直接崩 | **修复**：修根因 + chunk id 唯一性防御（抛带明细的 ValueError，禁静默去重）+ 单文件失败隔离（进 `report.errors` 不中断整次 ingest） | TASK-018（阻断项，优先） |
+| R14 | **兜底切分行号回跳（阻断 M1）**：`fallback.py::_split` 在分隔符分支递归时忽略基偏移（顶层 offset=0 使既有测试全绿）；`uv.lock` 形状的文件产生两个 `{path}:(module):1` → `chunks.id` 主键冲突 → `nova-core ingest --repo .` 在真实仓库直接崩 | **修复**：修根因 + chunk id 唯一性防御（抛带明细的 ValueError，禁静默去重）+ 单文件失败隔离（进 `report.errors` 不中断整次 ingest） | TASK-018（阻断项，优先） |
 | R15 | **spec 保底块重复装填**：`reserved not in slots` 用 `_Slot` 对象身份比较（无 `__eq__`）恒为 True → 同一 spec chunk 占两个 E 编号，实测吃掉 ~1.4K token 并挤压代码证据 | **修复**：改按 chunk_id 去重；保底语义与 E 编号=装填顺序不变 | TASK-019 |
 | R16 | TASK-016 越界修改 `core/tests/retrieval/test_recall.py` 1 处断言（`channel_ranks` 由 `{inferred:1}` 改为 `{inferred:1, bm25:2}`） | **追认**：属语义变更的必然影响，且未弱化覆盖（仅新增通道）。后续同类情况应在卡内先申请 | — |
 | R17 | TASK-013 的 CLI 自举发现：`benches/golden/*.jsonl` 自身在被索引仓库内，负例被查询原文命中 → answerable=True | **TASK-014 出题纪律**：负例须用仓库内不存在的符号/描述，或把 golden 集排除出索引（由 TASK-014 定口径） | TASK-014 |
@@ -104,18 +104,18 @@
 | # | 议题 | 实测证据 | 裁定 |
 |---|---|---|---|
 | R26 | **分支切换后的陈旧索引无告警**：project identity（D-29）不含分支名，同一 repo 所有分支共用一个 project（这是对的）；但 `git checkout` 后**未重新同步**则索引仍为旧分支内容，且 `freshness` 报 `fresh` —— 实测：切回 main 后检索仍返回 `on_feature` 的函数，confidence=medium，无任何提示 | 仅切换分支、未编辑文件 → 磁盘内容变了但 content_hash 扫描才发现；**而 D-27 懒同步会在 tool call 时扫描，所以真实客户端下会自动纠正**（实测：重新 ingest 能正确识别 modified）。缺口在 CLI 手查场景。**裁定**：① `files.branch` 列已存在（DDL）但未使用 → 同步时写入分支名，`freshness` 增加“索引分支 ≠ 当前分支”提示；② 列入 Phase 2 client 卡（D-30 freshness 语义的扩展），Phase 1 不修 |
-| R27 | **非 git 父目录汇总多仓库**：实测 `/tmp/zace-multi`（非 git 父目录 + 2 个子 git 仓 + 普通文档）→ 父目录 identity 退化为 `sha256(绝对路径)`，**不可跨机器共享**；扫描会把子仓源码全部并入一个巨项目（仅 `.git` 被跳过），子仓单独索引则又是另一个 project（重复工作）；子仓自己的 `.gitignore` 也不生效 | **裁定**：V1 明确不支持“多个 repo 合为一个 project”（Module/01 §6-1 “一 project 一 repo”）；**用户应指向具体仓库路径**。多仓场景留给 Phase 2+ 的 group/workspace 概念（需用户提需求再排期）。**文档层**：在 CLI 输出/错误文案里提示“当前目录不是 git 仓库，身份绑定绝对路径，不跨机器共享” |
+| R27 | **非 git 父目录汇总多仓库**：实测 `/tmp/nova-multi`（非 git 父目录 + 2 个子 git 仓 + 普通文档）→ 父目录 identity 退化为 `sha256(绝对路径)`，**不可跨机器共享**；扫描会把子仓源码全部并入一个巨项目（仅 `.git` 被跳过），子仓单独索引则又是另一个 project（重复工作）；子仓自己的 `.gitignore` 也不生效 | **裁定**：V1 明确不支持“多个 repo 合为一个 project”（Module/01 §6-1 “一 project 一 repo”）；**用户应指向具体仓库路径**。多仓场景留给 Phase 2+ 的 group/workspace 概念（需用户提需求再排期）。**文档层**：在 CLI 输出/错误文案里提示“当前目录不是 git 仓库，身份绑定绝对路径，不跨机器共享” |
 | R28 | **同步耗时构成被误读**：用户关心的“每次检索前同步耗时”实测拆解——稳态（0 变更）2.5s 中 **~2.0s 是进程启动（lancedb 导入 1.09s + jieba 词典 0.53s + 其他导入）**，真正扫描仅 0.63s（451 文件，1.4ms/文件） | **Phase 2 架构已自然解决**：client 是常驻 MCP 进程（stdio server 活在整个会话）→ 导入/模型加载只付一次；服务端同样常驻。**仍可优化项**（列入 Phase 2 卡）：① **mtime+size 快路径**（D-28/Module/05 §3.2 已设计但未实现）→ 扫描从 1.4ms/文件降到 ~0.05ms/文件；② lancedb 惰导入；③ `.gitignore` 真实解析（D-28 缺口）减少文件数 |
 
 ### 3.8 Phase 2 服务化裁定（编排者，2026-09-10；M2a 开卡时定）
 
 | # | 议题 | 裁定 |
 |---|---|---|
-| R33 | **service 对 core 的依赖面**：CF-07（`ContextEngine` Protocol）是否为上限？ | **不是上限，是最低保证面**。service 可直接使用 core 的公开类与方法（`zace_core.engine.Engine`，含 `search_with_trace` / `project_dir` / `ingest_repo` / `resolve_repo`）。理由：同 monorepo 同版本演进；D-34 只要求 core 不依赖上层，不限制 service 用 core 的公开 API。**若未来要把 core 换 Rust 实现，再收窄到这个面** |
-| R34 | **M2a 鉴权**：Phase 2 本地跑通阶段是否需要 token？ | **不需要**。M2a 为**本地单用户模式**（`ZACE_LOCAL_MODE` 默认 true）：无鉴权、无用户概念、绑定 127.0.0.1。鉴权/token/租户归 M2c（TASK-060/061）。CF-05 的 `/api/auth/*` 路径保留但返回 501（路径契约不漂移，实现待 M2c） |
-| R35 | **服务端同步状态存哪**：CF-01（index.db）能否新增表？还是建第二套 DB？ | **都不**。M2a 落**文件**：`{project_dir}/sync-state.json`（路径→blobHash/大小/branch/commit/checkpoints，tmp+replace 原子写）+ `{project_dir}/blobs/{hash[:2]}/{hash}` 内容寻址镜像。理由：不碰 CF-01 冻结 DDL；本地单用户无用户/审计需求；JSON 可调试易备份。M2c 引入 `zace-meta.db`（Module/06 §2.4）时再迁移 |
+| R33 | **service 对 core 的依赖面**：CF-07（`ContextEngine` Protocol）是否为上限？ | **不是上限，是最低保证面**。service 可直接使用 core 的公开类与方法（`nova_core.engine.Engine`，含 `search_with_trace` / `project_dir` / `ingest_repo` / `resolve_repo`）。理由：同 monorepo 同版本演进；D-34 只要求 core 不依赖上层，不限制 service 用 core 的公开 API。**若未来要把 core 换 Rust 实现，再收窄到这个面** |
+| R34 | **M2a 鉴权**：Phase 2 本地跑通阶段是否需要 token？ | **不需要**。M2a 为**本地单用户模式**（`NOVA_LOCAL_MODE` 默认 true）：无鉴权、无用户概念、绑定 127.0.0.1。鉴权/token/租户归 M2c（TASK-060/061）。CF-05 的 `/api/auth/*` 路径保留但返回 501（路径契约不漂移，实现待 M2c） |
+| R35 | **服务端同步状态存哪**：CF-01（index.db）能否新增表？还是建第二套 DB？ | **都不**。M2a 落**文件**：`{project_dir}/sync-state.json`（路径→blobHash/大小/branch/commit/checkpoints，tmp+replace 原子写）+ `{project_dir}/blobs/{hash[:2]}/{hash}` 内容寻址镜像。理由：不碰 CF-01 冻结 DDL；本地单用户无用户/审计需求；JSON 可调试易备份。M2c 引入 `nova-meta.db`（Module/06 §2.4）时再迁移 |
 | R36 | **CF-07 L2 扩展：`ingest` 新增 `source` 参数** | 已由编排者在 main 落地（`interfaces.py`）。**存在的理由**：配置指纹失效（D-07）会走 `full_reparse` / `reembed`，该路径遍历 `source.list_files()` 重建；上传模式下不传 source 会**静默清空索引**。实施归 TASK-031（core 侧加 `source or self._source_for(project_id)`） |
-| R37 | **CF-05 扩展：`projectId` 在本地模式可省略** | 本地单用户模式下允许请求不带 `projectId`，服务端使用唯一 local project。理由：降低 client（TASK-040）复杂度，为 demo 服务。**扩展而非破坏**：显式传 `projectId` 时行为不变；仅在 `ZACE_LOCAL_MODE=true` 生效 |
+| R37 | **CF-05 扩展：`projectId` 在本地模式可省略** | 本地单用户模式下允许请求不带 `projectId`，服务端使用唯一 local project。理由：降低 client（TASK-040）复杂度，为 demo 服务。**扩展而非破坏**：显式传 `projectId` 时行为不变；仅在 `NOVA_LOCAL_MODE=true` 生效 |
 
 > R36/R37 属 CF-05/CF-07 的**扩展**（新增可选参数/放宽字段必填），已由编排者先改契约文件再放行实现（orchestration §4 的 L2 流程）。
 
@@ -130,7 +130,7 @@
 | R39 | **CF-05 状态码扩展**：TASK-035 引入 `503 embedding_unavailable` / `503 embedding_unreachable` / `507 storage_error` / `500 index_failed`（CF-05 原文只有 `Error` 信封与 401，未列这些码） | **接受为扩展**（不破坏既有契约：新增状态码 + 既有 `Error` 信封不变）。语义：依赖不可用（503，客户端可重试）与存储故障（507）必须与"请求有问题"（4xx）区分；`index_failed` = 有账本但索引为空（上次索引失败），**不得**再报 `index_in_progress`（那会让客户端无限重试"先同步"） |
 | R40 | **本地模式下秘密不进响应**：core 的 `degradedReason` 会把 provider 原始报错（含 `api_key=...`）透传进响应体 | **接受 TASK-035 的修法**：错误响应与 `degradedReason` 统一过 `redact_text`，secret 只进服务端日志。**推广为纪律**：任何把 core/第三方异常文本透给客户端的路径都必须过脱敏 |
 | R41 | **TASK-035 未决问题的裁定**：provider 在 embed 阶段失败、但索引非空（`chunks>0`）时，检索返回 **200 + `degraded=true`**（仅 BM25 通道），不返回 503 | **接受**。理由：有部分索引时给出带诚实降级标注的结果，严格优于硬错误；503 只用于"完全无法服务"（空索引 + provider 坏）。**附注（观察项）**：`chunks>0 且 vectors=0`（TASK-031 的静默清空形态）目前**不可见**——该状态应可被探测并如实上报，列入 TASK-036 §D |
-| R42 | **D-28 忽略规则在本地模式的落点**：设计把 `.gitignore` 真实解析放在 **client**（Rust `ignore` crate），但 M2a 本地模式**没有 client**（R38），且实测 `DirectorySource` 只用了内置目录名跳过 | **在 core 落地 Python 实现**（TASK-037）：`{repo}/.zaceignore` > `.gitignore`（含否定规则）> 内置默认。**契约是"忽略语义"而不是库**：将来 client 用 `ignore` crate 时，两侧行为须一致（TASK-037 需给出语义清单与对照测试） |
+| R42 | **D-28 忽略规则在本地模式的落点**：设计把 `.gitignore` 真实解析放在 **client**（Rust `ignore` crate），但 M2a 本地模式**没有 client**（R38），且实测 `DirectorySource` 只用了内置目录名跳过 | **在 core 落地 Python 实现**（TASK-037）：`{repo}/.novaignore` > `.gitignore`（含否定规则）> 内置默认。**契约是"忽略语义"而不是库**：将来 client 用 `ignore` crate 时，两侧行为须一致（TASK-037 需给出语义清单与对照测试） |
 | R43 | **索引范围阈值**（Module/05 §3.1 只对 client 规定了 `>128KB` 跳过与 `>10% 不可打印字符`判二进制） | **同口径下推到 core**（TASK-037）：本地/服务端索引走同一阈值，参数可配置；跳过必须**如实进入 `skipped_files` 并带原因**（D-30）。实测依据：`linux-mtk-hw-hmi` 的 `cmake-build-release/**` 与 `lib/libcv.a`（308MB）当前都会被索引 |
 
 ### 3.10 环境切换与云端 embedding 裁定（用户拍板 2026-09-13；W6 开卡时定）
@@ -145,7 +145,7 @@
 | R47 | **当前开发期的 embedding 主路径**：用户在 W6 拍板“全程使用云端免费/付费模型，接受 10 人服务量、月 10 元内；本地 ONNX 暂缓部署（预留接口，以后有空再做）” | **接受为运行期选择，不改代码默认值**：`EmbeddingConfig.mode` 仍为 `"local"`（D-44 的部署形态决策不变），实际运行用环境变量切 `EMBED_MODE=api`。**理由**：把 api 变默认会改 `profile` → 触发 D-07 二级失效（既有索引全部重嵌），且与“源码不出 VPS”的隐私默认相悖；若将来要改默认，走 L3 流程。**预算依据**：BAAI 系列在硅基流动为免费档，付费档 ¥0.07/M tokens 量级（见 `docs/plan/phase2-m2b-w6.md` §4） |
 | R48 | **TASK-038（本地 embedding 上限钳制）的处置**：W6 改用云端后，该卡是否还做？ | **降级（deferred）但不撤销**：本地路线暂缓，卡保留、W6 不派活；其 `min` 钳制语义**并入 TASK-046 §B**（API 侧上限默认值修正），使未来补本地配置时直接受益。**触发重评**：用户提出隐私/脱网需求时 |
 | R49 | **TASK-037 的对照靶场替换**：原卡要求用 TASK-036 的规模数字（hmi / systemservice / Trellis）做前后对照，但**那些靶场在当前环境不存在** | **更换靶场并明示不可比**：改用 `/home/xuwenzheng/github/hello-agents`（976 有效文件；272 个 >128KB、345 `.png`）
-+ `zace` 自身；报告中**必须标注“靶场变更，数字不可与 TASK-036 对比”**。**理由**：诚实报告优于沿用不可复现的旧数字；且新靶场的噪声形态（构建产物/图片/无扩展名）与旧靶场同类，结论仍有效 |
++ `nova` 自身；报告中**必须标注“靶场变更，数字不可与 TASK-036 对比”**。**理由**：诚实报告优于沿用不可复现的旧数字；且新靶场的噪声形态（构建产物/图片/无扩展名）与旧靶场同类，结论仍有效 |
 | R50 | **评测靶场变更**：旧主靶场（aibox-super-sdk / linux-mtk-mw-camerasure / linux-mtk-hmi）均不在新环境 | **接受用户指定的 `hello-agents` 为新主靶场**（`4f7682c`），旧 golden **保留不删**但标注“靶场不可得、暂停”，新基线报告与旧报告**不可比**。详见 TASK-047 |
 | R51 | **API embedding 的截断与分批缺陷**（编排者 2026-09-13 在新靶场全量索引实测发现）：`local.py` 按 `max_input_tokens` 硬截断，但 **`api.py` 完全没有截断逻辑**（该值只进指纹），且 `iter_batches` 按“条数”而非“token 数”分批 | **接受为阻断级缺陷，归 TASK-046 §D**：实测 `hello-agents` 全量索引失败（1482 文件 / 9971 chunks 已入库、**vectors=0**），182 个 chunk >8192 token（最大 64138）。修法：API 侧按 token 截断（与本地语义一致）+ 按 token 预算分批 + 429 韧性测试。**附注**：失败后掩码状态被检索层**如实报出**（`warning: 向量索引为空（可能未重建）：chunks=9971，vectors=0`）——R41 要的“可探测”已实现，不必另修 |
 | R52 | **embedding 来源的切换与配置化**（用户 2026-09-13 拍板）：当前开发期用 Voyage `voyage-4-lite`（200M 免费 token；RPM 2000 / TPM 1600 万），额度用完可切硅基流动或其他 | **接受，并立 TASK-049 做架构整理**：批大小/批 token 预算/并发度/超时/重试/上下文上限均**配置化**且**可按模型给不同值**（三级回落 env > 模型 > 厂商 > 全局）；厂商差异（认证/请求体/响应/错误字段）收进 `ApiTransportSpec`，新增厂商只加 spec。**并发默认 1**（串行）；免费档限流脆弱，并发由用户显式开启 |

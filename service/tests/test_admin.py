@@ -21,13 +21,13 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.roles import QUOTA_BY_ROLE, ROLE_BETA, ROLE_PUBLIC
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.roles import QUOTA_BY_ROLE, ROLE_BETA, ROLE_PUBLIC
+from nova_service.runtime import EngineManager
 
 from tests.conftest import DeterministicBigramEmbedding, make_client, make_invite
 
@@ -87,7 +87,7 @@ def _register(ns: SimpleNamespace, name: str, kind: str) -> dict:
 
 def _key_for(ns: SimpleNamespace, user_id: str) -> str:
     """为该用户造一把随机 Key（返回明文）；用于在同一客户端上切换身份。"""
-    from zace_service.auth import create_api_token
+    from nova_service.auth import create_api_token
 
     raw, digest, prefix = create_api_token()
     ns.meta_db.create_token(user_id, token_hash=digest, prefix=prefix, name="switch")
@@ -164,7 +164,7 @@ def test_admin_endpoints_require_credentials(admin_env: SimpleNamespace) -> None
 def test_local_mode_implicit_account_is_not_admin(tmp_path: Path) -> None:
     """本地模式的隐式账户**不是**管理员（诚实性：本地不等于拥有一切权限）。
 
-    否则 `zace-service local` 会变成一个无门的后台，而它甚至没有账户体系。
+    否则 `nova-service local` 会变成一个无门的后台，而它甚至没有账户体系。
     """
     settings = Settings(data_root=tmp_path / "data", local_mode=True)
     app = create_app(settings)

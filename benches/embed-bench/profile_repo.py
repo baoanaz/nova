@@ -25,15 +25,15 @@ from pathlib import Path
 # 允许直接以脚本方式运行（无需安装包）
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
-from zace_core.chunking.splitter import embedding_text, split_file  # noqa: E402
-from zace_core.parsing.registry import detect_language, get_parser  # noqa: E402
-from zace_core.pipeline.ignore import (  # noqa: E402
+from nova_core.chunking.splitter import embedding_text, split_file  # noqa: E402
+from nova_core.parsing.registry import detect_language, get_parser  # noqa: E402
+from nova_core.pipeline.ignore import (  # noqa: E402
     SKIP_REASON_BINARY,
     IndexScope,
     binary_reason,
 )
-from zace_core.pipeline.source import DirectorySource  # noqa: E402
-from zace_core.types import ParsedFile  # noqa: E402
+from nova_core.pipeline.source import DirectorySource  # noqa: E402
+from nova_core.types import ParsedFile  # noqa: E402
 
 H_EXTENSION = ".h"
 

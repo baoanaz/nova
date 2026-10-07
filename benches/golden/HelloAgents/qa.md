@@ -1,6 +1,6 @@
 # HelloAgents 基准题库（20 题）
 
-> 靶场：`HelloAgents` @ `93e77ea`｜projectId `06078cc80c7ce7d7`｜索引：`/root/.zace/bench/voyage-4-lite-d1024`（复用，不重建）
+> 靶场：`HelloAgents` @ `93e77ea`｜projectId `06078cc80c7ce7d7`｜索引：`/root/.nova/bench/voyage-4-lite-d1024`（复用，不重建）
 > 每题给出**建议工具**（`search` = 定位/事实型；`ask` = 需要跨文件综合的解释型）、**人工核实的参考答案**与**依据路径**。
 > 机器可跑版本：同目录 `HelloAgents.jsonl`。
 

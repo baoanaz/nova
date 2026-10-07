@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """embedding 吞吐标定：在**真实 chunk 文本**上测不同批/并发/截断配置的吞吐与 429 行为。
 
-为什么要单独一个脚本（而不是只跑 `zace-core ingest`）：
+为什么要单独一个脚本（而不是只跑 `nova-core ingest`）：
 - ingest 的 99% 时间花在 embedding，但 ingest 是"一次性"的——无法在同一份数据上快速对比
   4~6 组参数（每组都要重跑解析与入库，且换截断参数还不触发重嵌，会污染对照）；
 - 本脚本把**嵌入阶段单独拆出来**：同一份 chunk 样本、同一台机器，唯一变量是配置，
@@ -32,7 +32,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "core"))
 
 import httpx
-from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
+from nova_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
 
 # 复用画像脚本的解析/切分逻辑（保证样本与真实 ingest 同源）
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -110,10 +110,10 @@ def chunk_texts_for(repo: Path, tokenizer) -> list[str]:
     """取该仓库的 ``embedding_text()`` 列表（与 ingest 送嵌入的文本一致）。"""
     prof = profile_repo(repo, tokenizer, max_input_tokens=8192)
     # profile_repo 只返回统计；这里重跑一次拿文本（代价 ~秒级，可接受）
-    from zace_core.chunking.splitter import embedding_text, split_file
-    from zace_core.parsing.registry import detect_language, get_parser
-    from zace_core.pipeline.source import DirectorySource
-    from zace_core.types import ParsedFile
+    from nova_core.chunking.splitter import embedding_text, split_file
+    from nova_core.parsing.registry import detect_language, get_parser
+    from nova_core.pipeline.source import DirectorySource
+    from nova_core.types import ParsedFile
 
     source = DirectorySource(repo)
     texts: list[str] = []

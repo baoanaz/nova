@@ -39,7 +39,7 @@ def test_candidates_are_unique_and_complete() -> None:
 
 def test_registered_candidates_match_registry() -> None:
     """已登记候选的 dim / pooling / 前缀必须与 registry 一致（否则测的不是线上默认实现）。"""
-    from zace_core.embedding import get_local_spec
+    from nova_core.embedding import get_local_spec
 
     for candidate in ec.CANDIDATES:
         if not candidate.registered:

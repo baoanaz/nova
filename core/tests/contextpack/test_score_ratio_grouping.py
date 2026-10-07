@@ -16,7 +16,7 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from zace_core.contextpack import (
+from nova_core.contextpack import (
     CONTEXT_SCORE_RATIO,
     SCORE_RATIO_ENV,
     BudgetConfig,
@@ -25,7 +25,7 @@ from zace_core.contextpack import (
     render_evidence_for_prompt,
     render_markdown,
 )
-from zace_core.types import Flow, FlowNode, SpecBlockDef
+from nova_core.types import Flow, FlowNode, SpecBlockDef
 
 SPEC_PATH = "docs/design.md"
 #: 本文件一律显式给 hard_cap，避免预算成为"条数变化"的混淆变量。
@@ -210,7 +210,7 @@ def test_score_ratio_config_changes_returned_count(store, seed_file, sym, cand):
 
 
 def test_env_var_overrides_the_default_ratio(monkeypatch) -> None:
-    """环境变量 ``ZACE_CONTEXT_SCORE_RATIO`` 覆盖默认值（CF-06 冻结：不暴露为工具参数）。"""
+    """环境变量 ``NOVA_CONTEXT_SCORE_RATIO`` 覆盖默认值（CF-06 冻结：不暴露为工具参数）。"""
     assert budget_for("fast").score_ratio == CONTEXT_SCORE_RATIO
     assert budget_for("fast").score_ratio == 0.40
 

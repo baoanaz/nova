@@ -40,7 +40,7 @@ def test_repo_manifest_lists_all_kept_targets() -> None:
     targets = tt.load_targets()
     assert list(targets) == [
         "hello-agents",
-        "zace",
+        "nova",
         "leveldb-v1",
         "helloagents-v1",
         "langchain-v1",
@@ -67,7 +67,7 @@ def test_primary_target_is_a_public_local_build() -> None:
 
 
 def test_illegal_role_is_rejected(tmp_path: Path) -> None:
-    spec = {"golden": "benches/golden/zace", "repo_hint": "x", "commit": "self", "role": "boss"}
+    spec = {"golden": "benches/golden/nova", "repo_hint": "x", "commit": "self", "role": "boss"}
     path = _manifest(tmp_path, {"x": spec})
     with pytest.raises(tt.TargetError) as excinfo:
         tt.load_targets(path)
@@ -77,7 +77,7 @@ def test_illegal_role_is_rejected(tmp_path: Path) -> None:
 def test_recorded_indexes_carry_a_project_id_and_fingerprint() -> None:
     targets = tt.load_targets()
     assert targets["hello-agents"].project_id == "e9ee9dd1d41a7d2c"
-    assert targets["zace"].project_id == "adfdd1a626db62b7"
+    assert targets["nova"].project_id == "adfdd1a626db62b7"
     assert targets["leveldb-v1"].project_id == "3ed886ce58bc0e47"
     assert targets["helloagents-v1"].project_id == "06078cc80c7ce7d7"
     assert targets["langchain-v1"].project_id == "ca2050db0db5b1e2"
@@ -117,7 +117,7 @@ def test_bad_schema_is_rejected(tmp_path: Path) -> None:
 
 
 def test_missing_required_field_is_rejected(tmp_path: Path) -> None:
-    path = _manifest(tmp_path, {"zace": {"golden": "benches/golden/zace", "commit": "self"}})
+    path = _manifest(tmp_path, {"nova": {"golden": "benches/golden/nova", "commit": "self"}})
     with pytest.raises(tt.TargetError) as excinfo:
         tt.load_targets(path)
     assert "repo_hint" in str(excinfo.value)
@@ -164,7 +164,7 @@ def test_build_eval_args_keeps_extra_flags_passthrough(tmp_path: Path) -> None:
 
 def test_recorded_project_id_lets_any_checkout_reuse_the_index() -> None:
     """记了 projectId 的靶场不需要 --repo：换 checkout/换 worktree 都能挂同一份索引。"""
-    target = tt.resolve_target("zace")
+    target = tt.resolve_target("nova")
     argv = tt.build_eval_args(target, data="/tmp/bench", report="/tmp/r.md")
     assert "--repo" not in argv
     assert argv[argv.index("--project-id") + 1] == "adfdd1a626db62b7"
@@ -184,8 +184,8 @@ def test_replay_without_sidecar_is_rejected() -> None:
 
 
 def test_target_arg_is_extracted_in_both_forms() -> None:
-    assert tt.split_target_arg(["--target", "zace", "--data", "x"]) == ("zace", ["--data", "x"])
-    assert tt.split_target_arg(["--target=zace", "--replay"]) == ("zace", ["--replay"])
+    assert tt.split_target_arg(["--target", "nova", "--data", "x"]) == ("nova", ["--data", "x"])
+    assert tt.split_target_arg(["--target=nova", "--replay"]) == ("nova", ["--replay"])
     assert tt.split_target_arg(["--golden", "g"]) == (None, ["--golden", "g"])
     with pytest.raises(tt.TargetError):
         tt.split_target_arg(["--target"])
@@ -194,7 +194,7 @@ def test_target_arg_is_extracted_in_both_forms() -> None:
 def test_describe_targets_mentions_every_target_and_role() -> None:
     text = tt.describe_targets(tt.load_targets())
     for name in (
-        "zace",
+        "nova",
         "hello-agents",
         "leveldb-v1",
         "helloagents-v1",

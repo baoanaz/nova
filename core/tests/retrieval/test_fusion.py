@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.retrieval.fusion import (
+from nova_core.retrieval.fusion import (
     CHANNEL_BM25,
     CHANNEL_EXACT,
     CHANNEL_INFERRED,
@@ -21,7 +21,7 @@ from zace_core.retrieval.fusion import (
     make_candidate,
     merge,
 )
-from zace_core.types import SpecBlockDef
+from nova_core.types import SpecBlockDef
 
 
 def test_dedup_by_chunk_id_merges_channels_and_ranks() -> None:

@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: zace-service REST API（冻结合同 CF-05）
+  title: nova-service REST API（冻结合同 CF-05）
   version: 0.0.1
   description: >
     来源 docs/design/Module/06-服务化与部署.md §2.1（D-37）。client 走 Bearer token，web 走 session cookie。
@@ -8,13 +8,13 @@ info:
     V1 不加 /v1 前缀（同仓同步发版；公开 API 化时再版本化）。
 servers:
   - url: https://{host}
-    variables: { host: { default: zace.example.com } }
+    variables: { host: { default: nova.example.com } }
 tags: [{ name: auth }, { name: projects }, { name: sync }, { name: query }, { name: ops }, { name: admin }]
 
 components:
   securitySchemes:
-    bearerToken: { type: http, scheme: bearer, bearerFormat: zace_api_token }
-    sessionCookie: { type: apiKey, in: cookie, name: zace_session }
+    bearerToken: { type: http, scheme: bearer, bearerFormat: nova_api_token }
+    sessionCookie: { type: apiKey, in: cookie, name: nova_session }
   schemas:
     Error:
       type: object
@@ -149,7 +149,7 @@ paths:
       tags: [auth]
       summary: 创建 API token（明文仅此一次返回）
       requestBody:
-        content: { application/json: { schema: { type: object, properties: { name: { type: string }, key: { type: string, description: "TASK-110 §3.4：自定义 Key（拓荒者/管理员特权）。留空 = 服务端随机生成。须以 zace_ 开头且其后 ≥16 字符" } } } } }
+        content: { application/json: { schema: { type: object, properties: { name: { type: string }, key: { type: string, description: "TASK-110 §3.4：自定义 Key（拓荒者/管理员特权）。留空 = 服务端随机生成。须以 nova_ 开头且其后 ≥16 字符" } } } } }
       responses:
         '200': { description: '{ id, token, prefix, name, isCustom }' }
         '400': { description: invalid_custom_key（前缀/长度/字符集不符） }

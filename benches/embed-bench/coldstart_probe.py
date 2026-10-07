@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """冷启动索引耗时分解探针（研究工具；不改仓库代码，全部用运行时打桩）。
 
-来源：`/root/.zace/bench/probe-2026-09-25/coldstart_probe.py`（2026-09-25 调研版），
+来源：`/root/.nova/bench/probe-2026-09-25/coldstart_probe.py`（2026-09-25 调研版），
 TASK-114 收进仓库并适配新结构（`_embed_new` → `EmbeddingSink._process_window` /
 `EmbeddingPipeline.submit`），使性能证据可复现。用法与口径见
 `docs/plan/index-perf-plan.md` §5。
@@ -24,16 +24,16 @@ from collections import defaultdict
 from pathlib import Path
 
 REPO = Path(__file__).resolve()
-ZACE = Path(os.environ.get("ZACE_REPO", str(Path(__file__).resolve().parents[2])))
-sys.path.insert(0, str(ZACE / "core"))
+NOVA = Path(os.environ.get("NOVA_REPO", str(Path(__file__).resolve().parents[2])))
+sys.path.insert(0, str(NOVA / "core"))
 
 import httpx  # noqa: E402
-import zace_core.embedding.api as api_mod  # noqa: E402
-import zace_core.pipeline.indexer as indexer_mod  # noqa: E402
-from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
-from zace_core.engine import Engine  # noqa: E402
-from zace_core.storage import Store  # noqa: E402
-from zace_core.vectors import VectorStore  # noqa: E402
+import nova_core.embedding.api as api_mod  # noqa: E402
+import nova_core.pipeline.indexer as indexer_mod  # noqa: E402
+from nova_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_core.storage import Store  # noqa: E402
+from nova_core.vectors import VectorStore  # noqa: E402
 
 
 class Meter:
@@ -180,7 +180,7 @@ def sample_rss(stop: threading.Event, out: list) -> None:
 
 
 def install_patches(provider, meter: Meter) -> None:
-    import zace_core.storage.store as store_mod
+    import nova_core.storage.store as store_mod
 
     for fn_name, key in (
         ("segment", "sqlite.jieba_segment"),
@@ -222,14 +222,14 @@ def install_patches(provider, meter: Meter) -> None:
     meter.wrap_class(indexer_mod.Indexer, "_index_file", "index.file_total")
     meter.wrap_class(indexer_mod.Indexer, "_collect_inputs", "scan.collect_inputs")
     meter.wrap_class(indexer_mod.Indexer, "_resolve", "graph.resolve_phase2")
-    import zace_core.pipeline.embedding_sink as sink_mod
+    import nova_core.pipeline.embedding_sink as sink_mod
 
     # TASK-114：向量阶段拆成 EmbeddingSink（同步消费者）+ EmbeddingPipeline（后台线程）。
     meter.wrap_class(sink_mod.EmbeddingSink, "_process_window", "embed.stage_window")
     meter.wrap_class(sink_mod.EmbeddingPipeline, "submit", "embed.pipeline_backpressure_wait")
     meter.wrap_class(indexer_mod.Indexer, "_rebuild_vectors", "embed.stage_rebuild")
 
-    import zace_core.engine as engine_mod
+    import nova_core.engine as engine_mod
 
     engine_mod.plan_scan = _wrap_fn(engine_mod.plan_scan, "scan.plan_scan")
     meter.wrap_class(engine_mod.Engine, "_ingest", "engine.ingest_inner")
@@ -290,7 +290,7 @@ def main() -> int:
 
         t0 = time.perf_counter()
         with Store.open(engine.project_dir(handle.project_id)) as store:
-            from zace_core.chunking.fingerprint import stored_fingerprint
+            from nova_core.chunking.fingerprint import stored_fingerprint
 
             stored_fingerprint(store)
         meter.add("finalize.fingerprint_read", time.perf_counter() - t0)
@@ -350,7 +350,7 @@ def main() -> int:
             "batch_size": getattr(provider, "batch_size", None),
             "batch_token_budget": getattr(provider, "batch_token_budget", None),
             "concurrency": getattr(provider, "concurrency", None),
-            "embed_workers": os.environ.get("ZACE_EMBED_WORKERS", "default(2)"),
+            "embed_workers": os.environ.get("NOVA_EMBED_WORKERS", "default(2)"),
             "max_input_tokens": cfg.max_input_tokens,
         },
         "wall_s": round(wall_s, 3),

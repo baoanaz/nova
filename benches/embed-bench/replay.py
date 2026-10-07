@@ -16,9 +16,9 @@ from contextlib import closing
 from pathlib import Path
 
 import numpy as np
-from zace_core.chunking.splitter import embedding_text
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.types import ChunkDef
+from nova_core.chunking.splitter import embedding_text
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.types import ChunkDef
 
 
 def text_key(text: str) -> str:

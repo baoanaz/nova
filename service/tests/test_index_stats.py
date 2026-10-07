@@ -28,14 +28,14 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from zace_core.embedding import ApiNetworkError
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_core.interfaces import EmbeddingProfile
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import INDEX_RUN_KEEP, MetaDB
-from zace_service.runtime import EngineManager
+from nova_core.embedding import ApiNetworkError
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_core.interfaces import EmbeddingProfile
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import INDEX_RUN_KEEP, MetaDB
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -193,7 +193,7 @@ def test_cross_project_stats_work_after_resolve(env: SimpleNamespace) -> None:
 
     修法：``POST /api/projects/resolve`` 解析后 claim 给当前用户（TASK-061 §B 原设计；
     本机实测发现 ``claim_project`` 写成后**从未被任何入口调用**，``projects`` 表恒空）。
-    ``npx zace-client`` 的时序正是 resolve → 扫描 → batch-upload，因此覆盖该入口即可。
+    ``npx nova-client`` 的时序正是 resolve → 扫描 → batch-upload，因此覆盖该入口即可。
     """
     upload(env)
     # ① 单项目端点有数
@@ -243,7 +243,7 @@ def test_resolve_does_not_claim_in_local_mode(tmp_path: Path) -> None:
             json={"identityKey": "identity:local", "displayName": "local"},
         )
         assert response.status_code == 200, response.text
-    assert app.state.meta_db is None, "本地模式不该因为 resolve 而创建 zace-meta.db"
+    assert app.state.meta_db is None, "本地模式不该因为 resolve 而创建 nova-meta.db"
     manager.close()
 
 
@@ -394,7 +394,7 @@ def test_lazy_manager_is_wired_to_the_app_meta_db(
         built.append(manager)
         return manager
 
-    monkeypatch.setattr("zace_service.deps.EngineManager.open", classmethod(_fake_open))
+    monkeypatch.setattr("nova_service.deps.EngineManager.open", classmethod(_fake_open))
     # ``app.state.engine_manager`` 未预热 → 走 deps 的懒构造分支。
     assert app.state.engine_manager is None
     with make_client(app) as client:

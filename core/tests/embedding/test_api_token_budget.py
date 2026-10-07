@@ -11,16 +11,16 @@ from pathlib import Path
 
 import httpx
 import pytest
-from tokenizers import Tokenizer, models, pre_tokenizers
-from zace_core.embedding.api import (
+from nova_core.embedding.api import (
     DEFAULT_BATCH_TOKEN_BUDGET,
     OpenAiCompatibleEmbeddingProvider,
     _truncate_by_bytes,
     _truncate_with_tokenizer,
     iter_batches_by_token_budget,
 )
-from zace_core.embedding.base import ApiRateLimitError, EmbeddingConfigError
-from zace_core.embedding.registry import ApiModelSpec
+from nova_core.embedding.base import ApiRateLimitError, EmbeddingConfigError
+from nova_core.embedding.registry import ApiModelSpec
+from tokenizers import Tokenizer, models, pre_tokenizers
 
 BASE_URL = "https://api.example.com"
 
@@ -203,7 +203,7 @@ def test_provider_rejects_invalid_budget() -> None:
 
 
 def test_request_model_field_uses_provider_name() -> None:
-    """发给 API 的 model 必须是 provider 认的名字，而非 zace 的注册表 key。"""
+    """发给 API 的 model 必须是 provider 认的名字，而非 nova 的注册表 key。"""
     spec = ApiModelSpec(name="bge-m3", dim=4, request_name="BAAI/bge-m3")
     provider, requests = make_provider(echo_handler, spec=spec)
     provider.embed(["hello"])

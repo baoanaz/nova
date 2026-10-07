@@ -7,7 +7,7 @@
 
 用法（在仓库根，先加载 benchmark.env）：
 
-    set -a; source ~/.config/zace/benchmark.env; set +a
+    set -a; source ~/.config/nova/benchmark.env; set +a
     export no_proxy='*'
 
     # ① 采集：跑一次真实 embedding，落盘候选池（要 key，约数十秒）
@@ -22,7 +22,7 @@
 
 局限（诚实声明）：
 - 只覆盖**候选池之后**的改动。改了解析/切片/召回通道本身 → 必须重新 `--collect`；
-- 缓存按 projectId 存 `/tmp/zace-ab-pool-<hash>.pkl`，重建索引后需重新采集。
+- 缓存按 projectId 存 `/tmp/nova-ab-pool-<hash>.pkl`，重建索引后需重新采集。
 """
 
 from __future__ import annotations
@@ -37,17 +37,17 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "core"))
 
-from zace_core.cli.eval import load_cases, run_golden  # noqa: E402
-from zace_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
-from zace_core.engine import Engine  # noqa: E402
-from zace_core.retrieval import RecallLimits  # noqa: E402
-from zace_core.retrieval import vector as vector_mod  # noqa: E402
-from zace_core.retrieval.bm25 import recall_bm25  # noqa: E402
-from zace_core.retrieval.exact import parse_explicit, recall_explicit  # noqa: E402
-from zace_core.retrieval.literal import extract_literal_phrases, recall_literal  # noqa: E402
-from zace_core.retrieval.vector import embed_query, recall_vector  # noqa: E402
+from nova_core.cli.eval import load_cases, run_golden  # noqa: E402
+from nova_core.embedding.factory import EmbeddingConfig, create_provider  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_core.retrieval import RecallLimits  # noqa: E402
+from nova_core.retrieval import vector as vector_mod  # noqa: E402
+from nova_core.retrieval.bm25 import recall_bm25  # noqa: E402
+from nova_core.retrieval.exact import parse_explicit, recall_explicit  # noqa: E402
+from nova_core.retrieval.literal import extract_literal_phrases, recall_literal  # noqa: E402
+from nova_core.retrieval.vector import embed_query, recall_vector  # noqa: E402
 
-CACHE = Path("/tmp/zace-ab-pool.pkl")
+CACHE = Path("/tmp/nova-ab-pool.pkl")
 
 
 def _bench_targets() -> tuple[str, list[tuple[str, str, str]]]:
@@ -56,10 +56,10 @@ def _bench_targets() -> tuple[str, list[tuple[str, str, str]]]:
     只取 role=primary —— internal 靶场需要内网索引，默认不参与。
     """
     spec = json.loads((ROOT / "benches" / "targets.json").read_text(encoding="utf-8"))
-    data = os.environ.get("ZACE_BENCH_DATA") or spec.get("data_root")
+    data = os.environ.get("NOVA_BENCH_DATA") or spec.get("data_root")
     if not data:
         # targets.json 没写就退回约定位置
-        data = str(Path.home() / ".zace" / "bench" / "voyage-4-lite-d1024")
+        data = str(Path.home() / ".nova" / "bench" / "voyage-4-lite-d1024")
     targets = []
     for name, t in spec["targets"].items():
         if t.get("role") != "primary":
@@ -131,7 +131,7 @@ def evaluate(data_root: str, cache: list[dict], ratios: list[float]) -> int:
     def cached_embed(provider, query, cache=None):  # noqa: ANN001, ARG001
         """替身：命中缓存就返回采集时的向量，否则回退真实实现。
 
-        签名必须与 `zace_core.retrieval.vector.embed_query` 一致（含 `cache` 位置参数），
+        签名必须与 `nova_core.retrieval.vector.embed_query` 一致（含 `cache` 位置参数），
         否则调用方传第三参时会 TypeError。
         """
         return list(vec_by_q[query]) if query in vec_by_q else orig_embed(provider, query)
@@ -143,7 +143,7 @@ def evaluate(data_root: str, cache: list[dict], ratios: list[float]) -> int:
     print(header)
 
     for ratio in ratios:
-        os.environ["ZACE_CONTEXT_SCORE_RATIO"] = str(ratio)
+        os.environ["NOVA_CONTEXT_SCORE_RATIO"] = str(ratio)
         provider = create_provider(EmbeddingConfig.from_env())
         engine = Engine.open(data_root, provider=provider)
         tot = {"n": 0, "r5": 0, "r10": 0, "mrr": 0.0, "neg": 0, "neg_ok": 0}
@@ -202,7 +202,7 @@ def main() -> int:
     g.add_argument("--eval", action="store_true", help="用缓存重算（不需要 key）")
     ap.add_argument(
         "--ratio",
-        default=os.environ.get("ZACE_CONTEXT_SCORE_RATIO", "0.40"),
+        default=os.environ.get("NOVA_CONTEXT_SCORE_RATIO", "0.40"),
         help="逗号分隔的 CONTEXT_SCORE_RATIO 列表（默认 0.40，可用 env 覆盖）",
     )
     args = ap.parse_args()

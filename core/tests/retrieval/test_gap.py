@@ -16,8 +16,8 @@ import os
 from pathlib import Path
 
 import pytest
-from zace_core.engine import Engine
-from zace_core.retrieval.gap import (
+from nova_core.engine import Engine
+from nova_core.retrieval.gap import (
     GAP_REASON_PREFIX,
     GapLimits,
     GapPlan,
@@ -262,10 +262,10 @@ def _cockpit_environment() -> tuple[str, str] | None:
     """cockpit 真实回归所需环境：预建索引存在 + embedding 后端可用。
 
     返回 ``(data_root, project_id)``；不可用时返回 ``None``（调用方 skip）。
-    索引路径可用 ``ZACE_BENCH_DATA`` 覆盖（默认 ``~/.zace/bench/voyage-4-lite-d1024``）。
+    索引路径可用 ``NOVA_BENCH_DATA`` 覆盖（默认 ``~/.nova/bench/voyage-4-lite-d1024``）。
     """
-    data = os.environ.get("ZACE_BENCH_DATA") or str(
-        Path.home() / ".zace" / "bench" / "voyage-4-lite-d1024"
+    data = os.environ.get("NOVA_BENCH_DATA") or str(
+        Path.home() / ".nova" / "bench" / "voyage-4-lite-d1024"
     )
     project = str(
         Path(data)
@@ -341,7 +341,7 @@ def test_cockpit_0035_still_misses_top10(cockpit) -> None:
     写成断言而不是注释，是为了防止“指标没动但卡片说过了”这类误报：
     哪天真把排序修好了，这条会**失败**，提醒去更新卡片与期望。
     """
-    from zace_core.cli.eval import first_hit_rank, ordered_evidence
+    from nova_core.cli.eval import first_hit_rank, ordered_evidence
 
     engine, project_id = cockpit
     case = _load_case("cockpit-0035")
@@ -358,14 +358,14 @@ def test_cockpit_0035_still_misses_top10(cockpit) -> None:
 
 def _expectation(path: str, symbol: str | None):
     """构造 ``GoldenCase`` 用的 ``Expectation``（避免手工拼 golden 文件）。"""
-    from zace_core.cli.eval import Expectation
+    from nova_core.cli.eval import Expectation
 
     return Expectation(path=path, symbol=symbol)
 
 
 def _case_with(expectations):
     """只有 ``expected`` 与 ``category`` 参与命中的最小 case（供 ``first_hit_rank`` 用）。"""
-    from zace_core.cli.eval import GoldenCase
+    from nova_core.cli.eval import GoldenCase
 
     return GoldenCase(
         id="probe", query="", lang="zh", category="behavior", expected=tuple(expectations)
@@ -399,7 +399,7 @@ def test_cockpit_0033_call_chain_reaches_the_pack(cockpit) -> None:
 
     与 0035 不同，本题在本卡后**官方口径下也通过了**（rank=3）；因此这里可以严格断言排名。
     """
-    from zace_core.cli.eval import first_hit_rank, ordered_evidence
+    from nova_core.cli.eval import first_hit_rank, ordered_evidence
 
     engine, project_id = cockpit
     case = _load_case("cockpit-0033")
@@ -420,7 +420,7 @@ def test_deep_uses_larger_gap_quota_but_same_pipeline(cockpit) -> None:
     顺序互换；已在本机对未修改的 ``main`` 复现，与 TASK-109 无关）。
     本卡只断言“两条路径共用同一配额来源”，即 Deep 的配额参数不小于 Fast。
     """
-    from zace_core.engine import DEEP_GAP_LIMITS
+    from nova_core.engine import DEEP_GAP_LIMITS
 
     fast = GapLimits()
     assert DEEP_GAP_LIMITS.max_containers >= fast.max_containers
@@ -449,8 +449,8 @@ def test_gap_backfill_is_capped_and_marked(cockpit) -> None:
     ]
     assert marked, "补检证据必须带 gap backfill 来源标注（Agent 才能识别）"
     # 独立小预算：补检证据的总渲染开销不得超过 hard_cap × backfill_ratio。
-    from zace_core.contextpack import estimate_render_tokens
-    from zace_core.contextpack.assembly import budget_for
+    from nova_core.contextpack import estimate_render_tokens
+    from nova_core.contextpack.assembly import budget_for
 
     ratio = budget_for("fast").backfill_ratio
     total = sum(estimate_render_tokens(item) for item in marked)
@@ -464,10 +464,10 @@ def test_gap_check_is_cheap(cockpit) -> None:
     engine, project_id = cockpit
     case = _load_case("cockpit-0035")
     with engine._open_project(project_id) as (store, _vectors, _provider):
-        from zace_core.contextpack import assemble, budget_for, collect_index_signals
-        from zace_core.retrieval import RecallLimits, recall
-        from zace_core.retrieval.expand import ExpansionLimits, expand
-        from zace_core.retrieval.rerank import collect_signals, rerank
+        from nova_core.contextpack import assemble, budget_for, collect_index_signals
+        from nova_core.retrieval import RecallLimits, recall
+        from nova_core.retrieval.expand import ExpansionLimits, expand
+        from nova_core.retrieval.rerank import collect_signals, rerank
 
         recalled = recall(store, case["query"], provider=None, limits=RecallLimits())
         expansion = expand(store, recalled.candidates, limits=ExpansionLimits())
@@ -493,7 +493,7 @@ def test_tests_import_path_is_available() -> None:
 
     **不要用父目录名判断**（TASK-109 曾写成 ``ROOT.parent.name == "ACE"``）：
     那是本机 checkout 布局的硬编码假设，而仓库目录名随 clone 方式而变
-    （GitHub Actions clone 成 ``zace``，其他人可能是任意名字），该断言在 CI 必然失败。
+    （GitHub Actions clone 成 ``nova``，其他人可能是任意名字），该断言在 CI 必然失败。
     用仓库**自身的标志文件**判断——它定义“这是仓库根”，与目录叫什么无关。
     """
     # 仓库标志：workspace 根（D-35 monorepo）的 pyproject + 三个成员目录的 pyproject

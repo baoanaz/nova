@@ -15,17 +15,17 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from zace_core.pipeline import DirectorySource, IgnoreRules, Indexer, IndexScope
-from zace_core.pipeline.ignore import (
+from nova_core.pipeline import DirectorySource, IgnoreRules, Indexer, IndexScope
+from nova_core.pipeline.ignore import (
     DEFAULT_SKIP_DIRS,
     SKIP_REASON_BINARY,
     SKIP_REASON_OVERSIZE,
     oversize_reason,
     reason_from_entry,
 )
-from zace_core.storage import Store
-from zace_core.types import BlobInput, ChangeSet
-from zace_core.vectors import VectorStore
+from nova_core.storage import Store
+from nova_core.types import BlobInput, ChangeSet
+from nova_core.vectors import VectorStore
 
 from .conftest import CountingEmbedding, write_repo
 
@@ -59,9 +59,9 @@ REPO_FILES = {
     "sub/app.py": "y = 3\n",
     "sub/generated/code.py": "z = 4\n",
     "other/app.log": "keep me\n",  # sub/.gitignore 不该管到这里
-    # 根 .gitignore 的产物目录与秘密文件；.zaceignore 救回后者（第 1 层 > 第 2 层）
+    # 根 .gitignore 的产物目录与秘密文件；.novaignore 救回后者（第 1 层 > 第 2 层）
     ".gitignore": "dist/\nsecret.env\nartifact.tmp\nmemory/\ntest_*.py\n!test_tools.py\n",
-    ".zaceignore": "!secret.env\n",
+    ".novaignore": "!secret.env\n",
     "dist/bundle.js": "var a=1;\n",
     "secret.env": "TOKEN=abc\n",
     "artifact.tmp": "tmp\n",
@@ -109,8 +109,8 @@ def test_gitignore_layer_is_real_parsed(rules: IgnoreRules) -> None:
     assert rules.is_ignored("dist", is_dir=True)
 
 
-def test_zaceignore_beats_gitignore(rules: IgnoreRules) -> None:
-    """第 1 层最高优先级：``.zaceignore`` 的 ``!secret.env`` 能救回 ``.gitignore`` 的忽略。"""
+def test_novaignore_beats_gitignore(rules: IgnoreRules) -> None:
+    """第 1 层最高优先级：``.novaignore`` 的 ``!secret.env`` 能救回 ``.gitignore`` 的忽略。"""
     assert not rules.is_ignored("secret.env", is_dir=False), "第 1 层必须能覆盖第 2 层"
     assert rules.is_ignored("artifact.tmp", is_dir=False), "未被救回的同类规则仍生效"
 
@@ -338,11 +338,11 @@ def test_scope_probe_does_not_read_beyond_window() -> None:
 
 def test_scope_is_configurable_from_env() -> None:
     """阈值可配置（R43 明文要求）；非法值回落默认而不是让索引起不来。"""
-    assert IndexScope.from_env({"ZACE_MAX_FILE_BYTES": "1024"}).max_bytes == 1024
-    assert IndexScope.from_env({"ZACE_MAX_FILE_BYTES": "0"}).max_bytes == 128 * 1024
-    assert IndexScope.from_env({"ZACE_MAX_FILE_BYTES": "abc"}).max_bytes == 128 * 1024
+    assert IndexScope.from_env({"NOVA_MAX_FILE_BYTES": "1024"}).max_bytes == 1024
+    assert IndexScope.from_env({"NOVA_MAX_FILE_BYTES": "0"}).max_bytes == 128 * 1024
+    assert IndexScope.from_env({"NOVA_MAX_FILE_BYTES": "abc"}).max_bytes == 128 * 1024
     assert IndexScope.from_env({}).max_bytes == 128 * 1024
-    strict = IndexScope.from_env({"ZACE_BINARY_RATIO": "0.0"})
+    strict = IndexScope.from_env({"NOVA_BINARY_RATIO": "0.0"})
     assert strict.check_bytes(b"a\x01b")[0] is False
 
 
@@ -451,7 +451,7 @@ def test_directory_source_respects_ignore_files(ignore_root: Path) -> None:
     raw = DirectorySource(ignore_root, respect_ignore_files=False).list_files()
 
     assert "src/core.py" in filtered
-    assert "secret.env" in filtered, ".zaceignore 的 ! 救回"
+    assert "secret.env" in filtered, ".novaignore 的 ! 救回"
     assert "sub/app.log" not in filtered
     assert "other/app.log" in filtered, "sub/.gitignore 不得越界"
     assert "code/chapter7/test_tools.py" in filtered, "! 救回的文件要在清单里"
@@ -459,7 +459,7 @@ def test_directory_source_respects_ignore_files(ignore_root: Path) -> None:
     assert not any(".venv" in path for path in filtered)
 
     # respect_ignore_files=False 退回“忽略规则引入前”的行为：只按内置目录名剪枝，
-    # 因此 .venv 仍被跳过（这是旧行为本身），但 .gitignore/.zaceignore 不再生效。
+    # 因此 .venv 仍被跳过（这是旧行为本身），但 .gitignore/.novaignore 不再生效。
     assert not any(".venv" in path for path in raw)
     assert "code/chapter7/test_simple_agent.py" in raw
     assert "artifact.tmp" in raw, "无忽略规则时 .gitignore 条目不再生效"
@@ -498,7 +498,7 @@ def test_walk_is_not_slower_than_baseline(ignore_root: Path) -> None:
 
 def test_default_skip_dirs_is_reachable_from_new_home() -> None:
     """``DEFAULT_SKIP_DIRS`` 从 ``source`` 迁到 ``ignore`` 后导出面必须不变（兼容导入）。"""
-    from zace_core.pipeline import DEFAULT_SKIP_DIRS as exported
+    from nova_core.pipeline import DEFAULT_SKIP_DIRS as exported
 
     assert exported is DEFAULT_SKIP_DIRS
     assert "node_modules" in exported

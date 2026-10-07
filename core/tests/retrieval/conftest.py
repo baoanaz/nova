@@ -13,10 +13,10 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 
 import pytest
-from zace_core.hashing import chunk_content_hash, file_content_hash
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.storage import Store
-from zace_core.types import (
+from nova_core.hashing import chunk_content_hash, file_content_hash
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.storage import Store
+from nova_core.types import (
     ChunkDef,
     EdgeDef,
     ParsedFile,

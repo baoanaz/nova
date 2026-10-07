@@ -1,7 +1,7 @@
 """Ordering regressions: full rebuild must stream, including an incomplete final window."""
 from threading import Event
 
-from zace_core.pipeline import DirectorySource, Indexer
+from nova_core.pipeline import DirectorySource, Indexer
 
 from .conftest import write_repo
 

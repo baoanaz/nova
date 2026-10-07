@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from zace_core.embedding.base import (
+from nova_core.embedding.base import (
     ApiAuthError,
     EmbeddingConfigError,
     EmbeddingDimMismatchError,

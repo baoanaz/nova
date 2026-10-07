@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 import pytest
-from zace_service.answer import (
+from nova_service.answer import (
     AnswerAuthError,
     AnswerNotConfiguredError,
     AnswerResponseError,
@@ -30,7 +30,7 @@ from zace_service.answer import (
     HttpJsonProvider,
     chat_completions_endpoint,
 )
-from zace_service.llmprotocol import (
+from nova_service.llmprotocol import (
     ANTHROPIC_VERSION,
     DEFAULT_PROTOCOL,
     PROTOCOL_ANTHROPIC,

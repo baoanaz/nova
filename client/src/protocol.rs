@@ -19,13 +19,13 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 
 use crate::tools::{ToolError, ToolLayer};
 
-pub const SERVER_NAME: &str = "zace";
+pub const SERVER_NAME: &str = "nova";
 /// 首选协议版本（与 service 侧 SDK 同代）。
 pub const PROTOCOL_VERSION: &str = "2025-11-25";
 pub const SUPPORTED_PROTOCOL_VERSIONS: [&str; 2] = [PROTOCOL_VERSION, "2024-11-05"];
 /// `tools/list` 的指令文案（行为控制：与 grep/read 的分工）。
 const INSTRUCTIONS: &str =
-    "zace 提供基于项目索引的上下文检索：search_context 定位跨文件实现/调用链，\
+    "nova 提供基于项目索引的上下文检索：search_context 定位跨文件实现/调用链，\
 ask_project 回答项目级问题。已知精确标识符的全量引用请用 grep，已知文件请直接 read。";
 
 #[derive(Debug)]

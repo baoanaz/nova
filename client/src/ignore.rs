@@ -1,17 +1,17 @@
-//! 忽略规则（D-28 / R42 / TASK-097）：第 0 层白名单 > `.zaceignore` > `.gitignore` > 内置默认。
+//! 忽略规则（D-28 / R42 / TASK-097）：第 0 层白名单 > `.novaignore` > `.gitignore` > 内置默认。
 //!
 //! **为什么用 `ignore` crate 而不是手写 gitignore 解析**：`docs/design/Module/05-MCP与同步.md` §3.1
 //! 明确"Rust 实现直接用 `ignore` crate（原生支持 .gitignore 语义）"；`docs/plan/contracts.md` R42 也
 //! 把契约定义为"忽略**语义**"而不是库，并要求两侧行为一致。
 //!
-//! 与 core（`core/zace_core/pipeline/ignore.py`，本地模式用）的对齐口径：
+//! 与 core（`core/nova_core/pipeline/ignore.py`，本地模式用）的对齐口径：
 //!
 //! | 层 | core（Python） | 本模块（Rust） |
 //! |---|---|---|
-//! | 1 `.zaceignore` | 手写解析，优先级最高 | `add_custom_ignore_filename(".zaceignore")` |
+//! | 1 `.novaignore` | 手写解析，优先级最高 | `add_custom_ignore_filename(".novaignore")` |
 //! | 2 `.gitignore`（各层级） | 手写解析（注释/`!`/目录尾/`/`/`**`/字符类） | `ignore` crate 原生（`git_ignore(true)`） |
 //! | 3 内置默认 | `DEFAULT_SKIP_DIRS` + `DEFAULT_SKIP_DIR_PATTERNS` | 同名单 + 同模式（本模块 `builtin_reason`） |
-//! | 0 白名单（TASK-097） | `Allowlist`：`.zaceinclude` ∪ 内置默认 ∪ `$ZACE_INDEX_ALLOWLIST` | 本模块 `Allowlist` + `callback` 二次包含 |
+//! | 0 白名单（TASK-097） | `Allowlist`：`.novainclude` ∪ 内置默认 ∪ `$NOVA_INDEX_ALLOWLIST` | 本模块 `Allowlist` + `callback` 二次包含 |
 //!
 //! **V1 两侧共同不读**：`.git/info/exclude` 与全局 `core.excludesFile`
 //! （core 的执行记录已注明该简化；此处保持一致，`git_exclude(false)` / `git_global(false)`）。
@@ -46,7 +46,7 @@ pub const DEFAULT_SKIP_DIRS: &[&str] = &[
     "target",
     ".idea",
     ".vscode",
-    ".zace",
+    ".nova",
 ];
 
 /// 内置跳过目录**模式**（与 core `DEFAULT_SKIP_DIR_PATTERNS` 同集合）。
@@ -68,13 +68,13 @@ pub const DEFAULT_SKIP_DIR_PATTERNS: &[&str] = &[
 ];
 
 /// 自定义忽略文件名（第 1 层，优先级最高）。
-pub const CUSTOM_IGNORE_FILENAME: &str = ".zaceignore";
+pub const CUSTOM_IGNORE_FILENAME: &str = ".novaignore";
 
 /// 自定义**白名单**文件名（TASK-097 第 0 层；只读仓库根这一份）。
-pub const INCLUDE_FILENAME: &str = ".zaceinclude";
+pub const INCLUDE_FILENAME: &str = ".novainclude";
 
-/// 白名单的全局环境变量（逗号分隔）——与 core `ZACE_INDEX_ALLOWLIST` 同名同语义。
-pub const ALLOWLIST_ENV_VAR: &str = "ZACE_INDEX_ALLOWLIST";
+/// 白名单的全局环境变量（逗号分隔）——与 core `NOVA_INDEX_ALLOWLIST` 同名同语义。
+pub const ALLOWLIST_ENV_VAR: &str = "NOVA_INDEX_ALLOWLIST";
 
 /// 默认放行的**文件名**（与 core `DEFAULT_ALLOWLIST_FILENAMES` 同一份清单，大小写不敏感）。
 pub const DEFAULT_ALLOWLIST_FILENAMES: &[&str] = &[
@@ -108,10 +108,10 @@ enum AllowEntry {
 /// **为什么不用 `ignore` crate 的 `overrides` API**（卡内 §B 要求给出理由）：
 /// 该 API 有一条致命副作用——**只要存在至少一条白名单 glob，未命中任何 glob 的普通文件
 /// 会被当成"被忽略"**（`overrides.rs` 的 `Override::matched`：`num_whitelists() > 0 && !is_dir`
-/// 时返回 `Ignore`）。zace 要的是"在原有忽略规则之上**追加**包含"，不是"只索引白名单"。
+/// 时返回 `Ignore`）。nova 要的是"在原有忽略规则之上**追加**包含"，不是"只索引白名单"。
 /// 所以本模块选**两次包含**：
 ///
-/// 1. `ignore` crate 按 `.zaceignore`/`.gitignore`/内置层正常遍历（**不**过滤文件）；
+/// 1. `ignore` crate 按 `.novaignore`/`.gitignore`/内置层正常遍历（**不**过滤文件）；
 /// 2. 对每个"被忽略"的文件，用 `Ignore::matched` + 白名单裁决是否救回
 ///    （见 `Snapshot::is_included`），调用方把两步结果取并集。
 ///
@@ -120,7 +120,7 @@ enum AllowEntry {
 #[derive(Debug, Clone)]
 pub struct Allowlist {
     entries: Vec<AllowEntry>,
-    /// 下钻深度上限（`ZACE_ALLOWLIST_DEPTH` 可覆盖）。
+    /// 下钻深度上限（`NOVA_ALLOWLIST_DEPTH` 可覆盖）。
     lookthrough_depth: u32,
 }
 
@@ -131,7 +131,7 @@ impl Default for Allowlist {
 }
 
 impl Allowlist {
-    /// 内置默认 + `.zaceinclude` + 环境变量，取并集（不覆盖）。
+    /// 内置默认 + `.novainclude` + 环境变量，取并集（不覆盖）。
     pub fn load(root: &Path) -> Self {
         let config: Vec<String> = std::fs::read_to_string(root.join(INCLUDE_FILENAME))
             .map(|text| text.lines().map(str::to_string).collect())
@@ -143,7 +143,7 @@ impl Allowlist {
             .map(str::to_string)
             .collect();
         let mut allowlist = Self::from_patterns(&config, &env_patterns);
-        if let Ok(raw) = std::env::var("ZACE_ALLOWLIST_DEPTH") {
+        if let Ok(raw) = std::env::var("NOVA_ALLOWLIST_DEPTH") {
             if let Ok(parsed) = raw.parse::<u32>() {
                 allowlist.lookthrough_depth = parsed;
             }
@@ -151,7 +151,7 @@ impl Allowlist {
         allowlist
     }
 
-    /// 由自定义条目 + 环境变量条目 + 内置默认构建（顺序即优先级：内置 < env < `.zaceinclude`）。
+    /// 由自定义条目 + 环境变量条目 + 内置默认构建（顺序即优先级：内置 < env < `.novainclude`）。
     pub fn from_patterns(config: &[String], env: &[String]) -> Self {
         let mut entries: Vec<AllowEntry> = Vec::new();
         for raw in DEFAULT_ALLOWLIST_DIRS {
@@ -273,12 +273,12 @@ fn parse_allow_entry(raw: &str) -> Option<AllowEntry> {
 /// 一个仓库的忽略规则（构建一次，之后只读）。
 pub struct IgnoreRules {
     root: std::path::PathBuf,
-    /// 忽略文件内容的指纹（用于配置指纹：改了 .gitignore/.zaceignore 应作废缓存）。
+    /// 忽略文件内容的指纹（用于配置指纹：改了 .gitignore/.novaignore 应作废缓存）。
     fingerprint: String,
 }
 
 impl IgnoreRules {
-    /// 从仓库根构建（读取 `.zaceignore` / 各层 `.gitignore` 的内容用于指纹）。
+    /// 从仓库根构建（读取 `.novaignore` / 各层 `.gitignore` 的内容用于指纹）。
     pub fn load(root: &Path) -> Self {
         let fingerprint = ignore_files_fingerprint(root);
         Self {
@@ -295,7 +295,7 @@ impl IgnoreRules {
         &self.root
     }
 
-    /// 本仓库的白名单（读 `.zaceinclude` + 环境变量 + 内置默认）。
+    /// 本仓库的白名单（读 `.novainclude` + 环境变量 + 内置默认）。
     pub fn allowlist(&self) -> Allowlist {
         Allowlist::load(&self.root)
     }
@@ -305,7 +305,7 @@ impl IgnoreRules {
     /// **为什么不复用 walker A**：`ignore` crate 在 `filter_entry` **之前**就丢弃被忽略的条目，
     /// 因此被 `.gitignore` 排掉的 ``.claude/skills/SKILL.md`` 根本到不了过滤器。
     /// 本方法改为把忽略规则整体关掉（`git_ignore(false).ignore(false)` + 不注册
-    /// `.zaceignore`），只留"内置目录剪枝 + 白名单定向下钻"，再按白名单裁决产出。
+    /// `.novaignore`），只留"内置目录剪枝 + 白名单定向下钻"，再按白名单裁决产出。
     ///
     /// **为什么不使用 `overrides` API**：`Override::matched` 在"存在至少一条白名单 glob
     /// 且 `is_dir == false`"时会把**未命中任何 glob 的文件判为忽略**——那会变成"只索引白名单"，
@@ -359,7 +359,7 @@ impl IgnoreRules {
         self.walker().chain(self.allowlist_walk(allowlist))
     }
 
-    /// 构建遍历器：`.zaceignore` > `.gitignore`（`ignore` crate）+ 内置目录剪枝。
+    /// 构建遍历器：`.novaignore` > `.gitignore`（`ignore` crate）+ 内置目录剪枝。
     ///
     /// 内置层用 `filter_entry` 剪枝（整目录跳过，省 IO）；内置层**不**交给 `ignore` crate，
     /// 以便跳过时能如实记录原因（R43）。
@@ -401,7 +401,7 @@ impl IgnoreRules {
 
     /// 路径（仓库相对、正斜杠）是否被忽略；返回原因标签（`"builtin"` 或 `None`）。
     ///
-    /// **只判内置层**：`.zaceignore` / `.gitignore` 由 `ignore` crate 在遍历时应用
+    /// **只判内置层**：`.novaignore` / `.gitignore` 由 `ignore` crate 在遍历时应用
     /// （`walker()` 的 `filter_entry` / 迭代结果），此处不重复实现，避免双份语义。
     pub fn builtin_reason(&self, file_name: &str) -> Option<&'static str> {
         if is_builtin_dir_name(file_name) {
@@ -465,7 +465,7 @@ fn wildcard_match(pattern: &str, name: &str) -> bool {
     }
 }
 
-/// 忽略文件内容指纹：仓库根与一级目录下的 `.zaceignore` / `.gitignore` / `.zaceinclude`
+/// 忽略文件内容指纹：仓库根与一级目录下的 `.novaignore` / `.gitignore` / `.novainclude`
 /// 内容拼接后 hash（白名单变了必须作废缓存，否则旧文件集会被继续使用）。
 ///
 /// 只取两层（根 + 一级子目录）：覆盖绝大多数真实布局，避免全仓遍历
@@ -539,19 +539,19 @@ mod tests {
     }
 
     #[test]
-    fn gitignore_is_honoured_and_zaceignore_takes_precedence() {
+    fn gitignore_is_honoured_and_novaignore_takes_precedence() {
         let project = tempfile::tempdir().expect("temp dir");
         fs::write(project.path().join(".gitignore"), "ignored_by_git.txt\n").expect("write");
         fs::write(project.path().join("ignored_by_git.txt"), "x").expect("write");
-        fs::write(project.path().join(".zaceignore"), "ignored_by_zace.txt\n").expect("write");
-        fs::write(project.path().join("ignored_by_zace.txt"), "x").expect("write");
+        fs::write(project.path().join(".novaignore"), "ignored_by_nova.txt\n").expect("write");
+        fs::write(project.path().join("ignored_by_nova.txt"), "x").expect("write");
         fs::write(project.path().join("kept.txt"), "x").expect("write");
 
         let files = collect(project.path());
 
         assert!(files.contains(&"kept.txt".to_string()));
         assert!(!files.contains(&"ignored_by_git.txt".to_string()));
-        assert!(!files.contains(&"ignored_by_zace.txt".to_string()));
+        assert!(!files.contains(&"ignored_by_nova.txt".to_string()));
     }
 
     #[test]
@@ -670,11 +670,11 @@ mod tests {
     }
 
     #[test]
-    fn zaceinclude_adds_custom_patterns() {
+    fn novainclude_adds_custom_patterns() {
         let project = tempfile::tempdir().expect("temp dir");
         let root = project.path();
         fs::write(root.join(".gitignore"), "my-notes/\n").expect("write");
-        fs::write(root.join(".zaceinclude"), "my-notes\n").expect("write");
+        fs::write(root.join(".novainclude"), "my-notes\n").expect("write");
         fs::create_dir_all(root.join("my-notes")).expect("dir");
         fs::write(root.join("my-notes/todo.md"), "# 待办\n").expect("write");
 
@@ -684,11 +684,11 @@ mod tests {
     }
 
     #[test]
-    fn zaceinclude_can_cancel_a_builtin_entry() {
+    fn novainclude_can_cancel_a_builtin_entry() {
         let project = tempfile::tempdir().expect("temp dir");
         let root = project.path();
         fs::write(root.join(".gitignore"), "hacks/\n").expect("write");
-        fs::write(root.join(".zaceinclude"), "!skills\n").expect("write");
+        fs::write(root.join(".novainclude"), "!skills\n").expect("write");
         fs::create_dir_all(root.join("hacks/skills")).expect("dir");
         fs::write(root.join("hacks/skills/SKILL.md"), "# 不要\n").expect("write");
         fs::write(root.join("AGENTS.md"), "# 仍旧要\n").expect("write");
@@ -713,10 +713,10 @@ mod tests {
     }
 
     #[test]
-    fn fingerprint_changes_when_zaceinclude_changes() {
+    fn fingerprint_changes_when_novainclude_changes() {
         let project = tempfile::tempdir().expect("temp dir");
         let before = IgnoreRules::load(project.path()).fingerprint().to_string();
-        fs::write(project.path().join(".zaceinclude"), "my-skills\n").expect("write");
+        fs::write(project.path().join(".novainclude"), "my-skills\n").expect("write");
         let after = IgnoreRules::load(project.path()).fingerprint().to_string();
 
         assert_ne!(before, after, "白名单变了必须作废缓存");

@@ -8,8 +8,8 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "zace-core",
-    "zace-service",
+    "nova-core",
+    "nova-service",
 ]
 
 [[package]]
@@ -1663,7 +1663,7 @@ wheels = [
 ]
 
 [[package]]
-name = "zace-core"
+name = "nova-core"
 version = "0.0.1"
 source = { editable = "core" }
 dependencies = [
@@ -1711,7 +1711,7 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
-name = "zace-service"
+name = "nova-service"
 version = "0.0.1"
 source = { editable = "service" }
 dependencies = [
@@ -1721,7 +1721,7 @@ dependencies = [
     { name = "mcp" },
     { name = "pydantic" },
     { name = "uvicorn", extra = ["standard"] },
-    { name = "zace-core" },
+    { name = "nova-core" },
 ]
 
 [package.optional-dependencies]
@@ -1744,6 +1744,6 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
-    { name = "zace-core", editable = "core" },
+    { name = "nova-core", editable = "core" },
 ]
 provides-extras = ["dev"]

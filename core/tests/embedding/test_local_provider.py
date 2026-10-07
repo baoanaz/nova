@@ -11,13 +11,13 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from zace_core.embedding.base import (
+from nova_core.embedding.base import (
     EmbeddingConfigError,
     EmbeddingDimMismatchError,
     LocalModelUnavailableError,
 )
-from zace_core.embedding.local import LocalOnnxEmbeddingProvider
-from zace_core.embedding.registry import LOCAL_MODELS, LocalModelSpec
+from nova_core.embedding.local import LocalOnnxEmbeddingProvider
+from nova_core.embedding.registry import LOCAL_MODELS, LocalModelSpec
 
 from .conftest import CLS_ID, RecordingTokenizer, StubOnnxSession, one_hot_rows
 

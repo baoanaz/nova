@@ -6,7 +6,7 @@
 - 不触网、不加载真实 embedding 模型（本文件的确定性假 provider，算法与
   ``core/tests/integration/conftest.py`` 的同名类一致，但**独立实现**：
   ``core/tests`` 不是可导入包，service 测试不得反向依赖 core 的测试代码）；
-- 应用实例都走 :func:`zace_service.app.create_app`（生产入口与测试入口同一个）。
+- 应用实例都走 :func:`nova_service.app.create_app`（生产入口与测试入口同一个）。
 """
 
 from __future__ import annotations
@@ -21,14 +21,14 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.text import segment
-from zace_core.types import BlobInput, ChangeSet
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.text import segment
+from nova_core.types import BlobInput, ChangeSet
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.runtime import EngineManager
 
 #: 仓库根（``service/tests/conftest.py`` → parents[2]）。
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -135,8 +135,8 @@ def make_invite(app: FastAPI, kind: str = "C", *, max_uses: int = 1) -> str:
     为什么直接写库而不走 ``POST /api/admin/invites``：多数用例关心的只是"有一个真实用户"，
     走后台端点会强制调用方先造出管理员会话，把用例真正要验证的东西埋在准备工作里。
     """
-    from zace_service.invites import generate_code
-    from zace_service.metadb import MetaDB
+    from nova_service.invites import generate_code
+    from nova_service.metadb import MetaDB
 
     db: MetaDB = app.state.meta_db
     code = generate_code(kind)

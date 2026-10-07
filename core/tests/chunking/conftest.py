@@ -10,11 +10,11 @@ import pathlib
 from collections.abc import Callable, Iterator, Sequence
 
 import pytest
-from zace_core.chunking import split_file
-from zace_core.hashing import file_content_hash
-from zace_core.parsing.registry import detect_language, get_parser
-from zace_core.storage import Store
-from zace_core.types import FileDelta, ParsedFile, SymbolDef
+from nova_core.chunking import split_file
+from nova_core.hashing import file_content_hash
+from nova_core.parsing.registry import detect_language, get_parser
+from nova_core.storage import Store
+from nova_core.types import FileDelta, ParsedFile, SymbolDef
 
 #: 端到端小仓库（真实解析器 → splitter → Store）。
 TOKEN_PY = '''"""Token helpers."""

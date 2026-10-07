@@ -9,8 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from zace_core.parsing.markdown import MarkdownParser, classify_doctype, spec_block_id
-from zace_core.types import ParsedFile, SpecBlockDef
+from nova_core.parsing.markdown import MarkdownParser, classify_doctype, spec_block_id
+from nova_core.types import ParsedFile, SpecBlockDef
 
 SAMPLE_DIR = Path(__file__).parent / "samples" / "markdown"
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -181,7 +181,7 @@ def test_mentioned_extraction() -> None:
     root = _by_heading(parsed, "认证设计")[0]
     # 行内 code（含 A::b 形态）与带扩展名路径
     assert "TokenService::refresh" in root.mentioned
-    assert "core/zace_core/types.py" in root.mentioned
+    assert "core/nova_core/types.py" in root.mentioned
 
     nested = _parse_sample("nested.md")
     root = _by_heading(nested, "架构")[0]

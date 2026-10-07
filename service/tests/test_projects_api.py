@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import SAMPLE_FILES, make_client, upload_files
 
@@ -108,9 +108,9 @@ def test_delete_project_removes_owner_row(tmp_path) -> None:  # noqa: ANN001
     必须是**云端形态**（local_mode=False）才有关联的 meta_db 与真实用户；本地模式的
     ``client`` fixture 没有 ``meta_db``，测不到这个缺陷。
     """
-    from zace_core.engine import Engine
-    from zace_service.app import create_app
-    from zace_service.config import Settings
+    from nova_core.engine import Engine
+    from nova_service.app import create_app
+    from nova_service.config import Settings
 
     from tests.conftest import DeterministicBigramEmbedding, make_client
 
