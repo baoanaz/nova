@@ -4,7 +4,7 @@
   "description": "MCP stdio client for nova: grounded codebase context for AI coding agents from a remote nova-service",
   "version": "0.0.8",
   "repository": {
-    "url": "https://github.com/baoanaz/zace",
+    "url": "https://github.com/baoanaz/nova",
     "source": "github"
   },
   "packages": [

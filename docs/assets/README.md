@@ -6,7 +6,7 @@
 
 | 路径 | 用途 | 来源 |
 |---|---|---|
-| [nova-logo.webp](nova-logo.webp) | NOVA 人像与星球标志，登录页和侧栏使用同源素材 | 用户提供的 `LOGO/LOGO.png`；使用授权由素材权利人保留 |
+| [nova-logo.webp](nova-logo.webp) | NOVA 人像与星球标志，登录页和侧栏使用同源素材 | 用户提供的橙金色 `LOGO/LOGO3.png`；使用授权由素材权利人保留 |
 | [screenshots/nova-login.png](screenshots/nova-login.png) | NOVA 登录页 | 当前构建，空表单，不含凭据 |
 | [screenshots/nova-dashboard.png](screenshots/nova-dashboard.png) | NOVA 控制台首页 | 当前构建，合成账户及指标 |
 | [screenshots/nova-login-mobile.png](screenshots/nova-login-mobile.png) | 手机登录页 | 当前构建，390px 宽度 |

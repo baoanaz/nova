@@ -5,9 +5,9 @@
   <p>把代码库变成有据可查的上下文，让 Coding Agent 更懂你的项目。</p>
   <p>
     <a href="https://www.npmjs.com/package/nova-client"><img src="https://img.shields.io/npm/v/nova-client?style=flat-square&amp;color=cf684b" alt="npm version"></a>
-    <a href="https://github.com/baoanaz/zace/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/baoanaz/zace/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status"></a>
+    <a href="https://github.com/baoanaz/nova/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/baoanaz/nova/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Unlicense-green?style=flat-square" alt="License: Unlicense"></a>
-    <a href="https://github.com/baoanaz/zace/stargazers"><img src="https://img.shields.io/github/stars/baoanaz/zace?style=flat-square" alt="GitHub stars"></a>
+    <a href="https://github.com/baoanaz/nova/stargazers"><img src="https://img.shields.io/github/stars/baoanaz/nova?style=flat-square" alt="GitHub stars"></a>
   </p>
   <p>
     <img src="https://img.shields.io/badge/Python-3.12%2B-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.12+">
@@ -88,7 +88,7 @@ nova/
 
 ## 如何贡献
 
-欢迎通过 [Issues](https://github.com/baoanaz/zace/issues) 提交可复现问题、功能建议，或通过 Pull Request 改进代码、文档、示例与公开评测用例。
+欢迎通过 [Issues](https://github.com/baoanaz/nova/issues) 提交可复现问题、功能建议，或通过 Pull Request 改进代码、文档、示例与公开评测用例。
 
 1. Fork 仓库并创建分支，围绕一个具体问题修改。
 2. 根据涉及模块运行对应检查，更新受影响的文档。

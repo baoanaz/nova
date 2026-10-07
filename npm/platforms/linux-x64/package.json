@@ -5,9 +5,9 @@
   "license": "Unlicense",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/baoanaz/zace.git"
+    "url": "git+https://github.com/baoanaz/nova.git"
   },
-  "homepage": "https://github.com/baoanaz/zace#readme",
+  "homepage": "https://github.com/baoanaz/nova#readme",
   "files": [
     "nova-client"
   ],

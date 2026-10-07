@@ -34,7 +34,7 @@ npm --version
 ## 2. 获取代码与安装依赖
 
 ```bash
-git clone https://github.com/baoanaz/zace.git nova
+git clone https://github.com/baoanaz/nova.git nova
 cd nova
 bash scripts/setup-dev.sh --with-web
 ```

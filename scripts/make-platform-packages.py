@@ -100,9 +100,9 @@ def _payload(spec: dict, version: str) -> dict:
         "license": "Unlicense",
         "repository": {
             "type": "git",
-            "url": "git+https://github.com/baoanaz/zace.git",
+            "url": "git+https://github.com/baoanaz/nova.git",
         },
-        "homepage": "https://github.com/baoanaz/zace#readme",
+        "homepage": "https://github.com/baoanaz/nova#readme",
         # **没有 bin 字段**：这些包不是给用户直接用的命令，只是二进制载体。
         # 加 bin 会让 npm 在 6 个平台里都尝试建 shim（其余平台会因 os/cpu 不匹配而跳过，
         # 但本平台的 shim 会与主包的 bin 冲突）。由 run.js 按路径直接执行。

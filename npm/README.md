@@ -6,8 +6,8 @@ nova 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责�
 支持 **Claude Code / Codex / pi（经 pi-mcp-adapter）/ Cursor** 等所有支持 stdio 的 MCP 客户端。
 
 本页是安装与接入速查。想了解启动器、平台包和 Rust 二进制的关系，见
-[npm 包学习](https://github.com/baoanaz/zace/blob/main/docs/handbook/getting-started/npm-client.md)；
-需要先运行后端与 UI，见 [本地部署指南](https://github.com/baoanaz/zace/blob/main/docs/handbook/deployment/local.md)。
+[npm 包学习](https://github.com/baoanaz/nova/blob/main/docs/handbook/getting-started/npm-client.md)；
+需要先运行后端与 UI，见 [本地部署指南](https://github.com/baoanaz/nova/blob/main/docs/handbook/deployment/local.md)。
 
 ## 快速开始
 
@@ -154,7 +154,7 @@ Rust 客户端的同步与服务请求仍使用网络，客户端扫描缓存与
 ## 从源码构建
 
 ```bash
-git clone https://github.com/baoanaz/zace nova && cd nova/client
+git clone https://github.com/baoanaz/nova nova && cd nova/client
 cargo build --release        # 产物：target/release/nova-client
 ```
 
@@ -163,5 +163,5 @@ cargo build --release        # 产物：target/release/nova-client
 
 ## 许可证
 
-当前源码采用 [Unlicense](https://github.com/baoanaz/zace/blob/main/LICENSE)，后续发布同步该声明。
+当前源码采用 [Unlicense](https://github.com/baoanaz/nova/blob/main/LICENSE)，后续发布同步该声明。
 已发布的历史版本以其包内 LICENSE 与元数据为准。

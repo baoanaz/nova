@@ -47,7 +47,7 @@ npm --prefix web run dev -- --host 127.0.0.1 --strictPort
 
 显示名称与客户端包名、`nova_` API Key 前缀分别管理。后两者属于实际接入约定，修改 UI 品牌时不自动改变它们。
 
-主题采用深空黑 `#0B0F14`、石墨导航 `#10161F` 和炭灰卡片 `#171F2B` 三层明度，正文银白、操作冰蓝、品牌细节香槟金。登录页展示原始“人＋星球”标志和轨道意象，控制台使用中性卡片。成功、警告、错误分别使用绿、橙、红。控件轮廓使用独立的 `ink.control`，不使用装饰分隔线代替输入边界。颜色在 `tailwind.config.js`，共享样式在 `src/index.css`。桌面是左侧导航与右侧内容，窄屏使用导航抽屉。Logo 与脱敏截图见 [docs/assets/](../docs/assets/README.md)。
+主题恢复暖白底 `#FFF7F2`、浅暖白导航 `#FFFCF9` 与白色卡片 `#FFFFFD`，正文深棕，按钮、链接和选中项采用珊瑚橙 `#B95336`，主按钮文字为白色。登录页与侧栏使用用户提供的橙金色 `LOGO/LOGO3.png`，控制台保持中性卡片。成功、警告、错误分别使用绿、橙、红。控件轮廓使用独立的 `ink.control`，不使用装饰分隔线代替输入边界。颜色在 `tailwind.config.js`，共享样式在 `src/index.css`。桌面是左侧导航与右侧内容，窄屏使用导航抽屉。Logo 与脱敏截图见 [docs/assets/](../docs/assets/README.md)。
 
 ## 检查命令
 

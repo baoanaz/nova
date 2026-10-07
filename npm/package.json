@@ -5,12 +5,12 @@
   "license": "Unlicense",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/baoanaz/zace.git"
+    "url": "git+https://github.com/baoanaz/nova.git"
   },
   "bugs": {
-    "url": "https://github.com/baoanaz/zace/issues"
+    "url": "https://github.com/baoanaz/nova/issues"
   },
-  "homepage": "https://github.com/baoanaz/zace#readme",
+  "homepage": "https://github.com/baoanaz/nova#readme",
   "keywords": [
     "mcp",
     "codebase",

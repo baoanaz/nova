@@ -9,7 +9,7 @@
 需要 Python 3.12+、uv 和 Git。只有运行 Web 或 npm 客户端时才需要 Node.js；从源码编译客户端时才需要 Rust。
 
 ```bash
-git clone https://github.com/baoanaz/zace.git nova
+git clone https://github.com/baoanaz/nova.git nova
 cd nova
 bash scripts/setup-dev.sh
 ```

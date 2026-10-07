@@ -31,7 +31,7 @@ nginx（占用 80/443）
 ```bash
 # ── ① 代码 ──────────────────────────────────────────
 sudo mkdir -p /opt && cd /opt
-git clone https://github.com/baoanaz/zace.git nova
+git clone https://github.com/baoanaz/nova.git nova
 cd /opt/nova
 
 # ── ② 依赖（Python 3.12 + uv + Node 22；见 ENVIRONMENT.txt）──

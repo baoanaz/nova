@@ -120,7 +120,7 @@ function failMissingBinary() {
   log("");
   if (!name) {
     log("本平台没有对应的 npm 平台子包。支持：Linux/macOS/Windows × x64/arm64。");
-    log("请从源码构建：git clone https://github.com/baoanaz/zace nova && cd nova/client && cargo build --release");
+    log("请从源码构建：git clone https://github.com/baoanaz/nova nova && cd nova/client && cargo build --release");
     log(`然后用 NOVA_CLIENT_BINARY=<path> 指定，或把二进制放到 ${BINARY_NAME} 可被找到的位置。`);
     process.exit(1);
   }
