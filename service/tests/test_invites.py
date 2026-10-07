@@ -26,20 +26,20 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_service.app import create_app
-from zace_service.auth import TOKEN_PREFIX
-from zace_service.config import Settings
-from zace_service.invites import (
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_service.app import create_app
+from nova_service.auth import TOKEN_PREFIX
+from nova_service.config import Settings
+from nova_service.invites import (
     CODE_LENGTH,
     InviteRejected,
     generate_code,
     is_well_formed,
     normalize_code,
 )
-from zace_service.metadb import MetaDB
-from zace_service.roles import (
+from nova_service.metadb import MetaDB
+from nova_service.roles import (
     CAN_CUSTOM_KEY,
     EARLY_MEMBER_MAX,
     QUOTA_BY_ROLE,
@@ -51,7 +51,7 @@ from zace_service.roles import (
     quota_bytes_for,
     title_for,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import DeterministicBigramEmbedding, make_client
 
@@ -127,7 +127,7 @@ def _key_for(ns: SimpleNamespace, user_id: str) -> str:
     为什么不登录后再建：``TestClient`` 只有一个 cookie jar，切换登录会覆盖前一个用户的
     会话；两个 Bearer 头是同一客户端上最干净的换身份方式（TASK-061 的 ``test_tenancy`` 同法）。
     """
-    from zace_service.auth import create_api_token
+    from nova_service.auth import create_api_token
 
     raw, digest, prefix = create_api_token()
     ns.meta_db.create_token(user_id, token_hash=digest, prefix=prefix, name="switch")
@@ -435,7 +435,7 @@ def test_bootstrap_creates_admin_in_empty_database(cloud: SimpleNamespace) -> No
 
 
 def test_existing_admin_name_is_promoted_on_startup(tmp_path: Path) -> None:
-    """P1（迁移路径）：已有库里 ``ZACE_ADMIN_NAME`` 指定的账户启动时被提为管理员。"""
+    """P1（迁移路径）：已有库里 ``NOVA_ADMIN_NAME`` 指定的账户启动时被提为管理员。"""
     data_root = tmp_path / "data"
     settings = _settings_for(data_root, admin_name="owner")
     # 先造一个"迁移前就存在"的普通账户（模拟旧库）。
@@ -599,7 +599,7 @@ def test_public_user_custom_key_is_403(cloud: SimpleNamespace) -> None:
 def test_public_user_can_still_get_random_key(cloud: SimpleNamespace) -> None:
     """公测用户不传 ``key`` 时**照常**拿到随机 Key（默认行为不变）。
 
-    TASK-110 改版（用户 2026-09-15 要求）：随机 Key 是 ``zace_`` + **恰好 16 位**字母/数字，
+    TASK-110 改版（用户 2026-09-15 要求）：随机 Key 是 ``nova_`` + **恰好 16 位**字母/数字，
     **不含符号**。
     """
     _register(cloud, "plain", _make_invite(cloud, "C"))
@@ -615,7 +615,7 @@ def test_public_user_can_still_get_random_key(cloud: SimpleNamespace) -> None:
 
 
 def test_custom_key_without_prefix_is_400(cloud: SimpleNamespace) -> None:
-    """P2：不以 ``zace_`` 开头 → 400。"""
+    """P2：不以 ``nova_`` 开头 → 400。"""
     _register(cloud, "beta", _make_invite(cloud, "B"))
     response = _create_key(cloud, key="my-custom-key-1234567")
     assert response.status_code == 400
@@ -623,10 +623,10 @@ def test_custom_key_without_prefix_is_400(cloud: SimpleNamespace) -> None:
 
 
 def test_custom_key_short_body_is_rejected(cloud: SimpleNamespace) -> None:
-    """正文为空 → 400（TASK-110 改版：只要求 ``zace_`` 后面**非空**）。
+    """正文为空 → 400（TASK-110 改版：只要求 ``nova_`` 后面**非空**）。
 
     历史背景：本卡第一版要求正文 ≥16 字符；用户 2026-09-15 拍板放宽到
-    “zace_1 都可以”。因此长度下限从 16 降到 1，而长度上限仍然保留（DoS 面）。
+    “nova_1 都可以”。因此长度下限从 16 降到 1，而长度上限仍然保留（DoS 面）。
     """
     _register(cloud, "beta", _make_invite(cloud, "B"))
     response = _create_key(cloud, key=f"{TOKEN_PREFIX}")
@@ -635,7 +635,7 @@ def test_custom_key_short_body_is_rejected(cloud: SimpleNamespace) -> None:
 
 
 def test_custom_key_minimal_body_is_accepted(cloud: SimpleNamespace) -> None:
-    """``zace_1`` 可用（用户明确举的例子）。"""
+    """``nova_1`` 可用（用户明确举的例子）。"""
     _register(cloud, "beta", _make_invite(cloud, "B"))
     response = _create_key(cloud, key=f"{TOKEN_PREFIX}1")
     assert response.status_code == 200, response.text
@@ -645,7 +645,7 @@ def test_custom_key_minimal_body_is_accepted(cloud: SimpleNamespace) -> None:
 def test_documented_example_keys_are_accepted(cloud: SimpleNamespace) -> None:
     """**示例必须真的能用**（前端 placeholder 与手册里的那一串）。
 
-    来历（实测踩到）：占位符与手册示例曾写成 ``zace_my-project-2026``，而当时要求正文 ≥16
+    来历（实测踩到）：占位符与手册示例曾写成 ``nova_my-project-2026``，而当时要求正文 ≥16
     字符、它只有 15，用户照着抄会直接得到 400。任何写进文档/界面的示例都必须是
     **端到端可用**的，否则它就是在教用户犯错。
 
@@ -711,7 +711,7 @@ def test_me_reports_role_quota(cloud: SimpleNamespace) -> None:
 
 def test_quota_override_wins_over_role(tmp_path: Path) -> None:
     """后台对单人的配额覆盖优先于角色默认（``effective_user_limit_bytes`` 的优先级 1）。"""
-    from zace_service.quota import effective_user_limit_bytes
+    from nova_service.quota import effective_user_limit_bytes
 
     ns = _build(tmp_path)
     settings = ns.settings

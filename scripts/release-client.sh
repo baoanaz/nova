@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# zace-client 的唯一发布入口。
+# nova-client 的唯一发布入口。
 #
 # 用法：bash scripts/release-client.sh 0.0.8
 #
@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-NPM_PACKAGE="zace-client"
+NPM_PACKAGE="nova-client"
 
 die() { echo "✗ $*" >&2; exit 1; }
 

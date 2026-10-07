@@ -1,8 +1,8 @@
 # leveldb 基准题库（20 题）
 
-> 靶场：`leveldb` @ `7ee830d`｜projectId `3ed886ce58bc0e47`｜索引：`/root/.zace/bench/voyage-4-lite-d1024`（复用，不重建）
+> 靶场：`leveldb` @ `7ee830d`｜projectId `3ed886ce58bc0e47`｜索引：`/root/.nova/bench/voyage-4-lite-d1024`（复用，不重建）
 > 读法：每题给了**建议工具**（`search` = 定位/事实型，`ask` = 需要跨文件综合的解释型）、**参考答案**（人工读代码核实）和**依据路径**。
-> 机器可跑版本：同目录 `leveldb.jsonl`（`zace-core eval` 直接吃）。
+> 机器可跑版本：同目录 `leveldb.jsonl`（`nova-core eval` 直接吃）。
 
 | ID | 建议工具 | 类别 | 问题 | 参考答案 | 依据 |
 |---|---|---|---|---|---|

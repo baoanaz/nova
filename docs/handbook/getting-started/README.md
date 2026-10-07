@@ -2,15 +2,15 @@
 
 [文档中心](../../README.md) · [完整服务与 UI 部署](../deployment/local.md)
 
-本篇直接使用 `zace-core` CLI 对仓库建索引和检索，不启动 Web 或账户服务。想配置 UI、API Key 和 MCP，请阅读完整部署指南。
+本篇直接使用 `nova-core` CLI 对仓库建索引和检索，不启动 Web 或账户服务。想配置 UI、API Key 和 MCP，请阅读完整部署指南。
 
 ## 1. 准备环境
 
 需要 Python 3.12+、uv 和 Git。只有运行 Web 或 npm 客户端时才需要 Node.js；从源码编译客户端时才需要 Rust。
 
 ```bash
-git clone https://github.com/baoanaz/zace.git
-cd zace
+git clone https://github.com/baoanaz/zace.git nova
+cd nova
 bash scripts/setup-dev.sh
 ```
 
@@ -18,7 +18,7 @@ bash scripts/setup-dev.sh
 
 ## 2. 配置模型
 
-在仓库外的 `$HOME/.key/zace/secrets.env` 中填写真实 `EMBED_API_KEY`。当前 `.env.example` 默认使用 Voyage API、`voyage-4-lite`、1024 维；真实向量索引需要有效的模型配置。
+在仓库外的 `$HOME/.key/nova/secrets.env` 中填写真实 `EMBED_API_KEY`。当前 `.env.example` 默认使用 Voyage API、`voyage-4-lite`、1024 维；真实向量索引需要有效的模型配置。
 
 从仓库根目录加载环境：
 
@@ -33,13 +33,13 @@ API 模式会把相应代码或文档文本发送给配置的 embedding 服务�
 ## 3. 建索引与查询
 
 ```bash
-uv run zace-core ingest --repo /绝对路径/你的仓库 --data .local/core-demo
-uv run zace-core search --data .local/core-demo "你的代码问题"
+uv run nova-core ingest --repo /绝对路径/你的仓库 --data .local/core-demo
+uv run nova-core search --data .local/core-demo "你的代码问题"
 ```
 
-第一条命令完成仓库解析与索引，第二条命令对同一数据根查询。`--data` 决定这组索引的位置，后续操作应使用对应目录；检索选项可通过 `uv run zace-core search --help` 查看。
+第一条命令完成仓库解析与索引，第二条命令对同一数据根查询。`--data` 决定这组索引的位置，后续操作应使用对应目录；检索选项可通过 `uv run nova-core search --help` 查看。
 
-core CLI 适合直接验证索引与检索，完整 Agent 场景使用 `zace-service` 与 npm 客户端。
+core CLI 适合直接验证索引与检索，完整 Agent 场景使用 `nova-service` 与 npm 客户端。
 
 ## 4. 下一步
 

@@ -3,7 +3,7 @@
 //
 // 为什么需要它（真实故障模式）：主包的 `optionalDependencies` 指向 6 个平台子包。
 // 只要出现下面任一种不一致，**故障都是静默的**——npm 不会报错，它只是"这个可选依赖
-// 解析不了，跳过"，于是那个平台的用户 `npx zace-client` 时才发现没有二进制：
+// 解析不了，跳过"，于是那个平台的用户 `npx nova-client` 时才发现没有二进制：
 //
 //   - 某个子包的 `version` 与主包不同 → 该平台装不上；
 //   - `optionalDependencies` 少写一个平台 → 那个平台从来没被考虑过；
@@ -54,7 +54,7 @@ if (expectedVersion && main.version !== expectedVersion) {
 
 const optional = main.optionalDependencies || {};
 for (const spec of EXPECTED) {
-  const name = `zace-client-${spec.suffix}`;
+  const name = `nova-client-${spec.suffix}`;
   const dir = path.join(NPM_DIR, "platforms", spec.suffix);
   if (!optional[name]) {
     problems.push(`主包 optionalDependencies 缺 ${name}`);
@@ -77,13 +77,13 @@ for (const spec of EXPECTED) {
   }
   if (pkg.bin) {
     // 子包不该有 bin：本平台的 shim 会与主包的 bin 同名冲突。
-    problems.push(`${name} 不该声明 bin（它会与主包的 zace-client 冲突）`);
+    problems.push(`${name} 不该声明 bin（它会与主包的 nova-client 冲突）`);
   }
 }
 
 // 反向：optionalDependencies 里不能有表外的平台包。
 for (const name of Object.keys(optional)) {
-  if (!EXPECTED.some((spec) => `zace-client-${spec.suffix}` === name)) {
+  if (!EXPECTED.some((spec) => `nova-client-${spec.suffix}` === name)) {
     problems.push(`主包 optionalDependencies 里有表外的包：${name}`);
   }
 }

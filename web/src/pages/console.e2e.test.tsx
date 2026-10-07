@@ -5,11 +5,11 @@
  *
  * ```bash
  * export NO_PROXY=127.0.0.1,localhost
- * ZACE_DATA_ROOT=/tmp/zace-ui/data \
- *   uv run zace-service serve --port 8891
- * cd web && ZACE_E2E=1 ZACE_E2E_BASE=http://127.0.0.1:8891 \
- *   ZACE_E2E_USER=<账户> ZACE_E2E_PASSWORD=<密码> \
- *   VITE_ZACE_API_BASE=http://127.0.0.1:8891 npx vitest run src/pages/console.e2e.test.tsx
+ * NOVA_DATA_ROOT=/tmp/nova-ui/data \
+ *   uv run nova-service serve --port 8891
+ * cd web && NOVA_E2E=1 NOVA_E2E_BASE=http://127.0.0.1:8891 \
+ *   NOVA_E2E_USER=<账户> NOVA_E2E_PASSWORD=<密码> \
+ *   VITE_NOVA_API_BASE=http://127.0.0.1:8891 npx vitest run src/pages/console.e2e.test.tsx
  * ```
  *
  * 为什么必须有它：单元测试用 mock 只能证明"我按我以为的契约解析了"。
@@ -22,10 +22,10 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { App } from "../app/App";
 
-const enabled = process.env["ZACE_E2E"] === "1";
-const base = process.env["ZACE_E2E_BASE"] ?? "http://127.0.0.1:8891";
-const user = process.env["ZACE_E2E_USER"] ?? "";
-const password = process.env["ZACE_E2E_PASSWORD"] ?? "";
+const enabled = process.env["NOVA_E2E"] === "1";
+const base = process.env["NOVA_E2E_BASE"] ?? "http://127.0.0.1:8891";
+const user = process.env["NOVA_E2E_USER"] ?? "";
+const password = process.env["NOVA_E2E_PASSWORD"] ?? "";
 
 /**
  * 模拟浏览器对**同源**请求的 cookie 行为（仅在测试内，不改产品代码）。

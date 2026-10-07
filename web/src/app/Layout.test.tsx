@@ -84,7 +84,7 @@ function renderLayout(initialPath = "/", account: Account | null = null) {
 }
 
 /**
- * 只取主导航里的链接（排除侧边栏顶部的 "zace" 品牌链接）。
+ * 只取主导航里的链接（排除侧边栏顶部的 "nova" 品牌链接）。
  *
  * TASK-098：主导航从 `<header><nav>` 移到 `<aside>`，但仍带 `aria-label="主导航"`，
  * 因此仍用 `getByRole("navigation")` 定位——语义没变，测试不必知道布局细节。

@@ -1,7 +1,7 @@
 # 硬件配置档案
 
 这里仅提交无密钥的批大小、并发、消费者和内存护栏说明。
-实际密钥放 `$HOME/.key/zace/secrets.env`，机器路径和运行数据放本机 `.env`、`.local/`。
+实际密钥放 `$HOME/.key/nova/secrets.env`，机器路径和运行数据放本机 `.env`、`.local/`。
 配置按规格别名命名，不使用真实 IP 或主机名。
 
 ## 使用
@@ -24,7 +24,7 @@ set +a
 |---|---|---:|
 | `EMBED_BATCH_SIZE` | 每个 HTTP 请求的最大条数 | 500 |
 | `EMBED_CONCURRENCY` | 单次 embed 调用内的并发批数 | 4 |
-| `ZACE_EMBED_WORKERS` | 并行处理整窗的消费者数 | 2 |
+| `NOVA_EMBED_WORKERS` | 并行处理整窗的消费者数 | 2 |
 | `EMBED_BATCH_TOKEN_BUDGET` | 单请求 token 预算 | 300000 |
 | `EMBED_MAX_INPUT_TOKENS` | 单条输入截断上限 | 32000 |
 | `EMBED_DIM` | 向量维度 | 1024 |

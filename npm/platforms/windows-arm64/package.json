@@ -1,7 +1,7 @@
 {
-  "name": "zace-client-windows-arm64",
+  "name": "nova-client-windows-arm64",
   "version": "0.0.8",
-  "description": "Platform binary for zace-client (win32/arm64). Installed automatically by zace-client; do not install directly.",
+  "description": "Platform binary for nova-client (win32/arm64). Installed automatically by nova-client; do not install directly.",
   "license": "Unlicense",
   "repository": {
     "type": "git",
@@ -9,7 +9,7 @@
   },
   "homepage": "https://github.com/baoanaz/zace#readme",
   "files": [
-    "zace-client.exe"
+    "nova-client.exe"
   ],
   "os": [
     "win32"

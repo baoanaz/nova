@@ -81,7 +81,7 @@ export function AdminPage() {
             onClick={() => setTab(value)}
             className={`rounded px-3 py-1.5 ${
               tab === value
-                ? "bg-accent-seal text-white"
+                ? "bg-accent-seal text-accent-contrast"
                 : "text-ink-muted hover:bg-paper-base hover:text-ink-primary"
             }`}
           >
@@ -163,7 +163,7 @@ function UsersTab() {
                     <td className="px-4 py-2">
                       <span className="text-ink-primary">{user.name}</span>
                       {user.bannedAt !== null && (
-                        <span className="ml-2 rounded bg-rose-100 px-1.5 py-0.5 text-xs text-rose-700">
+                        <span className="ml-2 rounded bg-error-soft px-1.5 py-0.5 text-xs text-error-text">
                           已封禁
                         </span>
                       )}
@@ -208,7 +208,7 @@ function UsersTab() {
                       >
                         {formatQuota(user.effectiveQuotaBytes)}
                         {user.quotaBytes !== null && (
-                          <span className="ml-1 text-[11px] text-amber-700">人工</span>
+                          <span className="ml-1 text-[11px] text-warning-text">人工</span>
                         )}
                       </button>
                     </td>
@@ -225,8 +225,8 @@ function UsersTab() {
                         }
                         className={`rounded border px-2 py-1 text-xs ${
                           user.bannedAt === null
-                            ? "border-rose-300 text-rose-700 hover:bg-rose-50"
-                            : "border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                            ? "border-error-line text-error-text hover:bg-error-soft"
+                            : "border-success-line text-success-text hover:bg-success-soft"
                         }`}
                       >
                         {user.bannedAt === null ? "封禁" : "恢复"}
@@ -304,7 +304,7 @@ function QuotaDialog({
         <p className="text-[11px] text-ink-muted">
           常用值：1 GiB = {String(1024 ** 3)} ｜ 500 MiB = {String(500 * 1024 ** 2)}
         </p>
-        {invalid && <p className="text-xs text-rose-700">请输入非负整数（或留空）。</p>}
+        {invalid && <p className="text-xs text-error-text">请输入非负整数（或留空）。</p>}
         {error !== null && <ErrorBlock error={error} />}
         <div className="flex justify-end gap-2 pt-1">
           <button
@@ -322,7 +322,7 @@ function QuotaDialog({
               setError(null);
               void onSave(resolved).catch(setError);
             }}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90 disabled:opacity-40"
           >
             {busy ? "保存中…" : "保存"}
           </button>
@@ -446,7 +446,7 @@ function InvitesTab() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-accent-seal px-4 py-1.5 text-sm text-white disabled:opacity-40"
+          className="rounded bg-accent-seal px-4 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
         >
           {busy ? "创建中…" : "创建邀请码"}
         </button>
@@ -498,9 +498,9 @@ function InvitesTab() {
                     </td>
                     <td className="px-4 py-2 text-xs">
                       {invite.revokedAt !== null ? (
-                        <span className="text-rose-700">已失效</span>
+                        <span className="text-error-text">已失效</span>
                       ) : (
-                        <span className="text-emerald-700">有效</span>
+                        <span className="text-success-text">有效</span>
                       )}
                     </td>
                     <td className="px-4 py-2">
@@ -508,7 +508,7 @@ function InvitesTab() {
                         <button
                           type="button"
                           onClick={() => void onRevoke(invite.code)}
-                          className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
+                          className="rounded border border-error-line px-2 py-1 text-xs text-error-text hover:bg-error-soft"
                         >
                           失效
                         </button>
@@ -714,7 +714,7 @@ function InsightsTab() {
                     </td>
                     <td className="max-w-xs px-4 py-2 text-xs">
                       {project.lastError ? (
-                        <span className="break-all text-rose-700">{project.lastError}</span>
+                        <span className="break-all text-error-text">{project.lastError}</span>
                       ) : (
                         <span className="text-ink-muted">—</span>
                       )}
@@ -729,7 +729,7 @@ function InsightsTab() {
                         type="button"
                         disabled={busy}
                         onClick={() => void onDelete(project)}
-                        className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50 disabled:opacity-40"
+                        className="rounded border border-error-line px-2 py-1 text-xs text-error-text hover:bg-error-soft disabled:opacity-40"
                       >
                         删除
                       </button>
@@ -788,7 +788,7 @@ function SystemTab() {
         {health.core.reason && (
           <Row
             label="原因"
-            value={<span className="break-all text-rose-700">{health.core.reason}</span>}
+            value={<span className="break-all text-error-text">{health.core.reason}</span>}
           />
         )}
       </Panel>
@@ -843,7 +843,7 @@ function HostMemoryPanel({ host }: { host?: HostMemory }) {
           >
             <div
               className={`h-full ${
-                percent >= 90 ? "bg-rose-500" : percent >= 75 ? "bg-amber-500" : "bg-accent-seal"
+                percent >= 90 ? "bg-error-text" : percent >= 75 ? "bg-warning-text" : "bg-accent-seal"
               }`}
               style={{ width: `${Math.min(100, percent)}%` }}
             />

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.retrieval import rrf
+from nova_core.retrieval import rrf
 
 
 def test_k_is_frozen_at_60() -> None:

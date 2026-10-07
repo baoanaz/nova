@@ -6,7 +6,7 @@
 2. **复用**：第二个分支索引时**复用**第一个分支已嵌入的内容（否则"隔离"把 embedding
    与存储费用乘上分支数，与"最小消耗 embedding 额度"的目标直接冲突）。
 
-实测参照（真实 voyage-4-lite / zace 仓库 10 个 worktree）：
+实测参照（真实 voyage-4-lite / nova 仓库 10 个 worktree）：
 
 ```text
 main worktree : new=5913  reused=0           180.0s
@@ -25,8 +25,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from zace_core.engine import Engine
-from zace_core.interfaces import EmbeddingProfile
+from nova_core.engine import Engine
+from nova_core.interfaces import EmbeddingProfile
 
 from .conftest import DeterministicBigramEmbedding
 
@@ -94,8 +94,8 @@ def _make_repo(root: Path, remote: str) -> Path:
 
 
 def test_two_branches_isolated_but_second_reuses_vectors(tmp_path: Path) -> None:
-    remote = "https://example.com/team/zace.git"
-    repo = _make_repo(tmp_path / "zace", remote)
+    remote = "https://example.com/team/nova.git"
+    repo = _make_repo(tmp_path / "nova", remote)
 
     provider = CountingEmbedding()
     engine = Engine(tmp_path / "data", provider=provider)
@@ -131,8 +131,8 @@ def test_two_branches_isolated_but_second_reuses_vectors(tmp_path: Path) -> None
 
 def test_switching_back_to_main_reuses_everything(tmp_path: Path) -> None:
     """在 main 与 feature 之间来回切：第二次回到 main 应完全命中缓存（零新增嵌入）。"""
-    remote = "https://example.com/team/zace.git"
-    repo = _make_repo(tmp_path / "zace", remote)
+    remote = "https://example.com/team/nova.git"
+    repo = _make_repo(tmp_path / "nova", remote)
 
     provider = CountingEmbedding()
     engine = Engine(tmp_path / "data", provider=provider)
@@ -159,9 +159,9 @@ def test_switching_back_to_main_reuses_everything(tmp_path: Path) -> None:
 
 
 def test_cache_can_be_disabled_by_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """``ZACE_EMBED_CACHE=off`` 时退化为项目内复用（回归对比用），跨分支不再命中。"""
-    remote = "https://example.com/team/zace.git"
-    repo = _make_repo(tmp_path / "zace", remote)
+    """``NOVA_EMBED_CACHE=off`` 时退化为项目内复用（回归对比用），跨分支不再命中。"""
+    remote = "https://example.com/team/nova.git"
+    repo = _make_repo(tmp_path / "nova", remote)
 
     provider = CountingEmbedding()
     engine = Engine(tmp_path / "data", provider=provider)
@@ -169,7 +169,7 @@ def test_cache_can_be_disabled_by_env(tmp_path: Path, monkeypatch: pytest.Monkey
     engine.ingest_repo(main_handle.project_id, repo)
     assert (tmp_path / "data" / "cache" / "embeddings").is_dir(), "默认应写共享缓存"
 
-    monkeypatch.setenv("ZACE_EMBED_CACHE", "off")
+    monkeypatch.setenv("NOVA_EMBED_CACHE", "off")
     provider2 = CountingEmbedding()
     engine2 = Engine(tmp_path / "data2", provider=provider2)
     h, _ = engine2.resolve_repo(repo)
@@ -179,8 +179,8 @@ def test_cache_can_be_disabled_by_env(tmp_path: Path, monkeypatch: pytest.Monkey
 
 def test_profile_model_id_is_used_as_cache_shard(tmp_path: Path) -> None:
     """缓存分片名必须来自 ``profile.model_id``（换模型即换分片，不会串用旧向量）。"""
-    remote = "https://example.com/team/zace.git"
-    repo = _make_repo(tmp_path / "zace", remote)
+    remote = "https://example.com/team/nova.git"
+    repo = _make_repo(tmp_path / "nova", remote)
     provider = CountingEmbedding()
     engine = Engine(tmp_path / "data", provider=provider)
     handle, _ = engine.resolve_repo(repo)

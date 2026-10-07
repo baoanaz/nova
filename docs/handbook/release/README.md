@@ -1,7 +1,7 @@
-# 发布与重启（zace-client npm 包 / 服务 / 前端）
+# 发布与重启（nova-client npm 包 / 服务 / 前端）
 
 > **读者**：要发一次新版本、或改完代码要让环境生效的人。
-> **产出**：npm 上新的 `zace-client@<版本>`，以及跑着新代码的服务与前端。
+> **产出**：npm 上新的 `nova-client@<版本>`，以及跑着新代码的服务与前端。
 
 ## 0. 一条命令看懂全流程
 
@@ -19,7 +19,7 @@ bash scripts/release-client.sh 0.0.8（改版本号 → 提交 → 推 main → 
 指向 6 个平台子包，子包没先上去，该平台用户就装不上。CI 里由
 `scripts/make-platform-packages.py publish` 保证这个顺序。
 
-## 1. 发布 zace-client（npm）
+## 1. 发布 nova-client（npm）
 
 ```bash
 bash scripts/release-client.sh 0.0.8
@@ -33,25 +33,25 @@ bash scripts/release-client.sh 0.0.8
 
 ```bash
 cd web
-ZACE_WEB_BASE=/zace-web/ VITE_ZACE_API_BASE=/zace-service npm run build
-# 产物：web/dist → nginx 的 /zace-web/ 站点根
+NOVA_WEB_BASE=/nova-web/ VITE_NOVA_API_BASE=/nova-service npm run build
+# 产物：web/dist → nginx 的 /nova-web/ 站点根
 ```
 
-两个变量必须与 nginx 公开路径一致：`ZACE_WEB_BASE` 决定产物资源 URL 与 Router `basename`，
-`VITE_ZACE_API_BASE` 决定前端请求后端的前缀。
+两个变量必须与 nginx 公开路径一致：`NOVA_WEB_BASE` 决定产物资源 URL 与 Router `basename`，
+`VITE_NOVA_API_BASE` 决定前端请求后端的前缀。
 
-> 漏掉 `ZACE_WEB_BASE=/zace-web/` → 产物资源路径变成 `/assets/...` → nginx 回落默认站点 → **前端白屏**。
+> 漏掉 `NOVA_WEB_BASE=/nova-web/` → 产物资源路径变成 `/assets/...` → nginx 回落默认站点 → **前端白屏**。
 
 ## 3. 重启服务
 
 ```bash
-sudo systemctl restart zace-live      # WSL 同构环境
-# sudo systemctl restart zace-service # VPS 生产
+sudo systemctl restart nova-live      # WSL 同构环境
+# sudo systemctl restart nova-service # VPS 生产
 
 # 确认
-systemctl status zace-live --no-pager | head -3
-curl -s http://localhost/zace-service/healthz
-curl -sI http://localhost/zace-web/ | head -1
+systemctl status nova-live --no-pager | head -3
+curl -s http://localhost/nova-service/healthz
+curl -sI http://localhost/nova-web/ | head -1
 ```
 
 **重启后前几秒可能 502**（进程在初始化）：等 3–5 秒再 curl。

@@ -1,7 +1,7 @@
-# zace-client
+# nova-client
 
-zace 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责在本地扫描/增量上传代码，
-把检索交给远端 `zace-service`（切片、索引、检索、渲染都在服务端）。
+nova 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责在本地扫描/增量上传代码，
+把检索交给远端 `nova-service`（切片、索引、检索、渲染都在服务端）。
 
 支持 **Claude Code / Codex / pi（经 pi-mcp-adapter）/ Cursor** 等所有支持 stdio 的 MCP 客户端。
 
@@ -11,19 +11,19 @@ zace 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责�
 
 ## 快速开始
 
-全局安装（装完 `zace-client` 进 `PATH`）：
+全局安装（装完 `nova-client` 进 `PATH`）：
 
 ```bash
-npm install -g zace-client@latest
+npm install -g nova-client@latest
 ```
 
 也可以不全局安装，直接用 `npx`（首次运行会从 npm 获取包）：
 
 ```bash
-npx --yes --prefer-online zace-client@latest --base-url http://127.0.0.1:8787 --token "<你的 API Key>"
+npx --yes --prefer-online nova-client@latest --base-url http://127.0.0.1:8787 --token "<你的 API Key>"
 ```
 
-两种方式都会从已安装的**平台子包**启动 Rust 客户端（stdio），启动器不再从 GitHub 下载二进制。客户端随后连接你配置的 `zace-service`。
+两种方式都会从已安装的**平台子包**启动 Rust 客户端（stdio），启动器不再从 GitHub 下载二进制。客户端随后连接你配置的 `nova-service`。
 
 ## 客户端配置
 
@@ -32,10 +32,10 @@ npx --yes --prefer-online zace-client@latest --base-url http://127.0.0.1:8787 --
 ### Claude Code
 
 ```bash
-claude mcp add-json zace --scope user '{
+claude mcp add-json nova --scope user '{
   "type": "stdio",
   "command": "npx",
-  "args": ["--yes", "--prefer-online", "zace-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+  "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
 }'
 ```
 
@@ -44,9 +44,9 @@ claude mcp add-json zace --scope user '{
 `~/.codex/config.toml`：
 
 ```toml
-[mcp_servers.zace]
+[mcp_servers.nova]
 command = "npx"
-args = ["--yes", "--prefer-online", "zace-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+args = ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
 startup_timeout_ms = 60000
 ```
 
@@ -58,9 +58,9 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
 ```json
 {
   "mcpServers": {
-    "zace": {
+    "nova": {
       "command": "npx",
-      "args": ["--yes", "--prefer-online", "zace-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+      "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
     }
   }
 }
@@ -71,9 +71,9 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
 ```json
 {
   "mcpServers": {
-    "zace": {
+    "nova": {
       "command": "npx",
-      "args": ["--yes", "--prefer-online", "zace-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+      "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
     }
   }
 }
@@ -83,9 +83,9 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
 
 | 参数 | 环境变量 | 必填 | 说明 |
 |---|---|---|---|
-| `--base-url` | `ZACE_BASE_URL` | 是 | `zace-service` 基础地址（须带 `http://` 或 `https://`） |
-| `--token` | `ZACE_API_TOKEN` | **普通 `serve` 模式必填** | 在实际服务的「API Key」页创建。只有显式 `zace-service local` 的无鉴权本地模式可以省略 |
-| `--cache-root` | `ZACE_CLIENT_CACHE` | 否 | 本地索引缓存根，默认 `~/.cache/zace` |
+| `--base-url` | `NOVA_BASE_URL` | 是 | `nova-service` 基础地址（须带 `http://` 或 `https://`） |
+| `--token` | `NOVA_API_TOKEN` | **普通 `serve` 模式必填** | 在实际服务的「API Key」页创建。只有显式 `nova-service local` 的无鉴权本地模式可以省略 |
+| `--cache-root` | `NOVA_CLIENT_CACHE` | 否 | 本地索引缓存根，默认 `~/.cache/nova` |
 命令行参数优先于环境变量。
 
 ## 工具
@@ -97,17 +97,17 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
 
 ## 二进制从哪来（npm 平台子包）
 
-`zace-client` 本身只是启动器（`run.js`）；真正的二进制由 **6 个平台子包**提供，
+`nova-client` 本身只是启动器（`run.js`）；真正的二进制由 **6 个平台子包**提供，
 它们是主包的 `optionalDependencies`：
 
 ```text
-zace-client                    ← 启动器
-├── zace-client-linux-x64      ← 含 zace-client 二进制
-├── zace-client-linux-arm64
-├── zace-client-darwin-x64     ┐ 两个架构各自独立构建
-├── zace-client-darwin-arm64   ┘
-├── zace-client-windows-x64
-└── zace-client-windows-arm64
+nova-client                    ← 启动器
+├── nova-client-linux-x64      ← 含 nova-client 二进制
+├── nova-client-linux-arm64
+├── nova-client-darwin-x64     ┐ 两个架构各自独立构建
+├── nova-client-darwin-arm64   ┘
+├── nova-client-windows-x64
+└── nova-client-windows-arm64
 ```
 
 npm 会按子包自己的 `os`/`cpu` 字段**只装本平台那一个**（其余跳过），
@@ -133,10 +133,10 @@ Rust 客户端的同步与服务请求仍使用网络，客户端扫描缓存与
 
 **唯一的例外是开发期通道**（不是用户分发路径，命中时会打印用了哪一条）：
 
-1. `ZACE_CLIENT_BINARY=/abs/path/zace-client` —— 开发者显式指定；
-2. 仓库内 `client/target/{release,debug}/zace-client` —— `cargo build` 后直接跑。
+1. `NOVA_CLIENT_BINARY=/abs/path/nova-client` —— 开发者显式指定；
+2. 仓库内 `client/target/{release,debug}/nova-client` —— `cargo build` 后直接跑。
 
-刻意**不含**「PATH 里的 zace-client」：npm 安装的 shim 就叫这个名字，
+刻意**不含**「PATH 里的 nova-client」：npm 安装的 shim 就叫这个名字，
 回退到它会把包装器自己当二进制，造成无限自我递归（TASK-099 实测踩到）。
 
 > 维护者发布只跑一条命令：`bash scripts/release-client.sh x.y.z`
@@ -147,19 +147,19 @@ Rust 客户端的同步与服务请求仍使用网络，客户端扫描缓存与
 
 ## 已知限制
 
-- 普通 `zace-service serve` 默认启用账户鉴权，token 无效或已撤销时返回 401。
-  只有显式 `zace-service local --repo ...` 才是无鉴权的本地模式，此时 `--token` 可省略。
+- 普通 `nova-service serve` 默认启用账户鉴权，token 无效或已撤销时返回 401。
+  只有显式 `nova-service local --repo ...` 才是无鉴权的本地模式，此时 `--token` 可省略。
 - 首次索引大仓库时，第一个 tool call 会在上传期间等待（进度反馈属后续卡）。
 
 ## 从源码构建
 
 ```bash
-git clone https://github.com/baoanaz/zace && cd zace/client
-cargo build --release        # 产物：target/release/zace-client
+git clone https://github.com/baoanaz/zace nova && cd nova/client
+cargo build --release        # 产物：target/release/nova-client
 ```
 
-`npm/run.js` 找不到平台子包时会回退到**开发期通道**：`ZACE_CLIENT_BINARY` 指定的二进制，
-或仓库内 `client/target/{release,debug}/zace-client`。（用户分发路径只有 npm 子包。）
+`npm/run.js` 找不到平台子包时会回退到**开发期通道**：`NOVA_CLIENT_BINARY` 指定的二进制，
+或仓库内 `client/target/{release,debug}/nova-client`。（用户分发路径只有 npm 子包。）
 
 ## 许可证
 

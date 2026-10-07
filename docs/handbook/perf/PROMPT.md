@@ -9,7 +9,7 @@
 ```text
 检查 CPU、内存、swap、磁盘、Python/uv/Node/Rust 与 Git 状态。
 先审查失效软链接，再备份和重建环境，不直接覆盖密钥或其他开发者的改动。
-运行 scripts/setup-dev.sh；密钥放 $HOME/.key/zace/secrets.env，
+运行 scripts/setup-dev.sh；密钥放 $HOME/.key/nova/secrets.env，
 环境与缓存留在仓库内的忽略目录，依据 ENVIRONMENT.txt 安装。
 只报告凭据是否存在和权限，不输出任何内容、前缀或长度。
 核对 LangChain checkout 是 e75dae1f53c99c2b5ddb0c7bb36022c6aea25569 且工作树干净。

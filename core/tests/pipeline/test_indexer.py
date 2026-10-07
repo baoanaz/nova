@@ -11,19 +11,19 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
-from zace_core.chunking import PARSER_CONFIG_KEY, embedding_text, split_file
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.parsing.registry import get_parser
-from zace_core.pipeline import LANGUAGES_KEY, DirectorySource, Indexer, IngestReport
-from zace_core.pipeline.embedding_sink import (
+from nova_core.chunking import PARSER_CONFIG_KEY, embedding_text, split_file
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.parsing.registry import get_parser
+from nova_core.pipeline import LANGUAGES_KEY, DirectorySource, Indexer, IngestReport
+from nova_core.pipeline.embedding_sink import (
     DEFAULT_EMBED_WINDOW,
     MAX_EMBED_WINDOW,
     embed_window_size,
 )
-from zace_core.storage import Store
-from zace_core.text import segment
-from zace_core.types import ChangeSet, ParsedFile
-from zace_core.vectors import VectorStore
+from nova_core.storage import Store
+from nova_core.text import segment
+from nova_core.types import ChangeSet, ParsedFile
+from nova_core.vectors import VectorStore
 
 from .conftest import DOC_MD, PY_MODULE, TEST_PROFILE, CountingEmbedding, write_repo
 
@@ -359,7 +359,7 @@ def test_split_failure_from_duplicate_ids_is_isolated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TASK-018 §B+§C 组合：切分抛出的重复 id ValueError 被单文件隔离，不进 sqlite。"""
-    from zace_core.pipeline import indexer as indexer_module
+    from nova_core.pipeline import indexer as indexer_module
 
     real_split = indexer_module.split_file
 
@@ -386,7 +386,7 @@ def test_full_reparse_isolates_split_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TASK-018 §C：``--full`` 的存量枚举（``_rebuild_vectors``）同样按单文件隔离。"""
-    from zace_core.pipeline import indexer as indexer_module
+    from nova_core.pipeline import indexer as indexer_module
 
     files = {"pkg/bad.py": PY_MODULE, "pkg/mod.py": PY_MODULE}
     write_repo(repo, files)
@@ -759,7 +759,7 @@ def test_delete_across_indexer_instances_clears_vectors(
     为什么这是真实场景：``Engine`` 每次 ingest 都新建 ``Indexer``，进程内的
     ``_known_chunks`` 因此永远是空的——旧实现在这种调用下一条向量都不删。
     """
-    from zace_core.pipeline import DirectorySource, Indexer
+    from nova_core.pipeline import DirectorySource, Indexer
 
     _ingest_files(Indexer(store, embedding, vectors, DirectorySource(repo)),
                   change_set, {"pkg/mod.py": PY_MODULE}, repo)

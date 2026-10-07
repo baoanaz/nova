@@ -1,5 +1,5 @@
-# zace Architecture Design Task
-> 文档属性：这是 zace 的原始需求来源和早期讨论草案，仅供参考，不是最终设计合同。与 research/Background 或 research/Module 冲突时，以后者为准；具体设计决策以 research/INDEX.md §3 为准。
+# nova Architecture Design Task
+> 文档属性：这是 nova 的原始需求来源和早期讨论草案，仅供参考，不是最终设计合同。与 research/Background 或 research/Module 冲突时，以后者为准；具体设计决策以 research/INDEX.md §3 为准。
 > 当前 V1 重点支持 Python、C、C++、Markdown；Kotlin 暂不适配，未来语言扩展另行预研。
 
 
@@ -15,13 +15,13 @@ ACE/
 │   ├── notace-tool-rs/
 │   └── ragcode/
 │
-└── zace/
+└── nova/
     └── README.md
 ```
 
 `source/` 下为参考项目，只用于源码研究和架构借鉴。
 
-`zace/` 是我们准备从零设计和开发的开源项目。
+`nova/` 是我们准备从零设计和开发的开源项目。
 
 **禁止修改 `source/` 下的任何代码。**
 
@@ -31,7 +31,7 @@ ACE/
 
 # 2. 项目定位
 
-zace 是一个面向 Coding Agent 的 **Workspace Context Engine**。
+nova 是一个面向 Coding Agent 的 **Workspace Context Engine**。
 
 它不是单纯的代码搜索工具，也不是单纯的 Vector RAG 或 GraphRAG。
 
@@ -58,7 +58,7 @@ zace 是一个面向 Coding Agent 的 **Workspace Context Engine**。
 
 # 3. 核心产品形态
 
-最终用户通过 MCP 将 zace 接入 Coding Harness。
+最终用户通过 MCP 将 nova 接入 Coding Harness。
 
 整体期望：
 
@@ -68,13 +68,13 @@ zace 是一个面向 Coding Agent 的 **Workspace Context Engine**。
                         │
                         │ MCP
                         ▼
-                zace MCP Client
+                nova MCP Client
                         │
                 Auth / Project
                         │
                  HTTPS / API
                         ▼
-                zace Service
+                nova Service
                         │
             Retrieval Orchestrator
                         │
@@ -200,22 +200,22 @@ ask_project
 
 # 5. Workspace 同步模型
 
-由于 zace Service 最终部署在 VPS，需要设计：
+由于 nova Service 最终部署在 VPS，需要设计：
 
 ```text
 Local Workspace
       ↓
-zace MCP / Local Client
+nova MCP / Local Client
       ↓
 File Scan
       ↓
-.gitignore / zace ignore
+.gitignore / nova ignore
       ↓
 Hash / Change Detection
       ↓
 Incremental Sync
       ↓
-zace Server
+nova Server
 ```
 
 重点参考 `notace-tool-rs` 的：
@@ -414,7 +414,7 @@ Exact / FTS     Semantic       Graph
 
 # 9. Spec / Docs
 
-zace 不应该只理解“代码现在怎么写”。
+nova 不应该只理解“代码现在怎么写”。
 
 还应该理解：
 
@@ -469,7 +469,7 @@ Inference
 
 # 10. ContextPack
 
-ContextPack 是 zace 的核心产品之一。
+ContextPack 是 nova 的核心产品之一。
 
 不要简单返回：
 
@@ -508,7 +508,7 @@ Citations
 
 # 11. Service 层
 
-zace 最终部署为长期运行的 Server。
+nova 最终部署为长期运行的 Server。
 
 请设计独立 Service Layer。
 
@@ -562,7 +562,7 @@ Retrieval / Graph / Index
 需要支持：
 
 * stdio MCP client / adapter
-* remote zace service
+* remote nova service
 * Authentication
 * Project / Workspace Selection
 * Tool Schema
@@ -576,7 +576,7 @@ MCP stdout 必须保持协议纯净，日志走 stderr。
 
 # 13. Web UI
 
-zace 后续需要 Web UI。
+nova 后续需要 Web UI。
 
 首先实现产品基础能力，而不是复杂可视化。
 
@@ -716,7 +716,7 @@ LLM Provider 必须作为独立接口，不与 Retrieval 强耦合。
 可以参考：
 
 ```text
-zace/
+nova/
 ├── apps/
 │   ├── server/
 │   ├── web/
@@ -783,7 +783,7 @@ Reverse Proxy
    ├── Web
    └── API
          │
-      zace-server
+      nova-server
          │
  ┌───────┼──────────┐
  ▼       ▼          ▼
@@ -832,7 +832,7 @@ DB     Vector     Worker
 * Evidence
 * MissingEvidence
 
-哪些设计适合 zace？
+哪些设计适合 nova？
 
 ---
 
@@ -865,7 +865,7 @@ DB     Vector     Worker
 * Graph traversal
 * MCP explore
 
-哪些部分适合作为 zace Code Intelligence 基础？
+哪些部分适合作为 nova Code Intelligence 基础？
 
 ---
 
@@ -886,15 +886,15 @@ DB     Vector     Worker
 
 # 20. 当前阶段不要急着开发
 
-当前任务首先是完成 **zace 的架构设计和工程骨架决策**。
+当前任务首先是完成 **nova 的架构设计和工程骨架决策**。
 
 请：
 
 1. 阅读 `source/` 四个项目关键源码。
-2. 阅读 `zace/README.md`。
+2. 阅读 `nova/README.md`。
 3. 对照上述产品目标。
 4. 识别参考项目中真正可以借鉴的设计。
-5. 给出 zace 推荐架构。
+5. 给出 nova 推荐架构。
 6. 明确模块边界和依赖方向。
 7. 明确本地 MCP Client 与远端 Service 的边界。
 8. 明确 Index / Retrieval / Graph / Context / LLM 的数据流。
@@ -902,7 +902,7 @@ DB     Vector     Worker
 10. 明确 VPS V1 部署方案。
 11. 给出 V1 → V2 演进路径。
 
-如果现有 README 与架构冲突，可以修改 `zace/` 内文档。
+如果现有 README 与架构冲突，可以修改 `nova/` 内文档。
 
 禁止修改 `source/`。
 
@@ -910,7 +910,7 @@ DB     Vector     Worker
 
 # 21. 需要输出的设计文档
 
-建议最终在 `zace/docs/` 形成：
+建议最终在 `nova/docs/` 形成：
 
 ```text
 docs/
@@ -934,7 +934,7 @@ docs/
 
 README 应最终能够清楚解释：
 
-* zace 是什么
+* nova 是什么
 * 为什么需要它
 * 核心架构
 * Fast / Deep
@@ -949,7 +949,7 @@ README 应最终能够清楚解释：
 
 完成设计后，请给我一份简洁总结：
 
-### 1. zace 最终架构
+### 1. nova 最终架构
 
 用 ASCII 图展示。
 
@@ -1022,7 +1022,7 @@ notace      → 借鉴什么
 
 整个设计始终围绕一个目标：
 
-> **zace 的核心价值不是“搜索代码”，而是降低 Coding Agent 获取正确项目上下文的成本。**
+> **nova 的核心价值不是“搜索代码”，而是降低 Coding Agent 获取正确项目上下文的成本。**
 
 最终衡量指标不是单纯 Search Latency，而是：
 

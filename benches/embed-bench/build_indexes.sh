@@ -6,20 +6,20 @@
 # 或者用了不同模型/维度（D-07 会判定 reembed → 全量重嵌，白烧 token）。
 #
 # 目录约定（按模型 + 维度分目录，换档位即换根，互不污染）：
-#   $ZACE_BENCH_ROOT/<model>-d<dim>/projects/<16 位 projectId>/
-#   例：/root/.zace/bench/voyage-4-lite-d1024/projects/ca2050db0db5b1e2
+#   $NOVA_BENCH_ROOT/<model>-d<dim>/projects/<16 位 projectId>/
+#   例：/root/.nova/bench/voyage-4-lite-d1024/projects/ca2050db0db5b1e2
 #   实证与口径：benches/results/index-cost-model-vps.md
 #
 # 可配置项（默认 = VPS 量产实测值；env 覆盖即可，无需改脚本）：
 #   EMBED_MODEL            默认 voyage-4-lite
 #   EMBED_BASE_URL         默认 https://api.voyageai.com
-#   EMBED_API_KEY          必填（默认从未传入时读 /etc/zace/zace.env，密钥不进仓库）
+#   EMBED_API_KEY          必填（默认从未传入时读 /etc/nova/nova.env，密钥不进仓库）
 #   EMBED_CONCURRENCY      默认 4（**本机 VPS 冻结值**，2026-09-15 基线 v1）；
 #                          换更大内存的机器可回调 8（registry 的厂商推荐值），见报告"内存"一节
 #   EMBED_BATCH_SIZE       默认 500（实测 1000 条会因响应体过大被对端断连）
 #   EMBED_BATCH_TOKEN_BUDGET 默认 300000
 #   EMBED_MAX_INPUT_TOKENS 默认 32000（只影响截断，不进指纹）
-#   ZACE_BENCH_ROOT        默认 ~/.zace/bench
+#   NOVA_BENCH_ROOT        默认 ~/.nova/bench
 #   BENCH_REPOS_ROOT       默认 /root/xuwenzheng/ACE/benchmark
 #   BENCH_REPOS            默认 "leveldb HelloAgents langchain"
 #   CHUNK 策略             当前实现默认口径（无开关；改切片规则要动 PARSER_CONFIG_VERSION，
@@ -54,22 +54,22 @@ export EMBED_BATCH_SIZE="${EMBED_BATCH_SIZE:-500}"
 export EMBED_BATCH_TOKEN_BUDGET="${EMBED_BATCH_TOKEN_BUDGET:-300000}"
 export EMBED_MAX_INPUT_TOKENS="${EMBED_MAX_INPUT_TOKENS:-32000}"
 
-ZACE_BENCH_ROOT="${ZACE_BENCH_ROOT:-$HOME/.zace/bench}"
+NOVA_BENCH_ROOT="${NOVA_BENCH_ROOT:-$HOME/.nova/bench}"
 BENCH_REPOS_ROOT="${BENCH_REPOS_ROOT:-/root/xuwenzheng/ACE/benchmark}"
 REPOS="${BENCH_REPOS:-leveldb HelloAgents langchain}"
 
-if [ -z "${EMBED_API_KEY:-}" ] && [ -r /etc/zace/zace.env ]; then
-  set -a; . /etc/zace/zace.env; set +a
+if [ -z "${EMBED_API_KEY:-}" ] && [ -r /etc/nova/nova.env ]; then
+  set -a; . /etc/nova/nova.env; set +a
 fi
 [ -n "${EMBED_API_KEY:-}" ] || { echo "缺少 EMBED_API_KEY（set -a; source <env>; set +a）" >&2; exit 2; }
 
 # ---- 数据根：按「模型-维度」分目录（维度是真变量，见用户 2026-09-15 口径）----
 read -r MODEL_SLUG DIM < <(uv run python -c "
-from zace_core.embedding.factory import create_provider
+from nova_core.embedding.factory import create_provider
 p = create_provider()
 print(p.profile.model_id.removeprefix('api:').removeprefix('local:'), p.profile.dim)
 ")
-DATA_ROOT="${DATA_ROOT:-$ZACE_BENCH_ROOT/${MODEL_SLUG}-d${DIM}}"
+DATA_ROOT="${DATA_ROOT:-$NOVA_BENCH_ROOT/${MODEL_SLUG}-d${DIM}}"
 
 echo "生效配置："
 echo "  provider   = $EMBED_MODE / $EMBED_MODEL（$EMBED_BASE_URL）"
@@ -92,14 +92,14 @@ for repo in $REPOS; do
   read -r project_id < <(uv run python -c "
 import sys
 from pathlib import Path
-from zace_core.engine import project_id_for, repo_identity
+from nova_core.engine import project_id_for, repo_identity
 print(project_id_for(repo_identity(Path(sys.argv[1])).identity_key))
 " "$src")
 
   index_dir="$DATA_ROOT/projects/$project_id"
   if [ -f "$index_dir/index.db" ] && [ "$FORCE" -eq 0 ]; then
     echo "[复用] $repo  project=$project_id  （索引已存在，跳过，不重嵌）"
-    echo "        复用命令：uv run zace-core search \"<query>\" --project-id $project_id \\"
+    echo "        复用命令：uv run nova-core search \"<query>\" --project-id $project_id \\"
     echo "                    --repo $src --data $DATA_ROOT"
     continue
   fi

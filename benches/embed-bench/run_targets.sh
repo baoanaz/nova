@@ -39,7 +39,7 @@ CONFIGS=(
 
 echo "生效参数自检："
 EMBED_CONCURRENCY=1 uv run python -c "
-from zace_core.embedding.factory import create_provider
+from nova_core.embedding.factory import create_provider
 p = create_provider()
 print('  default   batch=%s budget=%s conc=%s maxTok=%s %s' % (
     p.batch_size, p.batch_token_budget, p.concurrency, p.profile.max_input_tokens, p.profile))
@@ -56,7 +56,7 @@ for cfg in "${CONFIGS[@]}"; do
     log="$OUTDIR/$name-$repo.log"
     echo "=== [$name] $repo  (conc=$conc maxTok=$limit)"
     start=$(date +%s.%N)
-    uv run zace-core ingest --repo "$src" --data "$data" --full >"$log" 2>&1
+    uv run nova-core ingest --repo "$src" --data "$data" --full >"$log" 2>&1
     rc=$?
     end=$(date +%s.%N)
     printf '    rc=%s 墙钟=%.1fs\n' "$rc" "$(echo "$end - $start" | bc)"

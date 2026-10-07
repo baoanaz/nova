@@ -19,7 +19,7 @@ from pathlib import Path
 
 from coldstart_probe import install_patches, meter
 from replay import ReplayEmbedding
-from zace_core.engine import Engine
+from nova_core.engine import Engine
 
 
 def deny_external(event, args):
@@ -38,9 +38,9 @@ def snapshot():
 
 def serve(args, provider):
     import uvicorn
-    from zace_service.app import create_app
-    from zace_service.config import Settings
-    from zace_service.runtime import EngineManager
+    from nova_service.app import create_app
+    from nova_service.config import Settings
+    from nova_service.runtime import EngineManager
 
     app = create_app(Settings(data_root=args.out / 'index', local_mode=True))
     manager = EngineManager(args.out / 'index', Engine.open(args.out / 'index', provider=provider))
@@ -90,12 +90,12 @@ def run_client(args, provider):
                                     'arguments': {'query': query, 'project_root': str(args.repo)}}}
                 t0 = time.perf_counter()
                 result = subprocess.run(
-                    [str(root / 'client/target/debug/zace-client'),
+                    [str(root / 'client/target/debug/nova-client'),
                      '--base-url', f'http://127.0.0.1:{args.port}',
                      '--cache-root', str(args.out / 'client-cache')],
                     input=json.dumps(frame)+'\n', text=True, capture_output=True, timeout=600,
                     env={k: v for k, v in os.environ.items()
-                         if k not in ('ZACE_API_TOKEN', 'ZACE_BASE_URL')},
+                         if k not in ('NOVA_API_TOKEN', 'NOVA_BASE_URL')},
                 )
                 wall = time.perf_counter()-t0
                 (args.out / 'client.jsonl').write_text(result.stdout)

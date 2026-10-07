@@ -3,9 +3,9 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
 import pytest
-from zace_core.engine import Engine
-from zace_core.pipeline import IngestReport
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_core.pipeline import IngestReport
+from nova_service.runtime import EngineManager
 
 from tests.conftest import DeterministicBigramEmbedding
 from tests.test_sync_api import encode_blob, store_counts
@@ -194,7 +194,7 @@ def test_flush_racing_project_deletion_does_not_recreate_directory(
 def test_deletion_cannot_be_bypassed_by_starting_another_worker(
     client, engine_manager, project, monkeypatch,
 ):
-    from zace_service.errors import ApiError
+    from nova_service.errors import ApiError
 
     stage(client, project, 'a.py')
     original_stop = engine_manager._stop_indexer

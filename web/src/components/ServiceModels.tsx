@@ -87,7 +87,7 @@ function ModelGroup({
       <div className="mb-2 flex items-baseline gap-2">
         <span className="text-xs font-medium text-ink-muted">{heading}</span>
         {configured === false && (
-          <span className="text-xs text-amber-700">未配置</span>
+          <span className="text-xs text-warning-text">未配置</span>
         )}
       </div>
       <dl className="space-y-1">

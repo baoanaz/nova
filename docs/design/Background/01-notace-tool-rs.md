@@ -51,7 +51,7 @@ Finnian/ACE Server
 
 - walkdir 遍历，不跟随符号链接
 - 硬编码忽略列表：.git、node_modules、target、dist、build、.venv、__pycache__、.tox、.idea、.vscode、.not-ace-tool
-- **没有实现 .gitignore 解析**——这是一个明显的简化，zace 应该做对
+- **没有实现 .gitignore 解析**——这是一个明显的简化，nova 应该做对
 
 ### 3.4 批量上传
 
@@ -94,7 +94,7 @@ Finnian/ACE Server
 
 教训：**超时要按操作类型分层**，单一超时值在"首次全量 vs 后续增量"之间必然顾此失彼。
 
-## 6. 值得 zace 借鉴的设计（按优先级）
+## 6. 值得 nova 借鉴的设计（按优先级）
 
 1. **blob 内容寻址 + verified cache hit**：路径+内容双因子 hash，mtime 只是快路径不是信任依据
 2. **checkpoint/scope 协议**：避免每次请求重传索引 scope；带优雅降级和三种自愈路径
@@ -103,11 +103,11 @@ Finnian/ACE Server
 5. **token 脱敏 + body 截断**：所有对外错误信息先过 redaction
 6. **工具描述即行为控制**：good/bad query 直接写进 description
 
-## 7. zace 要避免/改进的点
+## 7. nova 要避免/改进的点
 
-1. 缓存放项目内 `.not-ace-tool/` 会污染工作区且和 .gitignore 纠缠；zace 建议放项目内（便于多 checkout 隔离）但提供 `zace ignore` 并默认自动写入 .git/info/exclude，或放全局 `~/.zace/projects/<hash>/`
-2. 硬编码忽略列表，没有 .gitignore 支持——zace 必须实现
+1. 缓存放项目内 `.not-ace-tool/` 会污染工作区且和 .gitignore 纠缠；nova 建议放项目内（便于多 checkout 隔离）但提供 `nova ignore` 并默认自动写入 .git/info/exclude，或放全局 `~/.nova/projects/<hash>/`
+2. 硬编码忽略列表，没有 .gitignore 支持——nova 必须实现
 3. 没有 rename 检测（blob 模型下 rename 自然免重传，但索引语义上需要处理路径变化）
-4. 没有同步状态对用户可见（skipped notice 只在结果尾部附加）；zace 应有 sync status 工具/输出
-5. 400 行机械分块对代码检索质量是权宜之计（远端看不到 AST）；zace 在服务端做 AST chunk，本地 client 可以只做文件级同步——**zace 的服务端可见性给了更优解的空间：本地薄、服务端懂结构**
-6. 单线程逐批上传、无压缩——大 repo 首同步可以更快（zace 可加 gzip + 并发）
+4. 没有同步状态对用户可见（skipped notice 只在结果尾部附加）；nova 应有 sync status 工具/输出
+5. 400 行机械分块对代码检索质量是权宜之计（远端看不到 AST）；nova 在服务端做 AST chunk，本地 client 可以只做文件级同步——**nova 的服务端可见性给了更优解的空间：本地薄、服务端懂结构**
+6. 单线程逐批上传、无压缩——大 repo 首同步可以更快（nova 可加 gzip + 并发）

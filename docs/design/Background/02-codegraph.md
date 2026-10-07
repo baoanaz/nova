@@ -59,7 +59,7 @@ content_hash / language / node_count / errors / **generated**（生成代码判�
 - **动机**：JS 侧逐节点遍历 tree-sitter 的回调跨边界太慢；Rust 侧一次遍历完成全部抽取，每文件只回传一次结构化结果
 - C/C++ 专门有 cfnptr.rs（43K）处理函数指针合成——C 的间接调用是这个项目认真处理过的问题
 
-## 4. 跨文件解析（src/resolution/，zace 最该研究的部分）
+## 4. 跨文件解析（src/resolution/，nova 最该研究的部分）
 
 ```
 extraction（写 pending refs）
@@ -128,21 +128,21 @@ NL query
 - 自带 Node runtime 打包（无 Node 依赖）、install.sh/ps1、`codegraph upgrade` 原地升级
 - GitHub Actions 跨平台构建 kernel，npm 分发按 platform-optional-dependencies 拉对的二进制
 
-## 9. 值得 zace 借鉴（按优先级）
+## 9. 值得 nova 借鉴（按优先级）
 
 1. **unresolved_refs 两阶段解析 + failed 重试**——跨文件解析的正确骨架
-2. **Rust kernel 模式**（如果 zace 服务端选 Rust：tree-sitter 批量抽取全在原生侧，一次边界/文件）——对 C/C++ 大仓库是数量级差异
-3. **explore 工具契约**：真实源码 + 按文件分组 + 调用路径 + "已读声明" + 低置信度诚实降级——zace search_context 的直接参考
-4. **边的唯一性约束与 provenance 列**：防重复边事故；区分解析边/合成边（对应 zace 的 verified vs inferred 证据分级）
+2. **Rust kernel 模式**（如果 nova 服务端选 Rust：tree-sitter 批量抽取全在原生侧，一次边界/文件）——对 C/C++ 大仓库是数量级差异
+3. **explore 工具契约**：真实源码 + 按文件分组 + 调用路径 + "已读声明" + 低置信度诚实降级——nova search_context 的直接参考
+4. **边的唯一性约束与 provenance 列**：防重复边事故；区分解析边/合成边（对应 nova 的 verified vs inferred 证据分级）
 5. **NL→符号桥**：identifier segments + FTS 双通道；正则符号抽取（驼峰/蛇形/点链）成本低效果好
 6. **工具描述导航文案**模式
-7. **WSL2 watch 降级 + git hooks 备胎**：zace 本地 client 在 Windows/WSL 环境必需的工程细节
-8. **会话共享 + query pool + writer lock**：如果 zace 本地侧有 daemon，这套并发模型可参考
+7. **WSL2 watch 降级 + git hooks 备胎**：nova 本地 client 在 Windows/WSL 环境必需的工程细节
+8. **会话共享 + query pool + writer lock**：如果 nova 本地侧有 daemon，这套并发模型可参考
 
-## 10. 局限与 zace 不采纳的部分
+## 10. 局限与 nova 不采纳的部分
 
-1. **无向量检索**——纯符号+FTS；对"模糊语义问题"（"哪里处理重试逻辑"）弱于混合检索。zace 要向量。
+1. **无向量检索**——纯符号+FTS；对"模糊语义问题"（"哪里处理重试逻辑"）弱于混合检索。nova 要向量。
 2. 无 Spec/文档理解层
-3. 无远端形态，全本地——zace 是 local+remote 混合
-4. 框架合成器（react-router/next/expo...）是 JS 生态特化的重投入（callback-synthesizer 179K 行）；zace 的场景是 C/C++/Python，投入应转向 C 宏/函数指针/CMake 源集、Python 动态特性的处理
-5. tools.ts 335K 单文件已经失控——zace 的 MCP 层必须保持薄
+3. 无远端形态，全本地——nova 是 local+remote 混合
+4. 框架合成器（react-router/next/expo...）是 JS 生态特化的重投入（callback-synthesizer 179K 行）；nova 的场景是 C/C++/Python，投入应转向 C 宏/函数指针/CMake 源集、Python 动态特性的处理
+5. tools.ts 335K 单文件已经失控——nova 的 MCP 层必须保持薄

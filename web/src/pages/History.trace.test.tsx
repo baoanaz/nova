@@ -403,7 +403,7 @@ describe("§需求4 刷新（TASK-100 用户 2026-09-14 定稿）", () => {
     await userEvent.click(screen.getByRole("button", { name: "刷新" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/连不上 zace-service/)).toBeInTheDocument();
+      expect(screen.getByText(/连不上 nova-service/)).toBeInTheDocument();
     });
     // 表格仍在（清空会让"网络抖一下"看起来像"记录全没了"）。
     expect(screen.getByRole("table")).toBeInTheDocument();

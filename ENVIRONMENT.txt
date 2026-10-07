@@ -1,7 +1,7 @@
-zace 开发环境安装说明
+nova 开发环境安装说明
 ====================
 此文件可以提交。实际环境、缓存和测试产物留在仓库内并被 Git 忽略；
-密钥单独存放在 $HOME/.key/zace/，本机即 /root/.key/zace/。
+密钥单独存放在 $HOME/.key/nova/，本机即 /root/.key/nova/。
 
 1. 系统工具
    - Linux 开发/复测：Python >= 3.12、git、curl。
@@ -14,7 +14,7 @@ zace 开发环境安装说明
    - nginx、TLS、域名仅用于生产部署；Docker 和浏览器自动化不是开发必需项。
 
 2. 初始化 Python 与 Web
-   cd <zace 仓库>
+   cd <nova 仓库>
    bash scripts/setup-dev.sh --with-web
    set -a
    source .env
@@ -43,7 +43,7 @@ zace 开发环境安装说明
    2 GiB VPS 上用 -j 1，避免与性能测量、Python 或 Web 测试同时运行。
 
 4. 私有凭据
-   文件：$HOME/.key/zace/secrets.env
+   文件：$HOME/.key/nova/secrets.env
    目录权限 0700，文件权限 0600。安装脚本只创建空配置，不会覆盖已有凭据。
    通过本机编辑器填写，不要粘贴到聊天、Issue、终端命令参数或提交记录。
 
@@ -94,7 +94,7 @@ zace 开发环境安装说明
 
    结果默认写入 .local/bench/<UTC 时间>-<模式>/。
    local/full 每次创建独立索引；不改靶场、不复用暖索引。
-   ZACE_BENCH_OUT 可指定新目录；已存在的目录会被拒绝，避免覆盖证据或复用索引。
+   NOVA_BENCH_OUT 可指定新目录；已存在的目录会被拒绝，避免覆盖证据或复用索引。
    hardware 直连 OVH 公共文件测速下行、Cloudflare 测速上传，不使用代理，不上传源码；
    默认下载合计 500 MiB、上传 16 MB（总流量约 540 MB）。端点与字节数可由探针参数指定。
    结果只代表到所测端点的路径；发生 HTTP 错误或长度不符时不计算成功吞吐。
@@ -106,4 +106,4 @@ zace 开发环境安装说明
    不提交：.env、.venv/、.local/、node_modules/、target/、backups/、密钥包。
    .gitignore 不能保护已经被跟踪的文件。提交前检查 git status 和具体 diff。
    scripts/pack-secrets.sh 打包外部凭据和本机配置；输出为私有文件，
-   默认保存在 $HOME/.key/zace/，恢复脚本默认只恢复凭据/配置，不启动服务。
+   默认保存在 $HOME/.key/nova/，恢复脚本默认只恢复凭据/配置，不启动服务。

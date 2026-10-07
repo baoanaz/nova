@@ -1,10 +1,10 @@
 <div align="center">
-  <img src="docs/assets/logo.svg" alt="zace Logo" width="112" height="112">
-  <h1>zace</h1>
-  <p><strong>ZACE · Workspace Context Engine</strong></p>
+  <img src="docs/assets/nova-logo.webp" alt="NOVA Logo" width="112" height="112">
+  <h1>NOVA</h1>
+  <p><strong>NOVA · Workspace Context Engine</strong></p>
   <p>把代码库变成有据可查的上下文，让 Coding Agent 更懂你的项目。</p>
   <p>
-    <a href="https://www.npmjs.com/package/zace-client"><img src="https://img.shields.io/npm/v/zace-client?style=flat-square&amp;color=cf684b" alt="npm version"></a>
+    <a href="https://www.npmjs.com/package/nova-client"><img src="https://img.shields.io/npm/v/nova-client?style=flat-square&amp;color=cf684b" alt="npm version"></a>
     <a href="https://github.com/baoanaz/zace/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/baoanaz/zace/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Unlicense-green?style=flat-square" alt="License: Unlicense"></a>
     <a href="https://github.com/baoanaz/zace/stargazers"><img src="https://img.shields.io/github/stars/baoanaz/zace?style=flat-square" alt="GitHub stars"></a>
@@ -25,16 +25,18 @@
 
 ## 项目介绍
 
-**zace** 是一个面向 Agent 的 MCP 服务，提供 `search_context`（代码检索）和 `ask_project`（项目问答）两个工具，帮助 Agent 快速定位代码、理解项目，为开发、调试和代码审查提供带文件路径与行号的依据。
+**NOVA** 是一个面向 Agent 的 MCP 服务，提供 `search_context`（代码检索）和 `ask_project`（项目问答）两个工具，帮助 Agent 快速定位代码、理解项目，为开发、调试和代码审查提供带文件路径与行号的依据。
 
 ## 快速开始
+
+本次更名的包名、运行配置与迁移步骤见 [NOVA 迁移说明](docs/handbook/deployment/nova-migration.md)。新 npm 包名需要完成正式发布后才能通过 npm 安装。
 
 **Web 用户控制台：<http://23.159.248.240:8088>**
 
 注册账户后，进入 **接入指南** 页面，按步骤完成配置，开始您的第一次使用。
 
 <p align="center">
-  <img src="docs/assets/screenshots/connect.png" alt="zace 接入指南：安装 npm 包、配置 MCP 接入和可选的提示词增强" width="100%">
+  <img src="docs/assets/screenshots/connect.png" alt="nova 接入指南：安装 npm 包、配置 MCP 接入和可选的提示词增强" width="100%">
 </p>
 
 ## 本地部署
@@ -56,7 +58,7 @@
 ## 目录结构
 
 ```text
-zace/
+nova/
 ├── core/                  Python 核心：解析、索引、检索、上下文组装
 ├── service/               Python 服务：API、账户、同步、任务、LLM 总结
 ├── client/                Rust MCP stdio 客户端

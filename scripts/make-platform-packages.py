@@ -3,7 +3,7 @@
 
 ## 为什么 (背景，实测踩到)
 
-旧形态是「`zace-client` 包装器 + GitHub Release 下载二进制」。两个真实故障：
+旧形态是「`nova-client` 包装器 + GitHub Release 下载二进制」。两个真实故障：
 
 1. **Node 默认不读 `https_proxy`**（只认 `NODE_USE_ENV_PROXY=1`，v20+ 才支持）。
    代理环境里包装器直连 GitHub → 命中共享出口 IP 的 API 限流：
@@ -16,13 +16,13 @@
 ## 现在的形态（esbuild / swc / biome 的通行做法）
 
 ```text
-zace-client                    ← 包装器（run.js）+ 6 个平台子包作为 optionalDependencies
-├── zace-client-linux-x64      ← 内含 bin/zace-client
-├── zace-client-linux-arm64
-├── zace-client-darwin-x64
-├── zace-client-darwin-arm64
-├── zace-client-windows-x64
-└── zace-client-windows-arm64
+nova-client                    ← 包装器（run.js）+ 6 个平台子包作为 optionalDependencies
+├── nova-client-linux-x64      ← 内含 bin/nova-client
+├── nova-client-linux-arm64
+├── nova-client-darwin-x64
+├── nova-client-darwin-arm64
+├── nova-client-windows-x64
+└── nova-client-windows-arm64
 ```
 
 npm 按**子包自己的 `os`/`cpu` 字段**挑一个装上（其余跳过），包装器直接执行它。
@@ -33,7 +33,7 @@ npm 按**子包自己的 `os`/`cpu` 字段**挑一个装上（其余跳过），
 ```bash
 # ① 打包（CI 在每个平台矩阵里跑一次，把产物放进对应子包目录）
 python3 scripts/make-platform-packages.py stage \
-    --suffix linux-x64 --binary path/to/zace-client
+    --suffix linux-x64 --binary path/to/nova-client
 
 # ② 生成/刷新 6 个 package.json（改版本号或平台表后跑；幂等）
 python3 scripts/make-platform-packages.py generate
@@ -63,15 +63,15 @@ PLATFORMS_DIR = NPM_DIR / "platforms"
 #: 平台表（唯一事实来源）。``os``/``cpu`` 必须与 Node 的 ``process.platform`` /
 #: ``process.arch`` 取值一致——npm 就是靠这两个字段决定装哪个子包。
 PLATFORMS = (
-    {"suffix": "linux-x64", "os": "linux", "cpu": "x64", "binary": "zace-client"},
-    {"suffix": "linux-arm64", "os": "linux", "cpu": "arm64", "binary": "zace-client"},
-    {"suffix": "darwin-x64", "os": "darwin", "cpu": "x64", "binary": "zace-client"},
-    {"suffix": "darwin-arm64", "os": "darwin", "cpu": "arm64", "binary": "zace-client"},
-    {"suffix": "windows-x64", "os": "win32", "cpu": "x64", "binary": "zace-client.exe"},
-    {"suffix": "windows-arm64", "os": "win32", "cpu": "arm64", "binary": "zace-client.exe"},
+    {"suffix": "linux-x64", "os": "linux", "cpu": "x64", "binary": "nova-client"},
+    {"suffix": "linux-arm64", "os": "linux", "cpu": "arm64", "binary": "nova-client"},
+    {"suffix": "darwin-x64", "os": "darwin", "cpu": "x64", "binary": "nova-client"},
+    {"suffix": "darwin-arm64", "os": "darwin", "cpu": "arm64", "binary": "nova-client"},
+    {"suffix": "windows-x64", "os": "win32", "cpu": "x64", "binary": "nova-client.exe"},
+    {"suffix": "windows-arm64", "os": "win32", "cpu": "arm64", "binary": "nova-client.exe"},
 )
 
-MAIN_PACKAGE_NAME = "zace-client"
+MAIN_PACKAGE_NAME = "nova-client"
 
 
 def sub_package_name(suffix: str) -> str:
@@ -184,7 +184,7 @@ def _preflight(suffix: str, source: Path) -> list[str]:
 
     为什么必做（真实缺陷模式）：CI 与本地可能编出**不同 flavour 的同名二进制**——
     实测 CI 用 `x86_64-unknown-linux-musl`（静态）、本地默认编的是
-    `x86_64-unknown-linux-gnu`（动态）。两者名字都是 `zace-client`、都能跑，
+    `x86_64-unknown-linux-gnu`（动态）。两者名字都是 `nova-client`、都能跑，
     但打出来的包可移植性天差地别。若把本地那个 stage 进 `linux-x64` 子包，
     用户在一个较旧的发行版上会报 `GLIBC_2.xx not found`。
 
@@ -318,7 +318,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
     为什么必须做（真实故障模式）：缺一个平台 = 该平台用户装不上，
     而 npm 对解析不了的可选依赖是**静默跳过**的——用户侧无任何提示，
-    只在 `npx zace-client` 时才表现为“没有二进制”。故必须在发布前失败，
+    只在 `npx nova-client` 时才表现为“没有二进制”。故必须在发布前失败，
     而不是发布后发现。
     """
     version = main_version()
@@ -373,7 +373,7 @@ def cmd_publish(args: argparse.Namespace) -> int:
     ``--tag``：主包默认发到 **``next``** 而不是 ``latest``。
 
     为什么主包不直接发 latest：npm 发布不可逆，直接发 latest 意味着一旦子包有问题，
-    所有 `npx zace-client@latest` 的用户**立刻**拿到坏包，只能靠升版本修。
+    所有 `npx nova-client@latest` 的用户**立刻**拿到坏包，只能靠升版本修。
     先发 next 则 latest 仍指向旧的好版本，留出验证与补救窗口（后续 ``promote`` 切换）。
     子包不支持 dist-tag 玩法（它们是被主包按版本精确引用的），故 ``--tag`` 仅对主包生效。
 
@@ -419,7 +419,7 @@ def cmd_smoke(args: argparse.Namespace) -> int:
     实测踩过的坑：zip 会丢可执行权限、artifact 混淆可能把别的平台二进制打进包，
     这两类问题**只有真跑一次**才能发现。
 
-    做法：在一个空目录里 `npx --yes --prefer-online zace-client@<tag> --help`，
+    做法：在一个空目录里 `npx --yes --prefer-online nova-client@<tag> --help`，
     以退出码与 stdout 判定（``--help`` 不连服务，不需要 token）。
     """
     version = main_version()

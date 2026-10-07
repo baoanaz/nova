@@ -7,7 +7,7 @@
 
 用法（仓库根，先加载 benchmark.env）：
 
-    set -a; source ~/.config/zace/benchmark.env; set +a
+    set -a; source ~/.config/nova/benchmark.env; set +a
     export no_proxy='*'
     uv run python benches/param_sweep.py            # 全量扫描
     uv run python benches/param_sweep.py --axis score_ratio
@@ -18,7 +18,7 @@
 
 口径与可信度（重要）：
 
-- 命中判定复用 `zace_core.cli.eval`，指标与 `benches/run.py` **逐位一致**——脚本自带
+- 命中判定复用 `nova_core.cli.eval`，指标与 `benches/run.py` **逐位一致**——脚本自带
   `--verify` 会断言离线复算的基线等于官方四靶场报告的合并值，不符即报错（防止"离线口径悄悄漂移"）。
 - embedding 只算一次（真实调用），之后每个配置**用 `copy.deepcopy` 的干净候选重算**。
 
@@ -48,20 +48,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "core"))
 
-from zace_core.cli.eval import first_hit_rank, load_cases, ordered_evidence  # noqa: E402
-from zace_core.contextpack import (  # noqa: E402
+from nova_core.cli.eval import first_hit_rank, load_cases, ordered_evidence  # noqa: E402
+from nova_core.contextpack import (  # noqa: E402
     MODE_FAST,
     assemble,
     budget_for,
     collect_index_signals,
 )
-from zace_core.engine import Engine  # noqa: E402
-from zace_core.retrieval import RecallLimits, recall  # noqa: E402
-from zace_core.retrieval import rerank as rerank_mod  # noqa: E402
-from zace_core.retrieval.expand import ExpansionLimits, expand  # noqa: E402
-from zace_core.retrieval.gap import GapLimits  # noqa: E402
-from zace_core.retrieval.qcache import PersistentQueryVectorCache  # noqa: E402
-from zace_core.retrieval.rerank import RerankWeights, collect_signals, rerank  # noqa: E402
+from nova_core.engine import Engine  # noqa: E402
+from nova_core.retrieval import RecallLimits, recall  # noqa: E402
+from nova_core.retrieval import rerank as rerank_mod  # noqa: E402
+from nova_core.retrieval.expand import ExpansionLimits, expand  # noqa: E402
+from nova_core.retrieval.gap import GapLimits  # noqa: E402
+from nova_core.retrieval.qcache import PersistentQueryVectorCache  # noqa: E402
+from nova_core.retrieval.rerank import RerankWeights, collect_signals, rerank  # noqa: E402
 
 #: 靶场（name, golden 目录, project_id）。含 internal 的 cockpit——它是本卡两个真实失败
 #: 用例的来源，缺它则样本只剩 57 条。
@@ -103,9 +103,9 @@ VERIFY_TOLERANCE = 0.012
 
 
 def default_data_root() -> str:
-    """索引根：`ZACE_BENCH_DATA` 优先，否则用约定位置（复用持久索引，不要重建）。"""
-    return os.environ.get("ZACE_BENCH_DATA") or str(
-        Path.home() / ".zace" / "bench" / "voyage-4-lite-d1024"
+    """索引根：`NOVA_BENCH_DATA` 优先，否则用约定位置（复用持久索引，不要重建）。"""
+    return os.environ.get("NOVA_BENCH_DATA") or str(
+        Path.home() / ".nova" / "bench" / "voyage-4-lite-d1024"
     )
 
 

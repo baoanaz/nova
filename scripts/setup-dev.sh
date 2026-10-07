@@ -25,20 +25,20 @@ if [ ! -e .env ]; then cp .env.example .env; fi
 set -a
 source .env
 set +a
-ZACE_SECRETS_FILE="${ZACE_SECRETS_FILE:-$HOME/.key/zace/secrets.env}"
-case "$(realpath -m "$ZACE_SECRETS_FILE")" in
+NOVA_SECRETS_FILE="${NOVA_SECRETS_FILE:-$HOME/.key/nova/secrets.env}"
+case "$(realpath -m "$NOVA_SECRETS_FILE")" in
   "$ROOT"/*) echo "Credentials must be outside the repository." >&2; exit 2 ;;
 esac
-PRIVATE_DIR="$(dirname "$ZACE_SECRETS_FILE")"
-[ ! -L "$PRIVATE_DIR" ] && [ ! -L "$ZACE_SECRETS_FILE" ] || {
+PRIVATE_DIR="$(dirname "$NOVA_SECRETS_FILE")"
+[ ! -L "$PRIVATE_DIR" ] && [ ! -L "$NOVA_SECRETS_FILE" ] || {
   echo "Credential location is a symlink; review it before setup." >&2; exit 2;
 }
 mkdir -p "$PRIVATE_DIR"
 chmod 700 "$PRIVATE_DIR"
-if [ ! -e "$ZACE_SECRETS_FILE" ]; then
-  printf '%s\n' '# Private API keys; obtain them from the provider.' 'EMBED_API_KEY=' 'ANSWER_API_KEY=' > "$ZACE_SECRETS_FILE"
+if [ ! -e "$NOVA_SECRETS_FILE" ]; then
+  printf '%s\n' '# Private API keys; obtain them from the provider.' 'EMBED_API_KEY=' 'ANSWER_API_KEY=' > "$NOVA_SECRETS_FILE"
 fi
-chmod 600 "$ZACE_SECRETS_FILE" .env
+chmod 600 "$NOVA_SECRETS_FILE" .env
 uv sync --frozen --all-packages --all-extras
 if [ "$WITH_WEB" = 1 ]; then
   command -v npm >/dev/null || { echo "Install Node.js 22 and npm first." >&2; exit 2; }
@@ -49,4 +49,4 @@ if [ "$WITH_CLIENT" = 1 ]; then
   cargo fetch --locked --manifest-path client/Cargo.toml
 fi
 echo "Ready. From the repository root: set -a; source .env; set +a"
-echo "Private API keys belong in $ZACE_SECRETS_FILE; never paste them into logs or issues."
+echo "Private API keys belong in $NOVA_SECRETS_FILE; never paste them into logs or issues."

@@ -1,4 +1,4 @@
-# zace 文档中心
+# nova 文档中心
 
 [返回项目首页](../README.md)
 
@@ -10,7 +10,7 @@
 |---|---|
 | [本地部署](handbook/deployment/local.md) | 安装依赖、配置模型、启动服务与 UI、初始化账户、接入 Agent |
 | [直接使用 core](handbook/getting-started/README.md) | 不启动 Web，使用 CLI 建索引和检索 |
-| [npm 客户端使用](../npm/README.md) | 安装 `zace-client`，配置 Codex、Claude Code、Cursor、pi |
+| [npm 客户端使用](../npm/README.md) | 安装 `nova-client`，配置 Codex、Claude Code、Cursor、pi |
 | [npm 包学习](handbook/getting-started/npm-client.md) | 从启动器到 Rust 二进制，理解六个平台包和发布流程 |
 | [架构介绍](architecture/README.md) | 模块职责、数据流、检索与问答的边界、源码阅读路线 |
 | [Web 开发与品牌](../web/README.md) | 前端页面、开发代理、主题和显示名称配置 |

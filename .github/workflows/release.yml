@@ -1,11 +1,11 @@
-# 发布 zace-client：构建 6 平台二进制 → 发 npm 平台子包 → 发主包 → 验证 → 切 latest。
+# 发布 nova-client：构建 6 平台二进制 → 发 npm 平台子包 → 发主包 → 验证 → 切 latest。
 #
 # 触发：推送 v* tag（或手动 dispatch）。
 #
 # ## 唯一的二进制分发渠道是 npm（D-48/D-49）
 #
 # 不再发 GitHub Release 二进制资产、也不再有「包装器从 GitHub 下载」这条路。
-# 用户拿二进制的方式**只有**：npm 按子包的 `os`/`cpu` 装 `zace-client-<os>-<arch>`。
+# 用户拿二进制的方式**只有**：npm 按子包的 `os`/`cpu` 装 `nova-client-<os>-<arch>`。
 #
 # 为什么（实测 2026-09-16）：Node 默认不读 `https_proxy`（只认 `NODE_USE_ENV_PROXY=1`），
 # 代理环境里直连 GitHub 会命中共享出口 IP 的 403 rate limit（curl 走代理 200、node 直连 403）；
@@ -23,7 +23,7 @@
 # ## 为什么主包先发 `next` 而不是直接 `latest`
 #
 # npm 发布**不可逆**（同一版本不能重发）。直接发 latest 意味着：一旦子包有问题，
-# 所有 `npx zace-client@latest` 的用户**立刻**拿到坏包，只能靠升版本修。
+# 所有 `npx nova-client@latest` 的用户**立刻**拿到坏包，只能靠升版本修。
 # 先发 next 则 latest 仍指向旧的好版本——用户不受影响，我们有时间验证与补救。
 #
 # ## 为什么 macOS 不用 universal（lipo）
@@ -57,40 +57,40 @@ jobs:
           - suffix: linux-x64
             os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            binary_name: zace-client
-            npm_binary: zace-client
+            binary_name: nova-client
+            npm_binary: nova-client
             cross: false
           - suffix: linux-arm64
             os: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            binary_name: zace-client
-            npm_binary: zace-client
+            binary_name: nova-client
+            npm_binary: nova-client
             cross: true            # x86_64 runner 上编 aarch64-musl 需要 cross
           # ---- macOS（两个架构各自独立，不用 lipo）----
           - suffix: darwin-x64
             os: macos-latest
             target: x86_64-apple-darwin
-            binary_name: zace-client
-            npm_binary: zace-client
+            binary_name: nova-client
+            npm_binary: nova-client
             cross: false
           - suffix: darwin-arm64
             os: macos-latest
             target: aarch64-apple-darwin
-            binary_name: zace-client
-            npm_binary: zace-client
+            binary_name: nova-client
+            npm_binary: nova-client
             cross: false
           # ---- Windows ----
           - suffix: windows-x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            binary_name: zace-client.exe
-            npm_binary: zace-client.exe
+            binary_name: nova-client.exe
+            npm_binary: nova-client.exe
             cross: false
           - suffix: windows-arm64
             os: windows-latest
             target: aarch64-pc-windows-msvc
-            binary_name: zace-client.exe
-            npm_binary: zace-client.exe
+            binary_name: nova-client.exe
+            npm_binary: nova-client.exe
             cross: false
 
     defaults:
@@ -139,7 +139,7 @@ jobs:
             "$env:GITHUB_WORKSPACE/client/dist/${{ matrix.npm_binary }}"
 
       # **每个平台一个 artifact**，名字即后缀：不能用 merge-multiple 汇总，
-      # 因为多个平台的文件名相同（`zace-client` / `zace-client.exe`），
+      # 因为多个平台的文件名相同（`nova-client` / `nova-client.exe`），
       # 汇到一个目录再用 `find | head -1` 定位会随机取到**别的平台**。
       - uses: actions/upload-artifact@v4
         with:
@@ -178,12 +178,12 @@ jobs:
             fi
             python3 scripts/make-platform-packages.py stage --suffix "$suffix" --binary "$found"
           }
-          stage_one linux-x64    zace-client
-          stage_one linux-arm64  zace-client
-          stage_one darwin-x64   zace-client
-          stage_one darwin-arm64 zace-client
-          stage_one windows-x64    zace-client.exe
-          stage_one windows-arm64  zace-client.exe
+          stage_one linux-x64    nova-client
+          stage_one linux-arm64  nova-client
+          stage_one darwin-x64   nova-client
+          stage_one darwin-arm64 nova-client
+          stage_one windows-x64    nova-client.exe
+          stage_one windows-arm64  nova-client.exe
 
       - name: Guard (versions + 6 platform packages present)
         run: |

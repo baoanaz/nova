@@ -32,12 +32,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_service import audit
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import QUERY_AUDIT_KEEP, MetaDB
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_service import audit
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import QUERY_AUDIT_KEEP, MetaDB
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -52,8 +52,8 @@ ANSWERABLE_QUERY = "TokenService.refresh_token"
 #: 必然 "证据不足" 的查询（假 provider 下 answerable=false）。
 INSUFFICIENT_QUERY = "zzzz qqqq 与语料完全无关的主题"
 #: 真实 key 形态的敏感串（脱敏断言用；与 ``test_error_mapping`` 同一形态）。
-FAKE_API_KEY = "zace_SHOULD-NOT-LEAK-abc123XYZ"
-#: 开源生态里常见形态的裸 key（没有 ``zace_`` 前缀，靠键名规则脱敏）。
+FAKE_API_KEY = "nova_SHOULD-NOT-LEAK-abc123XYZ"
+#: 开源生态里常见形态的裸 key（没有 ``nova_`` 前缀，靠键名规则脱敏）。
 FAKE_OPENAI_KEY = "sk-live-SHOULD-NOT-LEAK-abc123"
 #: 内网 endpoint 形态（说明：``redact_text`` 不脱敏 URL，只有 ``api_key=`` 这类键值才脱）。
 FAKE_ENDPOINT = "https://internal-embedding.example.com/v1"
@@ -76,7 +76,7 @@ def _make(tmp_path: Path, **overrides: object) -> tuple[FastAPI, EngineManager, 
     )
     app = create_app(settings)
     # 本地模式默认不建库（R34 无账户体系），但审计与索引历史都需要它：与
-    # ``zace-service local`` 的实际启动路径一致（__main__ 里同样显式注入）。
+    # ``nova-service local`` 的实际启动路径一致（__main__ 里同样显式注入）。
     app.state.meta_db = MetaDB.open(settings.meta_db_path)
     app.state.engine_manager = manager
     return app, manager, make_client(app)
@@ -367,7 +367,7 @@ def test_secrets_are_redacted_before_storage(usage: SimpleNamespace) -> None:
     _search(usage, f"sk 形态也试一下 {FAKE_OPENAI_KEY} 与 {FAKE_OPENAI_KEY}")
 
     for row in _rows(usage):
-        assert FAKE_API_KEY not in row["query"], "裸 zace_ key 不得落库"
+        assert FAKE_API_KEY not in row["query"], "裸 nova_ key 不得落库"
         assert FAKE_OPENAI_KEY not in row["query"], "裸 sk- key 不得落库"
         assert "***" in row["query"], f"脱敏占位符应当在：{row['query']}"
     assert _rows(usage)[0]["query"].count("***") >= 1

@@ -78,7 +78,7 @@ export function Layout({
         ref={sidebarRef}
         id="app-sidebar"
         data-testid="sidebar"
-        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r-2 border-ink-line bg-paper-raised transition-transform duration-200 md:visible md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-ink-line bg-paper-raised transition-transform duration-200 md:visible md:translate-x-0 ${
           drawerOpen ? "visible translate-x-0 shadow-xl" : "invisible -translate-x-full"
         }`}
       >
@@ -141,7 +141,7 @@ export function Layout({
         )}
       </aside>
 
-      <header className="sticky top-0 z-30 flex min-h-16 items-center gap-4 border-b-2 border-ink-line bg-paper-raised px-4 py-3 md:hidden">
+      <header className="sticky top-0 z-30 flex min-h-16 items-center gap-4 border-b border-ink-line bg-paper-raised px-4 py-3 md:hidden">
         <button
           ref={menuRef}
           type="button"
@@ -155,7 +155,7 @@ export function Layout({
       </header>
 
       {drawerOpen && (
-        <button type="button" aria-label="关闭导航抽屉" onClick={() => setDrawerOpen(false)} className="fixed inset-0 z-30 cursor-default bg-ink-primary/25 md:hidden" />
+        <button type="button" aria-label="关闭导航抽屉" onClick={() => setDrawerOpen(false)} className="fixed inset-0 z-30 cursor-default bg-black/60 md:hidden" />
       )}
 
       <div className="min-w-0 md:pl-64">

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.chunking import (
+from nova_core.chunking import (
     EMBEDDING_DIM_KEY,
     EMBEDDING_MODEL_KEY,
     PARSER_CONFIG_KEY,
@@ -15,9 +15,9 @@ from zace_core.chunking import (
     stored_fingerprint,
     write_fingerprint,
 )
-from zace_core.chunking.fingerprint import PARSER_CONFIG_VERSION
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.storage import Store
+from nova_core.chunking.fingerprint import PARSER_CONFIG_VERSION
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.storage import Store
 
 PROFILE = EmbeddingProfile(model_id="local:multilingual-e5-small", dim=384, max_input_tokens=512)
 

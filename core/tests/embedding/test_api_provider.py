@@ -12,19 +12,19 @@ from collections.abc import Callable
 import httpx
 import numpy as np
 import pytest
-from zace_core.embedding.api import (
+from nova_core.embedding.api import (
     OpenAiCompatibleEmbeddingProvider,
     build_default_client,
     embeddings_endpoint,
 )
-from zace_core.embedding.base import (
+from nova_core.embedding.base import (
     ApiAuthError,
     ApiNetworkError,
     ApiRateLimitError,
     ApiResponseError,
     EmbeddingDimMismatchError,
 )
-from zace_core.embedding.registry import API_MODELS, ApiModelSpec
+from nova_core.embedding.registry import API_MODELS, ApiModelSpec
 
 SPEC = ApiModelSpec(name="bge-m3", dim=4, max_input_tokens=512)
 API_KEY = "sk-test-secret-key-123456"

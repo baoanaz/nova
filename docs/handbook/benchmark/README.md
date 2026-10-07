@@ -2,7 +2,7 @@
 
 [文档中心](../../README.md) · [公共靶场与 runner](../../../benches/README.md) · [历史报告](../../../benches/results/README.md)
 
-zace 的评测分别回答三个问题：**找得准不准、索引与检索有多快、最终回答有没有依据**。三类结果分开报告，并绑定输入版本、模型、配置和硬件。
+nova 的评测分别回答三个问题：**找得准不准、索引与检索有多快、最终回答有没有依据**。三类结果分开报告，并绑定输入版本、模型、配置和硬件。
 
 ## 1. 评测层次与现有工具
 
@@ -18,7 +18,7 @@ zace 的评测分别回答三个问题：**找得准不准、索引与检索有�
 
 ## 2. 固定输入与配置
 
-默认公共质量回归包括 `leveldb-v1`、`helloagents-v1`、`langchain-v1`，另有教程仓 `hello-agents` 与 `zace` 自检。清单以 [targets.json](../../../benches/targets.json) 为准：
+默认公共质量回归包括 `leveldb-v1`、`helloagents-v1`、`langchain-v1`，另有教程仓 `hello-agents` 与 `nova` 自检。清单以 [targets.json](../../../benches/targets.json) 为准：
 
 ```bash
 uv run python benches/run.py --list-targets
@@ -26,7 +26,7 @@ uv run python benches/run.py --list-targets
 
 为每次对照固定：
 
-- zace commit 与工作树是否有未提交修改。
+- nova commit 与工作树是否有未提交修改。
 - 靶场 URL、commit、golden 用例版本与样本量。
 - embedding 模式、模型、维度、批大小、并发和消费者数。
 - 检索预算、参数、查询向量缓存与 replay 状态。
@@ -34,7 +34,7 @@ uv run python benches/run.py --list-targets
 
 质量清单的 LangChain 版本为 `41d3572`；性能复测采用 `e75dae1f53c99c2b5ddb0c7bb36022c6aea25569`。两者的文件数、chunk 数和耗时不能混用。清单中历史 projectId 只表示旧索引的绑定，不代表新机器已经具备对应索引。
 
-外部靶场放在 zace 仓库外，只读使用其源码，遵守其自身协议。
+外部靶场放在 nova 仓库外，只读使用其源码，遵守其自身协议。
 
 ## 3. 质量回归：首次运行
 
@@ -42,16 +42,16 @@ uv run python benches/run.py --list-targets
 
 ```bash
 # 将路径改成已准备好的靶场和对应公共用例。
-ZACE_BENCH_REPO=/绝对路径/公共靶场
-ZACE_BENCH_GOLDEN=benches/golden/对应目录
-ZACE_QUALITY_DATA=.local/bench/quality
+NOVA_BENCH_REPO=/绝对路径/公共靶场
+NOVA_BENCH_GOLDEN=benches/golden/对应目录
+NOVA_QUALITY_DATA=.local/bench/quality
 
-uv run zace-core ingest --repo "$ZACE_BENCH_REPO" --data "$ZACE_QUALITY_DATA"
+uv run nova-core ingest --repo "$NOVA_BENCH_REPO" --data "$NOVA_QUALITY_DATA"
 uv run python benches/run.py \
-  --repo "$ZACE_BENCH_REPO" \
-  --golden "$ZACE_BENCH_GOLDEN" \
-  --data "$ZACE_QUALITY_DATA" \
-  --report "$ZACE_QUALITY_DATA/report.md" \
+  --repo "$NOVA_BENCH_REPO" \
+  --golden "$NOVA_BENCH_GOLDEN" \
+  --data "$NOVA_QUALITY_DATA" \
+  --report "$NOVA_QUALITY_DATA/report.md" \
   --max-tokens 10000
 ```
 
@@ -134,7 +134,7 @@ bash scripts/benchmark-vps.sh full /绝对路径/langchain
 
 ```text
 评测目标与 UTC 日期：
-zace commit / 工作树状态：
+nova commit / 工作树状态：
 靶场 URL / commit / 文件与 chunks 数：
 golden 版本 / 样本量：
 设备 / 操作系统 / 数据盘：

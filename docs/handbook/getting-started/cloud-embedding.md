@@ -12,12 +12,12 @@
 
 ## 0. 为什么需要本手册
 
-照硅基流动官方文档配置 zace，**默认跑不通**，且失败原因不明显：
+照硅基流动官方文档配置 nova，**默认跑不通**，且失败原因不明显：
 
 | 现象 | 真实输出 |
 |---|---|
 | 用 registry 里登记的裸名 | API 直接拒绝：`{"code":20012,"message":"Model does not exist..."}` |
-| 照官方文档填全名（旧版 zace） | registry 拒绝：`EmbeddingConfigError: 未登记的 API 模型 'BAAI/bge-m3'` |
+| 照官方文档填全名（旧版 nova） | registry 拒绝：`EmbeddingConfigError: 未登记的 API 模型 'BAAI/bge-m3'` |
 | 旧版唯一可行路径 | 同时给 `EMBED_MODEL=BAAI/bge-m3` **且** `EMBED_DIM=1024` —— 这条路不在任何文档里 |
 
 TASK-046 修掉后：
@@ -44,9 +44,9 @@ esac
 **只有交互式终端才会执行到那一行之后**。实测（本机复现）：
 
 ```console
-$ bash -c  'echo "${zace_embeding_API_KEY:-NO}"'   # 子进程 / 脚本 / CI 的真实处境
+$ bash -c  'echo "${nova_embeding_API_KEY:-NO}"'   # 子进程 / 脚本 / CI 的真实处境
 NO
-$ bash -lc 'echo "${zace_embeding_API_KEY:-NO}"'   # 登录 shell 同样拿不到
+$ bash -lc 'echo "${nova_embeding_API_KEY:-NO}"'   # 登录 shell 同样拿不到
 NO
 ```
 
@@ -66,7 +66,7 @@ NO
 **为什么不推荐 `.bashrc`**：非交互进程拿不到（见 §1.1），且把 key 与项目绑定关系藏在 shell 配置里，换机器就丢。
 
 ```console
-$ cd /path/to/zace-workspace
+$ cd /path/to/nova-workspace
 $ cp .env.example .env
 $ # 把真实 key 填进 .env（或从 ~/.bashrc 提取，见下）
 $ set -a; source .env; set +a
@@ -75,7 +75,7 @@ $ set -a; source .env; set +a
 `.env` 里的 `EMBED_API_KEY` 可以从 `~/.bashrc` 提取（**该命令只出现变量名，key 本体不落任何文件**）：
 
 ```console
-$ export EMBED_API_KEY=$(sed -n 's/^export zace_embeding_API_KEY=//p' ~/.bashrc | tr -d '"')
+$ export EMBED_API_KEY=$(sed -n 's/^export nova_embeding_API_KEY=//p' ~/.bashrc | tr -d '"')
 ```
 
 > 备选做法：每条命令前显式 `export`（适合一次性调试），或让 service 读进程环境（service 读的是**进程环境**，
@@ -98,11 +98,11 @@ $ export NO_PROXY=127.0.0.1,localhost
 
 ```console
 # --- 0) 依赖 ---
-$ cd /path/to/zace-workspace
+$ cd /path/to/nova-workspace
 $ uv sync --all-packages --all-extras
 
 # --- 1) key（不写进仓库）---
-$ export EMBED_API_KEY=$(sed -n 's/^export zace_embeding_API_KEY=//p' ~/.bashrc | tr -d '"')
+$ export EMBED_API_KEY=$(sed -n 's/^export nova_embeding_API_KEY=//p' ~/.bashrc | tr -d '"')
 
 # --- 2) 云端 embedding 配置 ---
 $ export EMBED_MODE=api
@@ -112,18 +112,18 @@ $ export NO_PROXY=127.0.0.1,localhost     # 本机有代理时必须
 
 # --- 3) 先验证配置与连通性（不打索引，秒级）---
 $ uv run python - <<'PY'
-from zace_core.embedding.factory import create_provider
+from nova_core.embedding.factory import create_provider
 p = create_provider()          # 读环境变量
 print(p.profile)
 PY
-$ uv run zace-core status --repo /home/xuwenzheng/github/hello-agents --data /tmp/zace-ha   # 索引现状（首次可跳过）
+$ uv run nova-core status --repo /home/xuwenzheng/github/hello-agents --data /tmp/nova-ha   # 索引现状（首次可跳过）
 
 # --- 4) 索引一个仓库（首次全量；长文档仓库需要几分钟）---
-$ uv run zace-core ingest --repo /home/xuwenzheng/github/hello-agents --data /tmp/zace-ha
+$ uv run nova-core ingest --repo /home/xuwenzheng/github/hello-agents --data /tmp/nova-ha
 
 # --- 5) 检索验证 ---
-$ uv run zace-core search "ReAct 范式是怎么实现的？" \
-    --repo /home/xuwenzheng/github/hello-agents --data /tmp/zace-ha
+$ uv run nova-core search "ReAct 范式是怎么实现的？" \
+    --repo /home/xuwenzheng/github/hello-agents --data /tmp/nova-ha
 ```
 
 ### 2.1 我实测的输出
@@ -131,7 +131,7 @@ $ uv run zace-core search "ReAct 范式是怎么实现的？" \
 第 3 步（profile）：
 
 ```console
-$ uv run python -c "from zace_core.embedding.factory import create_provider; print(create_provider().profile)"
+$ uv run python -c "from nova_core.embedding.factory import create_provider; print(create_provider().profile)"
 EmbeddingProfile(model_id='api:bge-m3', dim=1024, max_input_tokens=8192)
 ```
 
@@ -209,7 +209,7 @@ elapsed: 290.2s
 - 付费档为 ¥0.07/M tokens 量级，10 人日常用量远低于"月 10 元"预算；
 - 429 处理：`api.py` 已有**指数退避 + `Retry-After`**（上限 30s），最多重试 2 次，最终抛 `ApiRateLimitError`（不会无限重试）；
 - **本机实测到的注意点**：多个进程/多个泳道**共用同一个 key** 时会互相抢配额，表现为远低于 500K TPM 就 429。
-  排查顺序：① 确认没有别的 `zace-core ingest` 在跑；② 等一个配额窗口（约 1 分钟）再试；③ 缩小 `EMBED_BATCH_SIZE`。
+  排查顺序：① 确认没有别的 `nova-core ingest` 在跑；② 等一个配额窗口（约 1 分钟）再试；③ 缩小 `EMBED_BATCH_SIZE`。
 
 ### 4.4 分批与截断（为什么长仓库现在能跑完）
 
@@ -245,7 +245,7 @@ elapsed: 290.2s
 {"code":20012,"message":"Model does not exist. Please check it carefully.","data":null}
 ```
 
-原因：`model` 字段发了裸名。修复后 zace 会自动替换为 `BAAI/bge-m3`；
+原因：`model` 字段发了裸名。修复后 nova 会自动替换为 `BAAI/bge-m3`；
 若你手工调 API，请直接用全名。
 
 ### 6.2 `未登记的 API 模型 ... 必须显式提供 dim`
@@ -256,7 +256,7 @@ EmbeddingConfigError: 未登记的 API 模型 'xxx'：必须显式提供 dim（E
 已登记别名：['BAAI/bge-m3']
 ```
 
-原因：填了一个 zace 不认识的模型名。要么改成 `BAAI/bge-m3` / `bge-m3`，
+原因：填了一个 nova 不认识的模型名。要么改成 `BAAI/bge-m3` / `bge-m3`，
 要么**明确**给出 `EMBED_DIM`（例如自建服务）。
 
 ### 6.3 `The parameter is invalid`（400 code=20015）
@@ -265,7 +265,7 @@ EmbeddingConfigError: 未登记的 API 模型 'xxx'：必须显式提供 dim（E
 {"code":20015,"message":"The parameter is invalid. Please check again.","data":null}
 ```
 
-原因：某条输入超过 8192 token。修复后 zace 会截断；若仍出现，说明你在手工调 API，
+原因：某条输入超过 8192 token。修复后 nova 会截断；若仍出现，说明你在手工调 API，
 或 `EMBED_MAX_INPUT_TOKENS` 被设成了模型不支持的值。
 
 ### 6.4 `Request was rejected due to rate limiting ... TPM limit reached`
@@ -289,7 +289,7 @@ ApiRateLimitError: embedding 被限流（HTTP 429，...，已尝试 3 次）；
 $ set -a; source .env; set +a
 $ uv run python - <<'PY'
 import os
-from zace_core.embedding.factory import create_provider
+from nova_core.embedding.factory import create_provider
 print("EMBED_MODE   =", os.environ.get("EMBED_MODE"))
 print("EMBED_MODEL  =", os.environ.get("EMBED_MODEL"))
 print("key 已注入   =", bool(os.environ.get("EMBED_API_KEY")))   # 只打印布尔值，绝不打印 key

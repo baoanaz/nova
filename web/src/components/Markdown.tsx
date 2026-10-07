@@ -11,7 +11,7 @@ import remarkGfm from "remark-gfm";
 
 export function Markdown({ source }: { source: string }) {
   return (
-    <div className="zace-markdown">
+    <div className="nova-markdown">
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{

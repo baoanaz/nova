@@ -206,7 +206,7 @@ export function SettingsPage() {
               {usingUser ? "（你的配置）" : "（服务端默认）"}
             </span>
           ) : (
-            <span className="text-xs text-amber-700">未配置</span>
+            <span className="text-xs text-warning-text">未配置</span>
           )
         }
       >
@@ -230,7 +230,7 @@ export function SettingsPage() {
         {saveError !== null && (
           <p
             data-testid="llm-save-error"
-            className="mb-3 rounded border border-amber-700 px-3 py-2 text-xs text-amber-700"
+            className="mb-3 rounded border border-warning-line px-3 py-2 text-xs text-warning-text"
           >
             {errorHint(saveError) ?? "保存失败，请稍后再试。"}
           </p>
@@ -316,7 +316,7 @@ export function SettingsPage() {
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-accent-seal px-4 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              className="rounded bg-accent-seal px-4 py-1.5 text-sm font-medium text-accent-contrast disabled:opacity-40"
             >
               保存
             </button>
@@ -356,7 +356,7 @@ export function SettingsPage() {
         {testResult !== null && <TestResultPanel result={testResult} />}
 
         {!llm.configured && !usingUser && llm.missingEnv.length > 0 && (
-          <p className="mt-3 text-xs text-amber-700">
+          <p className="mt-3 text-xs text-warning-text">
             尚未配置总结模型。请在上方填写模型名、接口地址和 API Key；保存后
             ask_project 才会生成总结，未配置时只返回检索结果。
           </p>
@@ -380,8 +380,8 @@ function TestResultPanel({ result }: { result: LlmTestResult }) {
    * 的最短路径；而这两个场景正是实测中真实发生过的配置错误。
    */
   const tone = result.ok
-    ? "border-emerald-700 text-emerald-800"
-    : "border-amber-700 text-amber-800";
+    ? "border-success-line text-success-text"
+    : "border-warning-line text-warning-text";
   return (
     <div
       data-testid="llm-test-result"

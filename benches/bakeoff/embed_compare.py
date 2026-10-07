@@ -23,8 +23,8 @@ uv run python benches/bakeoff/embed_compare.py fetch --model all
 
 # 建索引 + 跑 golden（每个 (模型, 仓库) 一次；可断点续跑）
 uv run python benches/bakeoff/embed_compare.py run \
-  --model multilingual-e5-small --repo . --repo-name zace \
-  --golden benches/golden/zace
+  --model multilingual-e5-small --repo . --repo-name nova \
+  --golden benches/golden/nova
 
 # 汇总报告（纯数字部分，报告正文由 benches/results/phase2-bakeoff.md 撰写引用）
 uv run python benches/bakeoff/embed_compare.py aggregate --report /tmp/bakeoff-raw.md
@@ -32,14 +32,14 @@ uv run python benches/bakeoff/embed_compare.py aggregate --report /tmp/bakeoff-r
 
 默认路径（可用参数覆盖）：
 
-- 数据根基目录：``~/.cache/zace-bakeoff``（每 key 一个子目录）；
-- 中间结果目录：``~/.cache/zace-bakeoff/results``（**故意落在仓库外**：``benches/**`` 在 dogfood
+- 数据根基目录：``~/.cache/nova-bakeoff``（每 key 一个子目录）；
+- 中间结果目录：``~/.cache/nova-bakeoff/results``（**故意落在仓库外**：``benches/**`` 在 dogfood
   索引范围内，把含 query 原文的原始报告写进仓库会污染负例口径，见 R17 / phase1-baseline §4.2）；
-- 模型缓存目录：``~/.cache/zace-embedding-cache``。
+- 模型缓存目录：``~/.cache/nova-embedding-cache``。
 
 **为什么不用 ``/tmp``**（2026-09-11 实测，写入任务卡执行记录）：本机在 2026-09-11 00:07:55 重启，
-``/tmp`` 被整体清空——任务卡给出的三个现成数据根（``/tmp/zace-aibox`` 等）与模型缓存
-（``/tmp/zace-embedding-cache``，含已下载的 e5-small/arctic-xs）全部丢失，一轮已完成的
+``/tmp`` 被整体清空——任务卡给出的三个现成数据根（``/tmp/nova-aibox`` 等）与模型缓存
+（``/tmp/nova-embedding-cache``，含已下载的 e5-small/arctic-xs）全部丢失，一轮已完成的
 13 分钟索引也一并作废。bake-off 是小时级任务，中间产物必须放在重启后仍存在的路径上。
 """
 
@@ -64,12 +64,12 @@ ROOT = Path(__file__).resolve().parents[2]
 
 #: 默认数据根基目录（每个 key 一个独立数据根）。
 #: 注意：**不要放 /tmp**——2026-09-11 00:07 本机重启把 /tmp 清空，一轮 13 分钟的索引作废。
-DEFAULT_DATA_ROOT_BASE = Path.home() / ".cache" / "zace-bakeoff"
+DEFAULT_DATA_ROOT_BASE = Path.home() / ".cache" / "nova-bakeoff"
 #: 默认中间结果目录（仓库外，避免污染 dogfood 索引范围）。
 DEFAULT_RESULTS_DIR = DEFAULT_DATA_ROOT_BASE / "results"
 #: 默认模型缓存目录（重启后幸存；体积 ~1.2GB，重下载代价高）。
-DEFAULT_CACHE_DIR = Path.home() / ".cache" / "zace-embedding-cache"
-#: 检索预算（与 ``zace-core eval`` 的 ``DEFAULT_MAX_TOKENS`` 一致，一处都不许改）。
+DEFAULT_CACHE_DIR = Path.home() / ".cache" / "nova-embedding-cache"
+#: 检索预算（与 ``nova-core eval`` 的 ``DEFAULT_MAX_TOKENS`` 一致，一处都不许改）。
 MAX_TOKENS = 10_000
 #: 查询侧嵌入微基准：采样查询数 × 重复次数。
 QUERY_EMBED_SAMPLES = 8
@@ -85,7 +85,7 @@ QUERY_EMBED_REPEATS = 3
 class Candidate:
     """一个候选模型（本地 ONNX）。
 
-    ``registered=False`` 的候选不在 ``zace_core.embedding.registry`` 里（本卡不得改注册表，
+    ``registered=False`` 的候选不在 ``nova_core.embedding.registry`` 里（本卡不得改注册表，
     只在报告里给结论）——脚本用 ``LocalModelSpec`` 就地构造，走同一个本地实现。
     """
 
@@ -163,7 +163,7 @@ def candidate_for(slug: str) -> Candidate:
 
 def spec_for(candidate: Candidate, max_input_tokens: int) -> Any:
     """构造 ``LocalModelSpec``（已登记模型读注册表后覆盖截断值；未登记模型就地构造）。"""
-    from zace_core.embedding import LocalModelSpec, get_local_spec
+    from nova_core.embedding import LocalModelSpec, get_local_spec
 
     if candidate.registered:
         return replace(get_local_spec(candidate.slug), max_input_tokens=max_input_tokens)
@@ -563,7 +563,7 @@ def _resume_ok(
 
 def _stored_fingerprint(project_dir: Path) -> dict[str, Any]:
     """读库内 ``index_config`` 指纹（判断该数据根是不是同一个模型建的）。"""
-    from zace_core.storage import Store
+    from nova_core.storage import Store
 
     info_path = project_dir / "index.db"
     if not info_path.is_file():
@@ -578,8 +578,8 @@ def _stored_fingerprint(project_dir: Path) -> dict[str, Any]:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    from zace_core.embedding import LocalOnnxEmbeddingProvider
-    from zace_core.engine import Engine
+    from nova_core.embedding import LocalOnnxEmbeddingProvider
+    from nova_core.engine import Engine
 
     candidate = candidate_for(args.model)
     max_input_tokens = args.max_input_tokens or candidate.max_input_tokens
@@ -709,7 +709,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             print(f"[run] {key} @ {repo_name}: golden 评估已完成，跳过（断点续跑）")
             return 0
 
-        from zace_core.cli.eval import load_cases, run_golden, write_report
+        from nova_core.cli.eval import load_cases, run_golden, write_report
 
         cases = load_cases(golden)
         if not cases:
@@ -930,7 +930,7 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         f"内存 {machine.get('mem_total_kb', 0) / 1024 / 1024:.1f} GiB｜"
         f"onnxruntime {machine.get('onnxruntime', '?')}"
     )
-    lines.append(f"- 检索预算 maxTokens={MAX_TOKENS}（与 `zace-core eval` 默认一致）")
+    lines.append(f"- 检索预算 maxTokens={MAX_TOKENS}（与 `nova-core eval` 默认一致）")
     lines.append("")
 
     # 模型文件

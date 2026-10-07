@@ -11,7 +11,7 @@ const expectedHash = Buffer.from(credentials.hash, "hex");
 if (expectedHash.length !== 64 || !credentials.name || !credentials.salt) throw new Error("演示站凭据无效");
 const deriveKey = promisify(scrypt);
 const sessions = new Map();
-const cookieName = "zace_ui_demo";
+const cookieName = "nova_ui_demo";
 const sessionSeconds = 12 * 60 * 60;
 
 function reply(res, status, data, headers = {}) {

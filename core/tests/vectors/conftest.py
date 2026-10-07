@@ -9,14 +9,14 @@ import pytest
 
 def pytest_configure(config: pytest.Config) -> None:
     config.addinivalue_line(
-        "markers", "slow: 规模冒烟测试（默认跳过；ZACE_RUN_SLOW=1 时运行）"
+        "markers", "slow: 规模冒烟测试（默认跳过；NOVA_RUN_SLOW=1 时运行）"
     )
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
-    if os.environ.get("ZACE_RUN_SLOW") == "1":
+    if os.environ.get("NOVA_RUN_SLOW") == "1":
         return
-    skip = pytest.mark.skip(reason="规模冒烟默认跳过（ZACE_RUN_SLOW=1 启用）")
+    skip = pytest.mark.skip(reason="规模冒烟默认跳过（NOVA_RUN_SLOW=1 启用）")
     for item in items:
         if "slow" in item.keywords:
             item.add_marker(skip)

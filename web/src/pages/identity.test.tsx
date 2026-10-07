@@ -118,7 +118,7 @@ describe("创建 Key 弹窗（TASK-110 §1.7 改版）", () => {
     expect(within(dialog).getByLabelText(/名称/)).toBeInTheDocument();
   });
 
-  it("内测用户弹窗里有「🧭 拓荒者特权 · 可自定义 Key，必须以 zace_ 开头」", async () => {
+  it("内测用户弹窗里有「🧭 拓荒者特权 · 可自定义 Key，必须以 nova_ 开头」", async () => {
     stubRoutes({ "/api/auth/me": BETA_ACCOUNT, "/api/auth/tokens": [] });
     const user = userEvent.setup();
     renderInRouter(<ApiKeysPage />);
@@ -128,8 +128,8 @@ describe("创建 Key 弹窗（TASK-110 §1.7 改版）", () => {
     const dialog = await screen.findByRole("dialog");
 
     expect(within(dialog).getByText("🧭 拓荒者特权")).toBeInTheDocument();
-    expect(within(dialog).getByText(/可自定义 Key，必须以 zace_ 开头/)).toBeInTheDocument();
-    expect(within(dialog).getByPlaceholderText("zace_my-laptop-key-2026")).toBeInTheDocument();
+    expect(within(dialog).getByText(/可自定义 Key，必须以 nova_ 开头/)).toBeInTheDocument();
+    expect(within(dialog).getByPlaceholderText("nova_my-laptop-key-2026")).toBeInTheDocument();
   });
 
   it("管理员弹窗里显示的是「执炬者特权」", async () => {
@@ -156,16 +156,16 @@ describe("创建 Key 弹窗（TASK-110 §1.7 改版）", () => {
     // 名称行在、自定义行不在（用户要求"普通用户看不见这个 key 行"）。
     expect(within(dialog).getByLabelText(/名称/)).toBeInTheDocument();
     expect(within(dialog).queryByText(/特权/)).toBeNull();
-    expect(within(dialog).queryByPlaceholderText("zace_my-laptop-key-2026")).toBeNull();
+    expect(within(dialog).queryByPlaceholderText("nova_my-laptop-key-2026")).toBeNull();
   });
 
   it("创建成功后弹窗展示明文并提供复制", async () => {
     stubRoutes({
       "/api/auth/me": BETA_ACCOUNT,
-      "/api/auth/tokens": [{ id: "k1", name: "laptop", prefix: "zace_my-lap", createdAt: 1, lastUsedAt: null, isCustom: true }],
+      "/api/auth/tokens": [{ id: "k1", name: "laptop", prefix: "nova_my-lap", createdAt: 1, lastUsedAt: null, isCustom: true }],
     });
     // 创建接口的响应要带明文；用独立的 fetch 桩覆盖。
-    const created = { id: "k1", token: "zace_mytest", prefix: "zace_mytest", name: "laptop", isCustom: true };
+    const created = { id: "k1", token: "nova_mytest", prefix: "nova_mytest", name: "laptop", isCustom: true };
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -187,7 +187,7 @@ describe("创建 Key 弹窗（TASK-110 §1.7 改版）", () => {
     await user.click(await screen.findByRole("button", { name: "创建" }));
 
     // 结果视图：明文可见 + 有复制按钮。
-    expect(await screen.findByText("zace_mytest")).toBeInTheDocument();
+    expect(await screen.findByText("nova_mytest")).toBeInTheDocument();
     expect(screen.getByText(/唯一一次/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /复制 Key/ })).toBeInTheDocument();
   });

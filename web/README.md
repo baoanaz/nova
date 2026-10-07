@@ -1,8 +1,8 @@
-# zace-web
+# nova-web
 
 [文档中心](../docs/README.md) · [本地部署](../docs/handbook/deployment/local.md) · [UI 演示部署](demo/README.md)
 
-zace 的 React / Vite 管理界面：账户、项目、MCP 接入、API Key、历史记录、模型设置与管理员后台。页面通过 REST API 与 zace-service 通信，代码检索和问答由服务端与 Agent 完成。
+nova 的 React / Vite 管理界面：账户、项目、MCP 接入、API Key、历史记录、模型设置与管理员后台。页面通过 REST API 与 nova-service 通信，代码检索和问答由服务端与 Agent 完成。
 
 ## 页面
 
@@ -28,7 +28,7 @@ zace 的 React / Vite 管理界面：账户、项目、MCP 接入、API Key、�
 终端 A：
 
 ```bash
-uv run zace-service serve --host 127.0.0.1 --port 8787
+uv run nova-service serve --host 127.0.0.1 --port 8787
 ```
 
 终端 B：
@@ -37,17 +37,17 @@ uv run zace-service serve --host 127.0.0.1 --port 8787
 npm --prefix web run dev -- --host 127.0.0.1 --strictPort
 ```
 
-打开 <http://127.0.0.1:5173>。Vite 将 `/api`、`/healthz` 代理到 `ZACE_WEB_API`，默认是 `http://127.0.0.1:8787`。
+打开 <http://127.0.0.1:5173>。Vite 将 `/api`、`/healthz` 代理到 `NOVA_WEB_API`，默认是 `http://127.0.0.1:8787`。
 
-生产构建输出到 `web/dist/`，由反向代理同源托管静态页面与 API。子路径部署可设置 `ZACE_WEB_BASE`，它同时决定 Vite 资源前缀和路由 basename，见 [VPS 部署](../docs/handbook/deployment/vps.md)。
+生产构建输出到 `web/dist/`，由反向代理同源托管静态页面与 API。子路径部署可设置 `NOVA_WEB_BASE`，它同时决定 Vite 资源前缀和路由 basename，见 [VPS 部署](../docs/handbook/deployment/vps.md)。
 
 ## 品牌与主题
 
-[site.config.ts](site.config.ts) 控制 UI 显示名称，默认 `name: "zace"`。修改后重新构建，侧栏、移动端顶栏、登录页和浏览器标题一起更新，`tagline` 控制品牌说明。
+[site.config.ts](site.config.ts) 控制 UI 显示名称，默认 `name: "NOVA"`。修改后重新构建，侧栏、移动端顶栏、登录页和浏览器标题一起更新，`tagline` 控制品牌说明。
 
-显示名称与客户端包名、`zace_` API Key 前缀分别管理。后两者属于实际接入约定，修改 UI 品牌时不自动改变它们。
+显示名称与客户端包名、`nova_` API Key 前缀分别管理。后两者属于实际接入约定，修改 UI 品牌时不自动改变它们。
 
-主题使用暖白与珊瑚橙、方角边框和偏移阴影。颜色与阴影在 `tailwind.config.js`，共享样式在 `src/index.css`。桌面是左侧导航与右侧内容，窄屏使用导航抽屉。文档 Logo 与截图放在 [docs/assets/](../docs/assets/README.md)。
+主题采用深空黑 `#0B0F14`、石墨导航 `#10161F` 和炭灰卡片 `#171F2B` 三层明度，正文银白、操作冰蓝、品牌细节香槟金。登录页展示原始“人＋星球”标志和轨道意象，控制台使用中性卡片。成功、警告、错误分别使用绿、橙、红。控件轮廓使用独立的 `ink.control`，不使用装饰分隔线代替输入边界。颜色在 `tailwind.config.js`，共享样式在 `src/index.css`。桌面是左侧导航与右侧内容，窄屏使用导航抽屉。Logo 与脱敏截图见 [docs/assets/](../docs/assets/README.md)。
 
 ## 检查命令
 
@@ -64,9 +64,9 @@ npm --prefix web run dev -- --host 127.0.0.1 --strictPort
 
 ```bash
 cd web
-ZACE_E2E=1 ZACE_E2E_BASE=http://127.0.0.1:8891 \
-ZACE_E2E_USER=测试账户 ZACE_E2E_PASSWORD='填写测试密码' \
-VITE_ZACE_API_BASE=http://127.0.0.1:8891 \
+NOVA_E2E=1 NOVA_E2E_BASE=http://127.0.0.1:8891 \
+NOVA_E2E_USER=测试账户 NOVA_E2E_PASSWORD='填写测试密码' \
+VITE_NOVA_API_BASE=http://127.0.0.1:8891 \
   npx vitest run src/pages/console.e2e.test.tsx
 ```
 

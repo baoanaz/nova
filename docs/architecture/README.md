@@ -2,17 +2,17 @@
 
 [文档中心](../README.md) · [本地部署](../handbook/deployment/local.md)
 
-zace 的主要链路是：Agent 通过本地 MCP 客户端提出问题，客户端同步仓库变化，服务端调用核心引擎检索，再把带位置的证据或带引用的回答交给 Agent。
+nova 的主要链路是：Agent 通过本地 MCP 客户端提出问题，客户端同步仓库变化，服务端调用核心引擎检索，再把带位置的证据或带引用的回答交给 Agent。
 
 ## 1. 模块边界
 
 ```mermaid
 flowchart LR
-    A[Agent / 编辑器] -->|MCP stdio| C[zace-client / Rust]
+    A[Agent / 编辑器] -->|MCP stdio| C[nova-client / Rust]
     R[本地代码仓库] -->|扫描与增量同步| C
-    C -->|HTTP API| S[zace-service / Python]
+    C -->|HTTP API| S[nova-service / Python]
     W[Web UI / React] -->|管理 API| S
-    S --> E[zace-core / Python]
+    S --> E[nova-core / Python]
     E --> D[(SQLite / FTS / 向量库)]
     E --> V[Embedding Provider]
     S -->|ask_project| L[LLM Provider]
@@ -20,8 +20,8 @@ flowchart LR
 
 | 模块 | 负责 | 入口 |
 |---|---|---|
-| `core` | 解析、切片、索引、混合检索、证据扩展、上下文组装 | [engine.py](../../core/zace_core/engine.py) |
-| `service` | HTTP/MCP、账户与归属校验、同步、索引任务、审计、LLM 总结 | [app.py](../../service/zace_service/app.py) |
+| `core` | 解析、切片、索引、混合检索、证据扩展、上下文组装 | [engine.py](../../core/nova_core/engine.py) |
+| `service` | HTTP/MCP、账户与归属校验、同步、索引任务、审计、LLM 总结 | [app.py](../../service/nova_service/app.py) |
 | `client` | 本地仓库扫描、变化同步、MCP stdio 与远端请求桥接 | [main.rs](../../client/src/main.rs) |
 | `web` | 账户、项目、Key、历史、模型配置和管理界面 | [App.tsx](../../web/src/app/App.tsx) |
 | `npm` | 选择当前平台的 Rust 二进制并启动 | [run.js](../../npm/run.js) |
@@ -53,7 +53,7 @@ flowchart LR
 
 `search_context` 不调用总结 LLM。若选择 API embedding，查询向量的生成仍可能产生外部 API 请求，因此“没有总结调用”不等于“完全离线”。
 
-核心装配入口是 [engine.py](../../core/zace_core/engine.py)，上下文结构见 [ContextPack schema](../contracts/contextpack.schema.json)。质量对比应使用固定模型、预算和输入的 [benchmark 方案](../handbook/benchmark/README.md)。
+核心装配入口是 [engine.py](../../core/nova_core/engine.py)，上下文结构见 [ContextPack schema](../contracts/contextpack.schema.json)。质量对比应使用固定模型、预算和输入的 [benchmark 方案](../handbook/benchmark/README.md)。
 
 ## 4. `ask_project` 与 LLM
 
@@ -71,11 +71,11 @@ MCP 工具的具体输入输出见 [工具契约](../contracts/mcp-tools.json)�
 
 | 数据 | 位置或归属 |
 |---|---|
-| 服务运行数据 | `ZACE_DATA_ROOT`；使用仓库模板时为 `.local/data/` |
+| 服务运行数据 | `NOVA_DATA_ROOT`；使用仓库模板时为 `.local/data/` |
 | 项目索引 | 数据根下的 `projects/`，由核心引擎管理 |
 | 账户、会话、API Key 元信息 | service 的元数据库 |
-| 客户端同步缓存 | 默认 `~/.cache/zace`，可用 `--cache-root` 修改 |
-| 开发凭据 | 仓库外的 `$HOME/.key/zace/secrets.env` |
+| 客户端同步缓存 | 默认 `~/.cache/nova`，可用 `--cache-root` 修改 |
+| 开发凭据 | 仓库外的 `$HOME/.key/nova/secrets.env` |
 | 基准原始产物 | 默认 `.local/bench/`；审查后的公开报告放 `benches/results/` |
 
 `serve` 运行完整账户服务，由客户端上传仓库；`local --repo` 直接读取本机目录并使用隐式本地账户。`web/demo/` 则提供完全独立的合成数据 API，仅展示 UI。
@@ -88,9 +88,9 @@ API embedding 会向配置的服务发送相应文本，LLM 总结会发送检�
 |---|---|---|
 | 1 | [client/src/main.rs](../../client/src/main.rs) | 客户端参数、环境变量、运行入口 |
 | 2 | [npm/run.js](../../npm/run.js) | npm 如何找到和启动上述客户端 |
-| 3 | [service 启动入口](../../service/zace_service/__main__.py) | `serve`、`local` 与数据根 |
-| 4 | [service/app.py](../../service/zace_service/app.py) | 应用装配、路由和运行时依赖 |
-| 5 | [core/engine.py](../../core/zace_core/engine.py) | 索引、召回、扩展、排序与组装的连接点 |
+| 3 | [service 启动入口](../../service/nova_service/__main__.py) | `serve`、`local` 与数据根 |
+| 4 | [service/app.py](../../service/nova_service/app.py) | 应用装配、路由和运行时依赖 |
+| 5 | [core/engine.py](../../core/nova_core/engine.py) | 索引、召回、扩展、排序与组装的连接点 |
 | 6 | [web/App.tsx](../../web/src/app/App.tsx) | 账户门禁、页面与 API 的关系 |
 
 进一步研究具体设计时，从 [设计索引](../design/INDEX.md) 进入各模块文档；准备改接口时先看 [契约变更流程](../contracts/PROCESS.md)。历史设计包含阶段性决策，当前行为应以实现和现行手册为准。

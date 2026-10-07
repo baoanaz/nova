@@ -1,4 +1,4 @@
-# 对《zace-core 架构评审与 Evidence Runtime 建议》的复核
+# 对《nova-core 架构评审与 Evidence Runtime 建议》的复核
 
 > 日期：2026-09-17｜复核对象：`docs/core-architecture-runtime-review.md`（下称"原评审"）
 > 复核方式：逐条核对代码事实 + 在**当前 main** 上重跑 benchmark（`main @ 20346f8`）
@@ -40,7 +40,7 @@
 ### 1.1 当前实测基线（本公司 WSL，持久索引复用，未重建）
 
 设备：`company-wsl`（6 核 / 15.6 GiB WSL2）｜embedding：`api:voyage-4-lite@1024`
-数据根：`~/.zace/bench/voyage-4-lite-d1024`｜预算：`maxTokens=10000`
+数据根：`~/.nova/bench/voyage-4-lite-d1024`｜预算：`maxTokens=10000`
 
 | 靶场 | 正例数 | R@5 | R@10 | MRR | 负例 |
 |---|---:|---:|---:|---:|---:|
@@ -61,9 +61,9 @@
 复现：
 
 ```bash
-set -a; source ~/.config/zace/benchmark.env; set +a; export no_proxy='*'
+set -a; source ~/.config/nova/benchmark.env; set +a; export no_proxy='*'
 for t in cockpit-agents-py leveldb-v1 helloagents-v1 langchain-v1; do
-  uv run python benches/run.py --target $t --data ~/.zace/bench/voyage-4-lite-d1024 \
+  uv run python benches/run.py --target $t --data ~/.nova/bench/voyage-4-lite-d1024 \
     --report benches/results/raw/runtime-review-$t.md
 done
 ```
@@ -162,7 +162,7 @@ done
 | **P1-2** 删除文件可靠清理向量 | **立即做** | ✅ 已实现 | 已承认缺陷、改动小（`Store` 加批量接口）、不触碰检索语义 → **跑分零影响** |
 | **P2-1** query cache 提到 Engine 生命周期 + 引入 model 身份 | **立即做** | ✅ 已实现 | 事实核实：service 路径 `Engine.open()` 未注入 cache，60s 复用**确实不存在**；单次查询结果不变 → **跑分零影响** |
 | **P2-5** `files.generated` 恒为 0 | **立即做** | ✅ 已实现 | `store.py` 硬编码 `0` 属实；现落库（文件名约定 + 内容 banner）→ **本索引上零漂移，但发现并修掉一个误报**（见 §5.3） |
-| **P1-1** 索引非原子提交 | **做简版** | ✅ 已实现 | 认问题，**不认 generation 双目录**：`~/.zace/bench/` 下已有 7 个持久索引（langchain 179 MB），改目录布局等于全部重建。已落它自己给的备选方案 `index-state.json` |
+| **P1-1** 索引非原子提交 | **做简版** | ✅ 已实现 | 认问题，**不认 generation 双目录**：`~/.nova/bench/` 下已有 7 个持久索引（langchain 179 MB），改目录布局等于全部重建。已落它自己给的备选方案 `index-state.json` |
 | **P1-5** 查询可能读到中间态 | **做简版** | ✅ 已实现 | 认同风险，但**不引入 ProjectActor**：2 vCPU 上常驻资源池是过度设计。现已让 search trace 暴露该状态 |
 | **P1-3** 向量超时线程不可取消 | **降为 P2** | 未做 | 事实属实，但原评审低估了兜底：`api.py` 已有 `httpx` `connect=10s / total=60s`，通道超时 5s，堆积窗口有上限，非"无限积累"。先补 deadline 透传 |
 | **P1-4** 并行召回 + 四分支轻路由 | **认同低优先级** | 未做 | 原评审 §3 已自行标注可接受；且其依据的跑分口径已漂移，须先重测 |
@@ -170,7 +170,7 @@ done
 | **P2-3** 候选对象可变污染 | **推迟** | 未做 | 现象已被 `param-sweep` §2 独立发现并留档，无新增信息 |
 | **P2-4** 图扩展 N+1 SQL | **推迟** | 未做 | 当前池约 120，未成为实测瓶颈 |
 | **P2-6** 拆 assembly + 边际效用装填 | **不采纳** | — | 与 `R29/R30` 冻结纪律及"4 类参数敏感度为 0"的实测冲突；且原报告自述"必须离线 replay 对比，不直接替换" |
-| **P2-7** Answer 归属 core/service | **转契约讨论** | 未做 | 判断正确：`interfaces.py` 与 `Module/06 §5` 说 `llm/` 属 core，实际 `core/zace_core/llm/` **不存在**，全在 `service/zace_service/answer.py`。但这要走契约变更流程，**不自行改实现** |
+| **P2-7** Answer 归属 core/service | **转契约讨论** | 未做 | 判断正确：`interfaces.py` 与 `Module/06 §5` 说 `llm/` 属 core，实际 `core/nova_core/llm/` **不存在**，全在 `service/nova_service/answer.py`。但这要走契约变更流程，**不自行改实现** |
 | **§6-3** 删除 `chain_priority` 越界启发式 | **暂不删** | 未做 | 设计文档已标注"建议删除"，但它现在是 `engine.py` 排序键的首位成分，**且为 09-17 两次修复留下**。删除前必须 replay A/B |
 | **§7** 四阶段 Evidence Runtime | **不整体采纳** | — | 见 §4 |
 
@@ -302,7 +302,7 @@ uv run pytest core/tests/ service/tests/    → 1268 passed, 9 skipped
 - §1.2 的 provider 抖动只确认了**现象**（量化了幅度与概率），**未定位根因**：
   可能是上游批处理/MoE 路由的浮点归约顺序，也可能是网关侧。仓库做法应保持
   "以侧车缓存为准"，不依赖 provider 逐位可复现。
-- 侧车文件当前落在 `~/.zace/bench/voyage-4-lite-d1024/query-vectors.json`（110 条）。
+- 侧车文件当前落在 `~/.nova/bench/voyage-4-lite-d1024/query-vectors.json`（110 条）。
   **是否纳入 `benches/results/raw/` 版本化分发**（像 `raw-task109-*.md` 那样跨机复现）
   需编排者定：纳入则任何机器都能跑出逐位一致的数，不纳入则换机器仍会落到噪声带另一头。
 - P2-5 的内容 banner 列表是**保守起点**（只能识别强标记）。设计文档 §6 待决项 2 还提到

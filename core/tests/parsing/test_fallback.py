@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zace_core.parsing.fallback import (
+from nova_core.parsing.fallback import (
     FALLBACK_MAX_CHARS,
     FALLBACK_MAX_LINES,
     FallbackBlock,

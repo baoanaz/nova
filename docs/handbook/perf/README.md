@@ -71,7 +71,7 @@ hardware 使用 sysbench 的 prime=20000、单线程/双线程各 10 秒；OVH �
 
 ## 4. 需要凭据的 API 测量
 
-在 `$HOME/.key/zace/secrets.env` 配置供应商签发的 `EMBED_API_KEY` 后：
+在 `$HOME/.key/nova/secrets.env` 配置供应商签发的 `EMBED_API_KEY` 后：
 
 ```bash
 bash scripts/benchmark-vps.sh ttfb ../benchmark/langchain
@@ -90,7 +90,7 @@ CPU 型号、标称带宽和规格预测都不能代替实际测量。
 ## 5. 报告与配置
 
 保留原始 JSON 在 `.local/`，发布脱敏摘要和设备报告到 `benches/results/`。
-报告应包含 UTC 日期、设备规格、zace commit/工作树状态、靶场 commit、文件和 chunks 数、
+报告应包含 UTC 日期、设备规格、nova commit/工作树状态、靶场 commit、文件和 chunks 数、
 模型/维度/批大小/并发/消费者数、墙钟、CPU 累计、RSS 与异常。
 本地和网络阶段存在重叠，不直接相加，也不能简单用 full 减 local-only 得到网络耗时。
 

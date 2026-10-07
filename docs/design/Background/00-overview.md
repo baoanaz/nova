@@ -14,7 +14,7 @@
 
 ## 3. 四个项目的架构光谱
 
-四个项目恰好覆盖了 zace 设想的完整光谱：
+四个项目恰好覆盖了 nova 设想的完整光谱：
 
 ```
 纯薄客户端 ←──────────────────────────────────→ 纯本地引擎
@@ -24,10 +24,10 @@ notace-tool-rs        GitNexus/CodeGraph         ragcode
  检索/LLM 全在远端）   无向量或可选向量）           向量+融合+ContextPack）
 ```
 
-- notace-tool-rs 展示了"本地 MCP client + 远端 Service"的边界怎么切（zace 的形态）
-- codegraph 展示了 Tree-sitter 符号/边抽取 + 跨文件解析的工程化（zace 的 Code Intelligence 层）
-- ragcode 展示了混合检索 + ContextPack + 证据分层的完整检索合同（zace 的 Retrieval/Context 层）
-- GitNexus 展示了图数据库 + Process/Flow + 认知诚实性的上限（zace 的 Graph/深度分析层）
+- notace-tool-rs 展示了"本地 MCP client + 远端 Service"的边界怎么切（nova 的形态）
+- codegraph 展示了 Tree-sitter 符号/边抽取 + 跨文件解析的工程化（nova 的 Code Intelligence 层）
+- ragcode 展示了混合检索 + ContextPack + 证据分层的完整检索合同（nova 的 Retrieval/Context 层）
+- GitNexus 展示了图数据库 + Process/Flow + 认知诚实性的上限（nova 的 Graph/深度分析层）
 
 ## 4. 关键能力矩阵
 
@@ -52,15 +52,15 @@ notace-tool-rs        GitNexus/CodeGraph         ragcode
 - 02-codegraph.md — Tree-sitter 抽取与跨文件解析的参考
 - 03-ragcode.md — 检索编排与 ContextPack 合同的参考
 - 04-gitnexus.md — 图模型与认知诚实性的参考
-- 05-implications-for-zace.md — 综合对 zace 的启示（含 C/C++/Python 场景、MCP 切片选项）
+- 05-implications-for-nova.md — 综合对 nova 的启示（含 C/C++/Python 场景、MCP 切片选项）
 
 ## 6. 最重要的十个发现（TL;DR）
 
-1. **notace 的 blob 同步协议**：sha256(path||content) 内容寻址、verified cache hit（mtime 匹配仍验 hash）、checkpoint 避免重复上传 2.5MB scope、stale blob 自愈重试——这一套是 zace 本地 client ↔ VPS 同步的直接蓝本（思想层面）。
+1. **notace 的 blob 同步协议**：sha256(path||content) 内容寻址、verified cache hit（mtime 匹配仍验 hash）、checkpoint 避免重复上传 2.5MB scope、stale blob 自愈重试——这一套是 nova 本地 client ↔ VPS 同步的直接蓝本（思想层面）。
 2. **codegraph 的 Rust napi kernel**：每文件只跨一次 JS/Rust 边界，16+ 语言 extractor 全在 Rust 侧；这是"Tree-sitter 批量解析性能"的工程答案。
-3. **codegraph 的 unresolved_refs 生命周期**：pending → resolved(删除) / failed(保留，name_tail 索引，新符号出现时重试)——跨文件解析的两阶段模式值得 zace 采用。
+3. **codegraph 的 unresolved_refs 生命周期**：pending → resolved(删除) / failed(保留，name_tail 索引，新符号出现时重试)——跨文件解析的两阶段模式值得 nova 采用。
 4. **codegraph 的 explore 工具设计**：一个工具返回"按文件分组的真实源码 + 调用路径"，并明确告诉 agent "不要重新 Read 这些文件"；低置信度时诚实降级并指路。这是 search_context 的最佳参考。
 5. **ragcode 的 ContextPack 合同**：evidence tier(0-3)、edit-readiness 三态判定、budget trace、missingEvidence 带 hint code 和恢复参数——上下文"合同"设计最完整。
-6. **ragcode 的教训**：query planner 是 300+ 行硬编码正则规则，含大量对特定评测场景过拟合的 operator（如 iOS 关键词）；hybrid-retriever 141K 行里塞了 15+ 个专门化 evidence 搜索。**规则引擎检索规划在真实世界不可扩展**，zace 应走"少规则 + LLM/generic 信号"路线。
-7. **GitNexus 的 epistemic envelope**：context 工具返回 exact/lower-bound + 五种 causes（receiverTyping、dispatchBoundary、externalBoundary...），明确告诉 agent"图里缺什么、为什么缺"。这是对 zace "Missing Evidence" 设计的最佳补充。
-8. **GitNexus 的 Process/Flow 提取**：入口点（无内部调用者）→ DFS 前向追踪 → 去重 → 启发式命名；配合 Leiden 社区检测。"执行流程"是 agent 最能消费的图形态。9. **规模教训**：GitNexus 2839 文件、ragcode 534 文件已呈现复杂度失控迹象（单文件 100-335K）；notace 9 个文件干完了同步层的全部工作。zace V1 应该向 notace 的克制看齐，而非 GitNexus 的铺开。
+6. **ragcode 的教训**：query planner 是 300+ 行硬编码正则规则，含大量对特定评测场景过拟合的 operator（如 iOS 关键词）；hybrid-retriever 141K 行里塞了 15+ 个专门化 evidence 搜索。**规则引擎检索规划在真实世界不可扩展**，nova 应走"少规则 + LLM/generic 信号"路线。
+7. **GitNexus 的 epistemic envelope**：context 工具返回 exact/lower-bound + 五种 causes（receiverTyping、dispatchBoundary、externalBoundary...），明确告诉 agent"图里缺什么、为什么缺"。这是对 nova "Missing Evidence" 设计的最佳补充。
+8. **GitNexus 的 Process/Flow 提取**：入口点（无内部调用者）→ DFS 前向追踪 → 去重 → 启发式命名；配合 Leiden 社区检测。"执行流程"是 agent 最能消费的图形态。9. **规模教训**：GitNexus 2839 文件、ragcode 534 文件已呈现复杂度失控迹象（单文件 100-335K）；notace 9 个文件干完了同步层的全部工作。nova V1 应该向 notace 的克制看齐，而非 GitNexus 的铺开。

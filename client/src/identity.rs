@@ -1,6 +1,6 @@
 //! D-29 项目身份：`identityKey = sha256(material)`，`projectId = sha256(identityKey)[..16]`。
 //!
-//! **这份实现必须与 `core/zace_core/engine.py` 的 `repo_identity()` 逐字节一致**——否则客户端
+//! **这份实现必须与 `core/nova_core/engine.py` 的 `repo_identity()` 逐字节一致**——否则客户端
 //! resolve 出的项目与服务端索引的项目不是同一个（云端 MCP 的核心正确性前提，见
 //! `docs/plan/cloud-mcp-readiness.md` §2 A2 与 §12 Q2）。
 //!
@@ -216,7 +216,7 @@ fn git(args: &[&str], cwd: &Path) -> Option<String> {
 mod tests {
     use super::*;
 
-    /// CF-02 侧的跨语言常量（由 Python `zace_core.engine` 生成，见 TASK-040R 执行记录）。
+    /// CF-02 侧的跨语言常量（由 Python `nova_core.engine` 生成，见 TASK-040R 执行记录）。
     /// 固定 remote 字符串 → 固定 identityKey：锁定 sha256(material) 的算法形态。
     #[test]
     fn identity_key_is_sha256_of_the_remote_material() {

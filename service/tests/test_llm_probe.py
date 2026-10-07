@@ -28,16 +28,16 @@ from typing import Any
 
 import httpx
 import pytest
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.llmprobe import models_endpoint
-from zace_service.llmprotocol import (
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.llmprobe import models_endpoint
+from nova_service.llmprotocol import (
     ANTHROPIC_VERSION,
     PROTOCOL_ANTHROPIC,
     PROTOCOL_OPENAI,
     PROTOCOL_RESPONSES,
 )
-from zace_service.metadb import MetaDB
+from nova_service.metadb import MetaDB
 
 from tests.conftest import make_client
 
@@ -103,7 +103,7 @@ def routed(env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch):
             kwargs["transport"] = transport
             return real_client(*args, **kwargs)
 
-        monkeypatch.setattr("zace_service.llmprobe.httpx.Client", fake_client)
+        monkeypatch.setattr("nova_service.llmprobe.httpx.Client", fake_client)
         return seen
 
     return install
@@ -334,7 +334,7 @@ def test_empty_answer_hints_at_reasoning_token_budget(env: SimpleNamespace, rout
 
 def test_probe_max_tokens_is_large_enough_for_reasoning_models() -> None:
     """L2 的输出上限必须给推理模型留出空间（实测 16 会被 reasoning 吃光）。"""
-    from zace_service.llmprobe import PROBE_MAX_TOKENS
+    from nova_service.llmprobe import PROBE_MAX_TOKENS
 
     assert PROBE_MAX_TOKENS >= 256, (
         "实测：max_tokens=16 时 reasoning token 就把它用尽（finish_reason=length、content 为空），"

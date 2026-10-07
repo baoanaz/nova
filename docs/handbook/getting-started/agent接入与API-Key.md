@@ -1,4 +1,4 @@
-# Agent 接入手册（API Key + `npx zace-client`）
+# Agent 接入手册（API Key + `npx nova-client`）
 
 > 状态：2026-09-14 编排者实测（本机 WSL2，逐条命令真实跑过）；
 > **2026-09-15 TASK-110 更新：注册改为邀请制，API Key 支持自定义（拓荒者特权）。**
@@ -7,7 +7,7 @@
 
 ## 0. 一句话
 
-管理员发邀请码 → 用户注册 → 建 API Key → 把 `npx zace-client --base-url <URL> --token <KEY>` 填进编辑器 → 即可用真实问题检索。
+管理员发邀请码 → 用户注册 → 建 API Key → 把 `npx nova-client --base-url <URL> --token <KEY>` 填进编辑器 → 即可用真实问题检索。
 
 ## 0.1 邀请码与身份分级（TASK-110）
 
@@ -38,7 +38,7 @@ $ curl -s -X POST http://127.0.0.1:8787/api/auth/register \
 ```
 
 **首个账户**不需要邀请码：空库时 `POST /api/auth/bootstrap` 建的账户**直接是管理员**
-（否则是死锁——邀请码只能由管理员创建）。已有库里谁是管理员由 `ZACE_ADMIN_NAME`
+（否则是死锁——邀请码只能由管理员创建）。已有库里谁是管理员由 `NOVA_ADMIN_NAME`
 （默认 `xuwenzheng`）在服务启动时按**名字**指定，不依赖"最早创建者"。
 
 ### 自定义 API Key（拓荒者 / 管理员）
@@ -46,14 +46,14 @@ $ curl -s -X POST http://127.0.0.1:8787/api/auth/register \
 ```console
 $ curl -s -X POST http://127.0.0.1:8787/api/auth/tokens \
     -H 'Content-Type: application/json' -b cookies.txt \
-    -d '{"name":"my-key","key":"zace_my-laptop-key-2026"}'
-{"id":"...","token":"zace_my-laptop-key-2026","prefix":"zace_my-pro","isCustom":true}
+    -d '{"name":"my-key","key":"nova_my-laptop-key-2026"}'
+{"id":"...","token":"nova_my-laptop-key-2026","prefix":"nova_my-pro","isCustom":true}
 ```
 
-规则：必须以 `zace_` 开头，其后**不能为空**；字符集与长度**不做限制**（`zace_1` 也合法），
+规则：必须以 `nova_` 开头，其后**不能为空**；字符集与长度**不做限制**（`nova_1` 也合法），
 唯一要求是库里没有一样的 Key（冲突 → 409）。
 
-随机生成（不传 `key`）时是 `zace_` + **16 位字母数字**（不含符号）。
+随机生成（不传 `key`）时是 `nova_` + **16 位字母数字**（不含符号）。
 无特权身份传 `key` → **403 `custom_key_forbidden`**（不是静默忽略——静默会让人以为自定义成功、
 拿到的却是随机 Key）。不传 `key` 时行为与以前**逐字一致**（服务端随机生成）。
 
@@ -67,31 +67,31 @@ $ curl -s -X POST http://127.0.0.1:8787/api/auth/tokens \
 ```json
 {
   "mcpServers": {
-    "zace": {
+    "nova": {
       "command": "npx",
-      "args": ["zace-client", "--base-url", "http://你的服务器地址", "--token", "<控制台里创建的 API Key>"]
+      "args": ["nova-client", "--base-url", "http://你的服务器地址", "--token", "<控制台里创建的 API Key>"]
     }
   }
 }
 ```
 
-`zace-client` 的参数（`npx -y zace-client --help` 实测输出）：
+`nova-client` 的参数（`npx -y nova-client --help` 实测输出）：
 
 | 参数 | 说明 | env 等价 |
 |---|---|---|
-| `--base-url <URL>` | zace-service 地址（必填） | `ZACE_BASE_URL` |
-| `--token <TOKEN>` | **API Key**（云端形态必填） | `ZACE_API_TOKEN` |
-| `--cache-root <DIR>` | 本地缓存（默认 `~/.cache/zace`） | `ZACE_CLIENT_CACHE` |
+| `--base-url <URL>` | nova-service 地址（必填） | `NOVA_BASE_URL` |
+| `--token <TOKEN>` | **API Key**（云端形态必填） | `NOVA_API_TOKEN` |
+| `--cache-root <DIR>` | 本地缓存（默认 `~/.cache/nova`） | `NOVA_CLIENT_CACHE` |
 
 ## 2. 服务端准备（完整服务形态）
 
 普通 `serve` 始终启用账户、注册、登录、API Key 与鉴权，不需要用环境变量打开功能：
 
 ```bash
-uv run zace-service serve --host 0.0.0.0 --port 8787 --data-root <数据根>
+uv run nova-service serve --host 0.0.0.0 --port 8787 --data-root <数据根>
 ```
 
-只有显式执行 `zace-service local --repo <目录>` 才进入免账户的专用本地嵌入流程。
+只有显式执行 `nova-service local --repo <目录>` 才进入免账户的专用本地嵌入流程。
 
 启动后自查：
 
@@ -129,7 +129,7 @@ $ curl -s -X POST http://127.0.0.1:8787/api/auth/bootstrap \
 $ curl -s -X POST http://127.0.0.1:8787/api/auth/tokens \
     -H 'Content-Type: application/json' -b cookies.txt \
     -d '{"name":"client-key"}'
-{"id":"46e8089b...","token":"zace_9fK2mQ7xR4tLpZ1a","prefix":"zace_9fK2mQ",
+{"id":"46e8089b...","token":"nova_9fK2mQ7xR4tLpZ1a","prefix":"nova_9fK2mQ",
  "name":"client-key","isCustom":false}
 ```
 
@@ -139,7 +139,7 @@ $ curl -s -X POST http://127.0.0.1:8787/api/auth/tokens \
 ### 3.3 用 Key 访问数据面
 
 ```console
-$ curl -s http://127.0.0.1:8787/api/projects -H "Authorization: Bearer zace_9fK2mQ..."
+$ curl -s http://127.0.0.1:8787/api/projects -H "Authorization: Bearer nova_9fK2mQ..."
 []
 
 $ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8787/api/projects     # 不带 key
@@ -148,16 +148,16 @@ $ curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8787/api/projects   
 
 **撤销后立即失效**（实测）：`DELETE /api/auth/tokens/{id}` → 204，之后同一 key 访问 → 401。
 
-## 4. 端到端实测（`npx zace-client` + 真实 MCP 协议）
+## 4. 端到端实测（`npx nova-client` + 真实 MCP 协议）
 
-用 Python MCP SDK 的 `stdio_client` 拉起真实 `npx zace-client`：
+用 Python MCP SDK 的 `stdio_client` 拉起真实 `npx nova-client`：
 
 ```python
 params = StdioServerParameters(
     command="npx",
-    args=["-y", "zace-client", "--base-url", "http://127.0.0.1:8787", "--token", TOKEN],
+    args=["-y", "nova-client", "--base-url", "http://127.0.0.1:8787", "--token", TOKEN],
 )
-# initialize → server=zace, protocol=2025-11-25
+# initialize → server=nova, protocol=2025-11-25
 # tools/list → 2 个: search_context, ask_project
 # tools/call search_context → isError=False
 ```
@@ -187,7 +187,7 @@ tools/call search_context → isError=True
 
 ## 5. 鉴权实现要点（为什么不用逐个路由加依赖）
 
-服务端用**全局 HTTP 中间件**（`service/zace_service/app.py` 的 `_install_auth`）：
+服务端用**全局 HTTP 中间件**（`service/nova_service/app.py` 的 `_install_auth`）：
 
 - **鉴权是全局不变量**：逐个路由挂 `Depends` 靠人工维护，漏一个就是越权面
   （TASK-051 A1 的 `auth: enabled` 自述就曾在骗人）；
@@ -207,14 +207,14 @@ tools/call search_context → isError=True
 | 401 `unauthorized` | 没带 key / key 错 / key 已撤销 / **账户已被封禁** | 检查 `--token`；在控制台重建 key；若被封禁请联系管理员 |
 | 400 `invalid_invite` | 注册没填邀请码、码形状不对、或码无效/已失效/已用尽 | 向管理员索要新码（**码不存在与已用尽的文案相同**，这是刻意的反枚举设计） |
 | 403 `custom_key_forbidden` | 以公测身份传了自定义 Key | 自定义 Key 是拓荒者特权：不传 `key` 让服务端随机生成，或联系管理员提升身份 |
-| 400 `invalid_custom_key` | 自定义 Key 不以 `zace_` 开头，或 `zace_` 后面为空 | 见 §0.1 的格式规则 |
+| 400 `invalid_custom_key` | 自定义 Key 不以 `nova_` 开头，或 `nova_` 后面为空 | 见 §0.1 的格式规则 |
 | 409 `key_taken` | 该 Key 明文已被使用过 | 换一个；随机生成的 Key 不会撞（256 位随机） |
 | 413 `quota_exceeded` | 索引空间超过当前身份的额度 | 在控制台删除不再需要的项目，或联系管理员调整配额 |
 | 403 `admin_required` | 非管理员访问 `/api/admin/*` | 后台仅管理员可用 |
 | 400 `project_id_required` | 非本地模式下检索必须显式给 `projectId` | 这是 R37 的设计（省略仅限本地模式）；client 会先 `resolve` 拿到 id |
-| 403 `local_mode` | 对显式 `local` 命令启动的服务调用账户接口 | 改用普通 `zace-service serve` |
+| 403 `local_mode` | 对显式 `local` 命令启动的服务调用账户接口 | 改用普通 `nova-service serve` |
 | 403 `already_initialized` | 已有用户还调 bootstrap | 改用登录或注册（注册需邀请码） |
-| `npx zace-client` 无输出 | 它是 **MCP stdio 服务**，等 stdin 上的 JSON-RPC | 正常。用编辑器或 MCP SDK 客户端连它 |
+| `npx nova-client` 无输出 | 它是 **MCP stdio 服务**，等 stdin 上的 JSON-RPC | 正常。用编辑器或 MCP SDK 客户端连它 |
 | client 报 401 但 token 是对的 | Key 已撤销、输错或不属于当前服务 | 在网页控制台重建 Key |
 | 连不上 127.0.0.1 | 本机 `http_proxy` 拦截 | `NO_PROXY=127.0.0.1,localhost` |
 

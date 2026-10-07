@@ -1,7 +1,7 @@
 {
-  "name": "zace-client",
+  "name": "nova-client",
   "version": "0.0.8",
-  "description": "MCP stdio client for zace: local codebase sync proxy backed by a remote zace-service",
+  "description": "MCP stdio client for nova: local codebase sync proxy backed by a remote nova-service",
   "license": "Unlicense",
   "repository": {
     "type": "git",
@@ -20,7 +20,7 @@
     "stdio"
   ],
   "bin": {
-    "zace-client": "run.js"
+    "nova-client": "run.js"
   },
   "files": [
     "run.js",
@@ -39,11 +39,11 @@
     "arm64"
   ],
   "optionalDependencies": {
-    "zace-client-linux-x64": "0.0.8",
-    "zace-client-linux-arm64": "0.0.8",
-    "zace-client-darwin-x64": "0.0.8",
-    "zace-client-darwin-arm64": "0.0.8",
-    "zace-client-windows-x64": "0.0.8",
-    "zace-client-windows-arm64": "0.0.8"
+    "nova-client-linux-x64": "0.0.8",
+    "nova-client-linux-arm64": "0.0.8",
+    "nova-client-darwin-x64": "0.0.8",
+    "nova-client-darwin-arm64": "0.0.8",
+    "nova-client-windows-x64": "0.0.8",
+    "nova-client-windows-arm64": "0.0.8"
   }
 }

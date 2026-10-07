@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// zace-client 的 npm 启动器。
+// nova-client 的 npm 启动器。
 //
 // **唯一职责**：找到本平台的二进制并把它拉起来（stdio 透传）。
 //
-// 二进制来自 **npm 平台子包** `zace-client-<os>-<arch>`（主包的 optionalDependencies），
+// 二进制来自 **npm 平台子包** `nova-client-<os>-<arch>`（主包的 optionalDependencies），
 // npm 自己按子包的 `os`/`cpu` 字段装本平台那一个。**没有任何网络下载步骤。**
 //
 // 为什么不做 GitHub 下载回退（D-48/D-49，用户 2026-09-16 明确要求删掉）：
@@ -15,7 +15,7 @@
 //      哪个二进制；而「npm 是唯一二进制分发渠道」是定下来的决策。
 //   故：子包缺失就**显式失败并说清怎么修**，不偷偷下载、不静默降级。
 //
-// 唯一的本地例外是 `ZACE_CLIENT_BINARY`（开发者显式指定）与仓库内已构建产物
+// 唯一的本地例外是 `NOVA_CLIENT_BINARY`（开发者显式指定）与仓库内已构建产物
 // ——它们是**开发期**通道，不是用户分发路径，且会打印用了哪一条。
 //
 // 纪律：本包装器**只往 stderr 写日志**，stdout 必须原样留给 MCP 的 JSON-RPC 帧。
@@ -27,12 +27,12 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const PACKAGE_NAME = "zace-client";
-const BINARY_NAME = process.platform === "win32" ? "zace-client.exe" : "zace-client";
+const PACKAGE_NAME = "nova-client";
+const BINARY_NAME = process.platform === "win32" ? "nova-client.exe" : "nova-client";
 
 //: 平台子包前缀与平台表。**必须与 `scripts/make-platform-packages.py` 的 `PLATFORMS`
 //: 一一对应**——`scripts/check-npm-platforms.js` 会校验这张表（含子包与 CI 矩阵）。
-const PLATFORM_PACKAGE_PREFIX = "zace-client";
+const PLATFORM_PACKAGE_PREFIX = "nova-client";
 const PLATFORMS = [
   { platform: "linux", arch: "x64", suffix: "linux-x64" },
   { platform: "linux", arch: "arm64", suffix: "linux-arm64" },
@@ -90,14 +90,14 @@ function fromPlatformPackage() {
 /**
  * 开发期通道（**不是用户分发路径**，命中时会打印来源）。
  *
- * 优先级：显式 `ZACE_CLIENT_BINARY` → 仓库内 `cargo build` 的产物。
- * 刻意不含「PATH 里的 zace-client」：那会把包装器自己（npm 生成的 shim）当成二进制，
+ * 优先级：显式 `NOVA_CLIENT_BINARY` → 仓库内 `cargo build` 的产物。
+ * 刻意不含「PATH 里的 nova-client」：那会把包装器自己（npm 生成的 shim）当成二进制，
  * 造成无限自我递归（TASK-099 实测踩到）。
  */
 function fromDevChannel() {
-  const explicit = process.env.ZACE_CLIENT_BINARY;
+  const explicit = process.env.NOVA_CLIENT_BINARY;
   if (explicit && fs.existsSync(explicit)) {
-    return { path: explicit, package: "ZACE_CLIENT_BINARY" };
+    return { path: explicit, package: "NOVA_CLIENT_BINARY" };
   }
   const built = [
     path.resolve(__dirname, "..", "client", "target", "release", BINARY_NAME),
@@ -120,8 +120,8 @@ function failMissingBinary() {
   log("");
   if (!name) {
     log("本平台没有对应的 npm 平台子包。支持：Linux/macOS/Windows × x64/arm64。");
-    log("请从源码构建：git clone https://github.com/baoanaz/zace && cd zace/client && cargo build --release");
-    log(`然后用 ZACE_CLIENT_BINARY=<path> 指定，或把二进制放到 ${BINARY_NAME} 可被找到的位置。`);
+    log("请从源码构建：git clone https://github.com/baoanaz/zace nova && cd nova/client && cargo build --release");
+    log(`然后用 NOVA_CLIENT_BINARY=<path> 指定，或把二进制放到 ${BINARY_NAME} 可被找到的位置。`);
     process.exit(1);
   }
   log("原因通常是：平台子包没装上（装了可选依赖被跳过、或该版本漏发了这个平台）。");
@@ -133,7 +133,7 @@ function failMissingBinary() {
   log(`  2) 确认子包是否存在于 registry：npm view ${name} version`);
   log(`     - 查不到 → 发布侧漏发了这个平台，请到仓库提 issue（附上面的平台信息）；`);
   log(`     - 能查到 → 本地 npm 缓存/可选依赖状态异常，删掉 node_modules 重装；`);
-  log(`  3) 开发者可显式指定二进制：ZACE_CLIENT_BINARY=/abs/path/${BINARY_NAME}`);
+  log(`  3) 开发者可显式指定二进制：NOVA_CLIENT_BINARY=/abs/path/${BINARY_NAME}`);
   process.exit(1);
 }
 

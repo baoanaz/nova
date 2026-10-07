@@ -23,10 +23,10 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_DOC,
@@ -143,7 +143,7 @@ def _wait_for_state(
 
 
 def _index_threads(project_id: str) -> int:
-    return sum(1 for t in threading.enumerate() if t.name == f"zace-index-{project_id}")
+    return sum(1 for t in threading.enumerate() if t.name == f"nova-index-{project_id}")
 
 
 def _search(client: TestClient, project_id: str, query: str) -> dict:
@@ -212,12 +212,12 @@ def test_attach_requires_local_mode(tmp_path: Path, repo: Path) -> None:
 
 def _issue_token(app: FastAPI) -> dict[str, str]:
     """在非本地模式的 app 上初始化首个账户并签一个 API Key（供鉴权用例复用）。"""
-    from zace_service.metadb import MetaDB
+    from nova_service.metadb import MetaDB
 
     db = app.state.meta_db
     assert isinstance(db, MetaDB)
     user = db.create_user("tester", "x")  # 密码哈希在校验路径之外，这里只关心凭据载体
-    from zace_service.auth import create_api_token
+    from nova_service.auth import create_api_token
 
     raw, digest, prefix = create_api_token()
     db.create_token(user.id, token_hash=digest, prefix=prefix, name="test")
@@ -490,8 +490,8 @@ def test_healthz_without_touching_core_returns_empty_projects(tmp_path: Path) ->
 
 
 def test_local_cli_parses_without_starting_a_server(tmp_path: Path, repo: Path) -> None:
-    """``zace-service local --repo`` 的参数面（真起进程的验收见执行记录；这里只测解析）。"""
-    from zace_service.__main__ import build_parser
+    """``nova-service local --repo`` 的参数面（真起进程的验收见执行记录；这里只测解析）。"""
+    from nova_service.__main__ import build_parser
 
     args = build_parser().parse_args(
         ["local", "--repo", str(repo), "--data-root", str(tmp_path / "d"), "--port", "8792"]

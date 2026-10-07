@@ -8,13 +8,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
-from zace_core.hashing import blob_hash
-from zace_core.pipeline.source import SourcePathError
-from zace_core.types import BlobInput, ChangeSet
-from zace_service import sync_state as sync_state_module
-from zace_service.blobstore import BlobSource, BlobStore, validate_repo_path
-from zace_service.runtime import EngineManager
-from zace_service.sync_state import MAX_CHECKPOINTS, SyncState
+from nova_core.hashing import blob_hash
+from nova_core.pipeline.source import SourcePathError
+from nova_core.types import BlobInput, ChangeSet
+from nova_service import sync_state as sync_state_module
+from nova_service.blobstore import BlobSource, BlobStore, validate_repo_path
+from nova_service.runtime import EngineManager
+from nova_service.sync_state import MAX_CHECKPOINTS, SyncState
 
 from tests.conftest import (
     SAMPLE_DOC,

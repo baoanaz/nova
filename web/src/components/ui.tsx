@@ -77,12 +77,12 @@ export function ErrorBlock({ error }: { error: unknown }) {
   const hint = errorHint(error);
 
   return (
-    <div className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">
+    <div className="rounded border border-error-line bg-error-soft px-3 py-2 text-sm text-error-text">
       <div className="flex flex-wrap items-baseline gap-2">
         <span className="font-medium">{message}</span>
-        {code && <code className="rounded bg-rose-100 px-1 text-xs">{code}</code>}
+        {code && <code className="rounded bg-error-soft px-1 text-xs">{code}</code>}
       </div>
-      {hint && hint !== message && <p className="mt-1 text-rose-700">{hint}</p>}
+      {hint && hint !== message && <p className="mt-1 text-error-text">{hint}</p>}
     </div>
   );
 }
@@ -207,8 +207,8 @@ export function Switch({
     >
       <span
         aria-hidden="true"
-        className={`absolute h-3 w-3 rounded-full bg-paper-card shadow-sm transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0.5"
+        className={`absolute h-3 w-3 rounded-full shadow-sm transition-transform ${
+          checked ? "translate-x-4 bg-accent-contrast" : "translate-x-0.5 bg-ink-muted"
         }`}
       />
     </button>
@@ -262,7 +262,7 @@ export function ConfirmDialog({
         event.preventDefault();
         if (!busy) onCancel();
       }}
-      className="w-[calc(100%-2rem)] max-w-lg border-2 border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-ink-primary/40"
+      className="w-[calc(100%-2rem)] max-w-lg border-2 border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-black/60"
     >
       <div className="p-4">
         <h2 className="text-sm font-semibold text-ink-primary">{title}</h2>
@@ -322,7 +322,7 @@ export function Modal({
   return (
     <div
       // 遮罩：点它关闭。用 button 而不是 div，键盘也能关（与 Layout 的抽屉遮罩同一手法）。
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-primary/40 p-4 pt-16"
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 p-4 pt-16"
     >
       <button
         type="button"

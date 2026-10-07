@@ -21,20 +21,20 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.embedding import ApiNetworkError, EmbeddingConfigError, EmbeddingError
-from zace_core.engine import Engine, EngineError
-from zace_core.hashing import blob_hash
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.types import BlobInput, ChangeSet
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.errors import (
+from nova_core.embedding import ApiNetworkError, EmbeddingConfigError, EmbeddingError
+from nova_core.engine import Engine, EngineError
+from nova_core.hashing import blob_hash
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.types import BlobInput, ChangeSet
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.errors import (
     CODE_EMBEDDING_UNAVAILABLE,
     CODE_EMBEDDING_UNREACHABLE,
     CODE_STORAGE_ERROR,
     map_engine_error,
 )
-from zace_service.runtime import EngineManager
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     REPO_ROOT,
@@ -431,7 +431,7 @@ def test_service_does_not_call_private_engine_ingest() -> None:
     """§C：service 源码里不再出现 ``engine._ingest``（跨包调私有方法已收敛）。"""
     offenders = [
         path.relative_to(REPO_ROOT).as_posix()
-        for path in sorted((REPO_ROOT / "service" / "zace_service").rglob("*.py"))
+        for path in sorted((REPO_ROOT / "service" / "nova_service").rglob("*.py"))
         if "engine._ingest(" in path.read_text(encoding="utf-8")
     ]
     assert offenders == []

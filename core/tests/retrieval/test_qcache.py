@@ -8,8 +8,8 @@ from __future__ import annotations
 import json
 
 import pytest
-from zace_core.retrieval.qcache import CACHE_SCHEMA, CachedOnlyProvider, PersistentQueryVectorCache
-from zace_core.retrieval.vector import VectorChannelError
+from nova_core.retrieval.qcache import CACHE_SCHEMA, CachedOnlyProvider, PersistentQueryVectorCache
+from nova_core.retrieval.vector import VectorChannelError
 
 
 def test_round_trip_persists_vectors(tmp_path) -> None:
@@ -86,12 +86,12 @@ def test_search_without_key_falls_back_to_offline(tmp_path, monkeypatch) -> None
     ``DimensionMismatchError``（期望 384 / 实际 1024）——离线机器连"随便问一句"都做不到。
     现在改为：真实 provider 不可用或维度与索引不符时**自动切离线**并打印提示。
     """
-    from zace_core.cli import app as cli_app
-    from zace_core.engine import Engine
+    from nova_core.cli import app as cli_app
+    from nova_core.engine import Engine
 
     class _FakeProvider:
         def __init__(self, dim: int) -> None:
-            from zace_core.interfaces import EmbeddingProfile
+            from nova_core.interfaces import EmbeddingProfile
 
             self._profile = EmbeddingProfile(model_id="local:fake", dim=dim, max_input_tokens=512)
 

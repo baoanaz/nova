@@ -15,7 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from zace_core.pipeline.embedding_sink import (
+from nova_core.pipeline.embedding_sink import (
     DEFAULT_EMBED_WORKERS,
     MAX_EMBED_WORKERS,
     WORKERS_ENV,
@@ -23,9 +23,9 @@ from zace_core.pipeline.embedding_sink import (
     EmbeddingSink,
     embed_workers,
 )
-from zace_core.types import ChunkDef, VectorRow
-from zace_core.vectors import VectorStore
-from zace_core.vectors.cache import EmbeddingCache
+from nova_core.types import ChunkDef, VectorRow
+from nova_core.vectors import VectorStore
+from nova_core.vectors.cache import EmbeddingCache
 
 from .conftest import TEST_DIM, TEST_PROFILE, CountingEmbedding
 
@@ -225,7 +225,7 @@ def test_parallel_workers_keep_window_and_counts(vectors: VectorStore) -> None:
 
 
 def test_embed_workers_reads_env_and_clamps(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``ZACE_EMBED_WORKERS``：缺省 2、非法值回落、上限夹住（配置噪声不得让索引失败）。"""
+    """``NOVA_EMBED_WORKERS``：缺省 2、非法值回落、上限夹住（配置噪声不得让索引失败）。"""
     monkeypatch.delenv(WORKERS_ENV, raising=False)
     assert embed_workers() == DEFAULT_EMBED_WORKERS
     monkeypatch.setenv(WORKERS_ENV, "1")

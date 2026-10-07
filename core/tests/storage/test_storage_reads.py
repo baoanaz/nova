@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.storage import Store
-from zace_core.types import ChunkDef, EdgeDef, ParsedFile, SymbolDef
+from nova_core.storage import Store
+from nova_core.types import ChunkDef, EdgeDef, ParsedFile, SymbolDef
 
 
 def _seed(
@@ -111,7 +111,7 @@ def test_config_get_set_upsert(store: Store) -> None:
 def test_spec_block_written_to_both_tables(
     store: Store, make_parsed: Callable[..., ParsedFile], make_chunk: Callable[..., ChunkDef]
 ) -> None:
-    from zace_core.types import CodeFence, SpecBlockDef
+    from nova_core.types import CodeFence, SpecBlockDef
 
     block = SpecBlockDef(
         path="README.md",

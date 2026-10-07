@@ -18,7 +18,7 @@
 | 02-codegraph.md | tree-sitter 抽取与跨文件解析参考 | unresolved_refs 两阶段解析 / Rust kernel / explore 工具契约 |
 | 03-ragcode.md | ContextPack 合同参考 + 规则引擎反面教材 | 证据分层 / budget trace / 15 路专门化检索的失败教训 |
 | 04-gitnexus.md | 图模型与认知诚实性参考 | epistemic envelope / Process-Flow / C++ 语义功能清单 |
-| 05-implications-for-zace.md | 调研 → zace 的综合启示 | C/C++/Python 结论 / MCP 切片证据 / 技术选型佐证 |
+| 05-implications-for-nova.md | 调研 → nova 的综合启示 | C/C++/Python 结论 / MCP 切片证据 / 技术选型佐证 |
 | 06-core-engine-proposal.md | 核心引擎提案（检索管线总设计） | 四路召回 + RRF + ContextPack + AI 总结层 |
 
 ### Module/（活文档类：组件详细设计，随实现演进）
@@ -32,11 +32,11 @@
 | 02-检索策略.md | 轻路由 + 四通道召回 + RRF + 图双角色 + 确定性 rerank + Gap 二轮 | 草案（待评审） | 01 |
 | 03-上下文组装.md | ContextPack 合同 + 装填预算 + 双层渲染 | 草案（待评审） | 02 |
 | 04-AI总结.md | AnswerProvider + grounded prompt + citation 回验 | 草案（待评审） | 03 |
-| 05-MCP与同步.md | **zace-client**：MCP 适配 + 同步客户端 + checkpoint + 超时矩阵 | 草案（待评审） | 消费 02-04 |
-| 06-服务化与部署.md | **zace-service** 外壳 + 租户双层 + 部署形态 + monorepo + runtime 选型 | 草案（待评审） | 横切（core=01-04） |
-| 07-WebUI.md | **zace-web**：页面骨架 + API 对接（画风留白） | 骨架（画风待定） | 06 |
+| 05-MCP与同步.md | **nova-client**：MCP 适配 + 同步客户端 + checkpoint + 超时矩阵 | 草案（待评审） | 消费 02-04 |
+| 06-服务化与部署.md | **nova-service** 外壳 + 租户双层 + 部署形态 + monorepo + runtime 选型 | 草案（待评审） | 横切（core=01-04） |
+| 07-WebUI.md | **nova-web**：页面骨架 + API 对接（画风留白） | 骨架（画风待定） | 06 |
 
-组件拆分总览（四物理单元，Module/06 §0）：**zace-core**（引擎纯库 = Module/01-04）/ **zace-service**（服务化外壳 = Module/06）/ **zace-client**（本地客户端含 MCP 模块 = Module/05，Rust 二进制）/ **zace-web**（SPA = Module/07）。依赖方向：web, client → service → core，core 零上层依赖。仓库：monorepo 单仓多目录（D-35）。
+组件拆分总览（四物理单元，Module/06 §0）：**nova-core**（引擎纯库 = Module/01-04）/ **nova-service**（服务化外壳 = Module/06）/ **nova-client**（本地客户端含 MCP 模块 = Module/05，Rust 二进制）/ **nova-web**（SPA = Module/07）。依赖方向：web, client → service → core，core 零上层依赖。仓库：monorepo 单仓多目录（D-35）。
 
 ### 推荐阅读顺序
 
@@ -52,7 +52,7 @@
 |---|---|---|
 | 【已验证】 | 有参考项目生产背书，且调研时核对了源码（正文带 file 路径锚点） | 可放心引用，注明出处项目 |
 | 【权衡】 | 存在合理替代方案，文中含对比表 | 引用时说明"已否决项见原文" |
-| 【自研】 | 无外部参考，zace 独有设计 | 风险最高，验证前不要当定论引用 |
+| 【自研】 | 无外部参考，nova 独有设计 | 风险最高，验证前不要当定论引用 |
 | 【快照 2025-09】 | 基于该日期源码的调研结论 | 引用时保留时间语境 |
 | （无标记） | 一般性陈述 | 按普通内容对待 |
 
@@ -89,13 +89,13 @@
 | D-25 | Citation 回验：服务端正则校验 [E*]/[F*] 引用存在性，无效只删标记不改写，coverage 入审计 | Module/04 §5 | 定稿（待评审） |
 | D-26 | LLM 失败降级 never-empty-handed：超时/未配置均返回 ContextPack 渲染 + 故障说明 | Module/04 §6 | 定稿（待评审） |
 | D-27 | 懒同步：tool call 自动保证工作区新鲜，无常驻 watcher，手动 sync 仅供 debug | Module/05 §3.1 | 定稿（待评审） |
-| D-28 | 忽略规则三层：.zaceignore > .gitignore（真实解析）> 内置默认，补齐 notace 缺陷 | Module/05 §3.1 | 定稿（待评审） |
+| D-28 | 忽略规则三层：.novaignore > .gitignore（真实解析）> 内置默认，补齐 notace 缺陷 | Module/05 §3.1 | 定稿（待评审） |
 | D-29 | project identity = sha256(git remote + repo 相对路径)，无 git 用路径 hash；跨机器同 repo 共享索引 | Module/05 §3.4 | 定稿（待评审） |
 | D-30 | freshness 语义：上传完成 ≠ 索引完成，ContextPack 如实报告 indexingFiles，不阻塞等待 | Module/05 §3.6 | 定稿（待评审） |
 | D-31 | 首同步断点续传：120s 转后台 + 返回进度反馈，拒绝 notace 的 180s 阻塞一把梭 | Module/05 §3.5 | 定稿（待评审） |
 | D-32 | 分层超时矩阵：upload 30s / search 15s / ask 90s / 首次全量 120s 转后台 | Module/05 §4 | 定稿（待评审） |
-| D-33 | 四物理单元拆分：zace-core（纯库）/ zace-service（外壳）/ zace-client（含 MCP 模块）/ zace-web；依赖方向 web,client→service→core，core 零上层依赖 | Module/06 §0-1 | 定稿（待评审） |
-| D-34 | zace-core 纯库化：零 HTTP/零鉴权/零用户概念，字典里只有 project；CI 强制依赖清单，这是本地嵌入与云端部署同构的钥匙 | Module/06 §1 | 定稿（待评审） |
+| D-33 | 四物理单元拆分：nova-core（纯库）/ nova-service（外壳）/ nova-client（含 MCP 模块）/ nova-web；依赖方向 web,client→service→core，core 零上层依赖 | Module/06 §0-1 | 定稿（待评审） |
+| D-34 | nova-core 纯库化：零 HTTP/零鉴权/零用户概念，字典里只有 project；CI 强制依赖清单，这是本地嵌入与云端部署同构的钥匙 | Module/06 §1 | 定稿（待评审） |
 | D-35 | monorepo 单仓多目录（拒绝多 git），边界由包依赖 CI 检查强制；未来可 subtree split | Module/06 §5 | 定稿（待评审） |
 | D-36 | 租户隔离双层：service 层授权映射（token→user→owns project）+ core 层物理隔离（per-project 目录） | Module/06 §2.3 | 定稿（待评审） |
 | D-37 | REST API 合同（Module/06 §2.1 端点表），batch-upload/deletions 幂等语义 | Module/06 §2.1 | 定稿（待评审） |
@@ -106,11 +106,11 @@
 | D-42 | SpecBlock 是一等证据类型：复用现有 BM25/Vector 检索，通过 doctype/rerank 与装填保底提高权重，不新增第五套 Planner 通道 | 用户确认；Module/01 §2.2、Module/02 §4.2 | 定稿（待评审） |
 | D-43 | 文件 blob hash、文件 content hash、chunk content hash 分离定义；Module/01 作为存储与 hash 语义唯一依据 | 用户确认；Module/01 §2.4 | 定稿（待评审） |
 | D-44 | embedding 双实现（EmbeddingProvider 接口）：本地 ONNX 小模型为默认（源码不出 VPS），OpenAI-compatible API 为可选配置；具体默认模型与维度由 Phase 1 bake-off（TASK-015）校准后钉死 | 用户确认；Module/01 §2.4、Module/06 §6 | 定稿 |
-| D-45 | CJK 分词器 = jieba（Python 实现），模块化隔离（zace_core.text）；索引与查询双侧同库预分词，消费 D-20 | 用户确认；Module/02 §4.2-b、§7-2 | 定稿 |
+| D-45 | CJK 分词器 = jieba（Python 实现），模块化隔离（nova_core.text）；索引与查询双侧同库预分词，消费 D-20 | 用户确认；Module/02 §4.2-b、§7-2 | 定稿 |
 | D-46 | 主链路命名 **Recall → Expand → Rank → Pack → Repair**（四级检索漏斗 + 单次 Evidence Repair Loop）；Repair 是受限反馈回路而非第五级，受 R31 三条不变量约束 | Module/02 §3、§4.7.1 | 定稿（2026-09-15） |
 | D-47 | LLM 上游协议可配且多实现：`AnswerProvider` 接口不变，支持 **openai**（`/v1/chat/completions`，默认）/ **responses**（`/v1/responses`）/ **anthropic**（`/v1/messages`）；服务端默认走 `ANSWER_PROTOCOL`，用户级覆盖走 `user_llm_config.protocol`；并提供连接自检（`POST /api/auth/llm-config/test`，L1 探测 `/v1/models` / L2 真实最小请求）。理由：同一网关的不同模型可能只开放不同协议（实测 2026-09-16：`deepseek-v4-flash` 仅 `ANTHROPIC`/`RESPONSES`），单一 OpenAI 实现会让“配置保存成功但 ask 持续 503”成为静默失灵。否决项：① 只做协议探测不实现新协议（用户仍无可用模型）；② 失败后自动换协议重发（两次计费且答案不可归因）。触发重评：D-11 的模型选型变化、或新增第四种协议 | Module/04 §2；用户确认 2026-09-16 | 定稿（2026-09-16） |
-| D-48 | **二进制分发走 npm 平台子包，不走 GitHub Release 下载**：主包 `zace-client`（仅启动器）+ 6 个平台子包 `zace-client-<os>-<arch>`（各含本平台二进制，作为主包 `optionalDependencies`）；npm 按子包 `os`/`cpu` 字段自动只装本平台那一个，启动器直接执行。理由（实测 2026-09-16）：① Node 默认**不读 `https_proxy`**（只认 `NODE_USE_ENV_PROXY=1`，v20+），代理环境里启动器直连 GitHub 命中共享出口 IP 的 403 rate limit（同一时刻 `curl` 走代理 200、`node` 直连 403），用户看到的是 `MCP server failed to start: connection closed`，极难排查；② 旧形态下 `npm publish` 必须等 Release 五平台资产就绪，人为纪律、错一步即 404。改为子包后**无网络下载步骤、无版本对齐**，用户零配置。否决项：① 给 `run.js` 加自设代理（仍要用户网络可达 GitHub，且 `NODE_USE_ENV_PROXY` 属实验特性）；② 只改文档让人“重试 403”（把设计缺陷当运维问题）；③ 把二进制直接打进主包（包体 ×6，且 npm 无按平台裁剪机制）。触发重评：npm 改变 optionalDependencies 的平台裁剪语义、或出现第二种分发渠道需求 | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
-| D-49 | **“以后都采用平台子包方式”是 zace 的既定分发规范**：今后任何面向用户的**预编译二进制**（客户端、CLI、后续可能的新工具）一律按 D-48 的形态分发——主包仅放启动器/胶水，二进制拆到 `<主包>-<os>-<arch>` 平台子包并列入主包 `optionalDependencies`；平台表以单一脚本的常量表为唯一事实来源，六平台（linux/darwin/win32 × x64/arm64）全量维护，发布顺序固定为**先子包、后主包**；一致性由 `scripts/check-version.sh` + `scripts/check-npm-platforms.js` 在 CI 与发布前守住。理由：D-48 的两个根因（Node 不读代理环境变量导致的下载失败、跨制品版本对齐的人为纪律）对**任何**二进制分发都成立，不是 zace-client 的特例。否决项：① 只把 zace-client 改了、后续新工具重新走下载（同一坑第二次踩）；② 允许“先发部分平台”过渡（缺失平台是**静默**故障——npm 跳过解析不了的可选依赖，用户侧无任何提示） | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
+| D-48 | **二进制分发走 npm 平台子包，不走 GitHub Release 下载**：主包 `nova-client`（仅启动器）+ 6 个平台子包 `nova-client-<os>-<arch>`（各含本平台二进制，作为主包 `optionalDependencies`）；npm 按子包 `os`/`cpu` 字段自动只装本平台那一个，启动器直接执行。理由（实测 2026-09-16）：① Node 默认**不读 `https_proxy`**（只认 `NODE_USE_ENV_PROXY=1`，v20+），代理环境里启动器直连 GitHub 命中共享出口 IP 的 403 rate limit（同一时刻 `curl` 走代理 200、`node` 直连 403），用户看到的是 `MCP server failed to start: connection closed`，极难排查；② 旧形态下 `npm publish` 必须等 Release 五平台资产就绪，人为纪律、错一步即 404。改为子包后**无网络下载步骤、无版本对齐**，用户零配置。否决项：① 给 `run.js` 加自设代理（仍要用户网络可达 GitHub，且 `NODE_USE_ENV_PROXY` 属实验特性）；② 只改文档让人“重试 403”（把设计缺陷当运维问题）；③ 把二进制直接打进主包（包体 ×6，且 npm 无按平台裁剪机制）。触发重评：npm 改变 optionalDependencies 的平台裁剪语义、或出现第二种分发渠道需求 | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
+| D-49 | **“以后都采用平台子包方式”是 nova 的既定分发规范**：今后任何面向用户的**预编译二进制**（客户端、CLI、后续可能的新工具）一律按 D-48 的形态分发——主包仅放启动器/胶水，二进制拆到 `<主包>-<os>-<arch>` 平台子包并列入主包 `optionalDependencies`；平台表以单一脚本的常量表为唯一事实来源，六平台（linux/darwin/win32 × x64/arm64）全量维护，发布顺序固定为**先子包、后主包**；一致性由 `scripts/check-version.sh` + `scripts/check-npm-platforms.js` 在 CI 与发布前守住。理由：D-48 的两个根因（Node 不读代理环境变量导致的下载失败、跨制品版本对齐的人为纪律）对**任何**二进制分发都成立，不是 nova-client 的特例。否决项：① 只把 nova-client 改了、后续新工具重新走下载（同一坑第二次踩）；② 允许“先发部分平台”过渡（缺失平台是**静默**故障——npm 跳过解析不了的可选依赖，用户侧无任何提示） | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
 
 ## 4. 写作纪律（新文档必须遵守）
 
@@ -121,7 +121,7 @@
 5. **文头标注**：状态（草案/评审中/定稿/已实现）+ 最后更新日期。
 6. Background 只增不改（勘误追加）；Module 修订必须更新日期。
 7. 密度要求：每句话承载信息。对比用表、流程用图、理由用列表；宁短勿水。
-8. **MANIFEST.sha256 语义**（2026-09-10 明确）：它是设计文档迁入 zace 仓库时的**快照记录**（用于核对“研究目录快照”与仓库版本的对应关系），不是持续校验门禁。设计文档的后续变更由编排者执行并经 git 历史追踪；变更后不强制重算 manifest（如需校对快照，用 `git log -- docs/design/` 对照）。实现期的口径与漂移记录统一写在 `docs/contracts/PROCESS.md` §3。
+8. **MANIFEST.sha256 语义**（2026-09-10 明确）：它是设计文档迁入 nova 仓库时的**快照记录**（用于核对“研究目录快照”与仓库版本的对应关系），不是持续校验门禁。设计文档的后续变更由编排者执行并经 git 历史追踪；变更后不强制重算 manifest（如需校对快照，用 `git log -- docs/design/` 对照）。实现期的口径与漂移记录统一写在 `docs/contracts/PROCESS.md` §3。
 
 ## 5. 术语表（跨文档统一）
 
@@ -139,9 +139,9 @@
 | Citation 回验 | 服务端校验 LLM 回答中引用 id 的存在性，无效只删标记不改写（D-25） | Module/04 |
 | 懒同步 | tool call 自动保证新鲜度，无常驻 watcher（D-27） | Module/05 |
 | project identity | sha256(git remote + repo 相对路径)，跨机器同 repo 命中同一服务端项目（D-29） | Module/05 |
-| zace-core / -service / -client / -web | 四物理单元：引擎纯库 / 服务化外壳 / 本地客户端（含 MCP 模块）/ Web 管理面（D-33） | Module/06 |
-| 服务化外壳 | zace-service 的全部职责：HTTP API、鉴权、租户映射、索引 job、审计、可观测——鉴权归外壳而非 client | Module/06 |
-| 纯库纪律 | zace-core 的依赖清单禁止 HTTP/用户体系；输入 ChangeSet+查询，输出 ContextPack（D-34） | Module/06 |
+| nova-core / -service / -client / -web | 四物理单元：引擎纯库 / 服务化外壳 / 本地客户端（含 MCP 模块）/ Web 管理面（D-33） | Module/06 |
+| 服务化外壳 | nova-service 的全部职责：HTTP API、鉴权、租户映射、索引 job、审计、可观测——鉴权归外壳而非 client | Module/06 |
+| 纯库纪律 | nova-core 的依赖清单禁止 HTTP/用户体系；输入 ChangeSet+查询，输出 ContextPack（D-34） | Module/06 |
 | 轻路由 | 检索前的四分支线性判断（分支数硬上限 4），只调通道配额 | Module/02 |
 | 入口点 | 无内部调用者且被导出的符号；caller 爆炸时的截断排序依据 | Module/02 |
 | SpecBlock | Markdown 标题树下的完整小节，spec 检索基本单位；heading_path（标题链）为其 fqn | Module/01 |
@@ -157,7 +157,7 @@
 
 ## 6. AI 会话使用指引
 
-新会话（任何 agent）进入本仓库处理 zace 相关任务时：
+新会话（任何 agent）进入本仓库处理 nova 相关任务时：
 
 1. **先读本 INDEX**，按 §1 阅读顺序取所需文档，不要全量读所有文档。
 2. 引用调研结论时**必须带可信度标记与时间语境**（例："codegraph 的 C 覆盖率 92.2%【已验证·快照 2025-09】"）。

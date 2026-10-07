@@ -3,10 +3,10 @@
  *
  * 为什么不引 openapi 代码生成：V1 只消费 6 个端点，生成器的依赖与产物维护成本高于收益。
  * 字段名与 `docs/contracts/openapi.yaml` **逐字一致**；改这里等于改前端契约，
- * 必须同时对照 `service/zace_service/packmeta.py` 的 `_META_FIELDS`。
+ * 必须同时对照 `service/nova_service/packmeta.py` 的 `_META_FIELDS`。
  */
 
-/** CF-05 错误信封（`service/zace_service/errors.py`）。 */
+/** CF-05 错误信封（`service/nova_service/errors.py`）。 */
 export interface ErrorEnvelope {
   error: { code: string; message: string };
 }
@@ -70,7 +70,7 @@ export interface Project {
   diskBytes?: number | null;
 }
 
-/** `meta`（TASK-032 冻结字段集；`service/zace_service/packmeta.py`）。 */
+/** `meta`（TASK-032 冻结字段集；`service/nova_service/packmeta.py`）。 */
 export interface PackMeta {
   projectId: string;
   query: string;

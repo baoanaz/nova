@@ -10,7 +10,7 @@
  *   放同一页会让控制台变成大杂烩；
  * - **新增「服务模型」面板**：LLM 与 embedding 的最小必要信息
  *   （从设置页移来——它们是"当前生效值"，属于首屏该看的东西）；
- * - **删页脚版本说明**（`zace-web（Module 07 / D-40）…`）：用户不需要知道渲染链路。
+ * - **删页脚版本说明**（`nova-web（Module 07 / D-40）…`）：用户不需要知道渲染链路。
  *
  * 保留「账户资料」：它是本页唯一的身份信息，用户需要确认"我是谁"。
  *
@@ -56,7 +56,7 @@ function RangePicker({ days, onChange }: { days: number; onChange: (days: number
           type="button"
           onClick={() => onChange(value)}
           aria-pressed={days === value}
-          className={days === value ? "bg-accent-seal text-white" : "text-ink-muted hover:bg-paper-base"}
+          className={days === value ? "bg-accent-seal text-accent-contrast" : "text-ink-muted hover:bg-paper-base"}
         >
           {label}
         </button>
@@ -128,7 +128,7 @@ export function DashboardPage() {
             label="自定义 Key"
             value={
               account?.capabilities.canCustomKey ? (
-                <span className="text-emerald-700">可用（{account.title}特权）</span>
+                <span className="text-success-text">可用（{account.title}特权）</span>
               ) : (
                 <span className="text-ink-muted">拓荒者专属</span>
               )
@@ -206,21 +206,15 @@ function StatRow({
         {items.map(([key, value, tone]) => (
           <div
             key={key}
-            className={`min-w-0 border p-4 ${
-              tone === "ok"
-                ? "border-emerald-200 bg-emerald-50/60"
-                : tone === "bad"
-                  ? "border-rose-200 bg-rose-50/60"
-                  : "border-ink-line bg-paper-raised"
-            }`}
+            className="min-w-0 rounded-lg border border-ink-line bg-paper-raised p-4"
           >
             <dt className="text-xs text-ink-muted">{key}</dt>
             <dd
               className={`mt-2 break-words font-mono text-xl font-semibold leading-snug tabular-nums ${
                 tone === "ok"
-                  ? "text-emerald-700"
+                  ? "text-success-text"
                   : tone === "bad"
-                    ? "text-rose-700"
+                    ? "text-error-text"
                     : "text-ink-primary"
               }`}
             >
@@ -247,9 +241,9 @@ export function TitleBadge({ account }: { account: Account | null }) {
       : `${account.title} #${String(account.earlyMemberNo).padStart(3, "0")}`;
   const tone =
     account.role === "admin"
-      ? "border-rose-300 bg-rose-50 text-rose-800"
+      ? "border-ink-control bg-paper-raised text-ink-primary"
       : account.role === "beta"
-        ? "border-amber-300 bg-amber-50 text-amber-900"
+        ? "border-brand-gold/60 bg-paper-raised text-brand-gold"
         : "border-ink-line bg-paper-base text-ink-muted";
   return (
     <span

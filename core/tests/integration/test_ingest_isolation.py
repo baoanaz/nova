@@ -14,8 +14,8 @@ read(path)    → _resolve(path) 拒绝 "\\"  → SourcePathError(ValueError)
 修复前的最小复现（``Engine.ingest_repo`` 直接抛异常，退出码 1，**已解析的文件也留不下来**）：
 
 ```text
-$ uv run zace-core ingest --repo <含 weird\\name.py 的仓库> --data <tmp>
-zace-core: SourcePathError: 非法仓库相对路径：'src/weird\\name.py'
+$ uv run nova-core ingest --repo <含 weird\\name.py 的仓库> --data <tmp>
+nova-core: SourcePathError: 非法仓库相对路径：'src/weird\\name.py'
 ```
 
 根因分两半，归属不同（本文件只锁"隔离"这一半）：
@@ -35,11 +35,11 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
-from zace_core.engine import Engine
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.pipeline import DirectorySource, Indexer, IngestReport
-from zace_core.storage import Store
-from zace_core.vectors import VectorStore
+from nova_core.engine import Engine
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.pipeline import DirectorySource, Indexer, IngestReport
+from nova_core.storage import Store
+from nova_core.vectors import VectorStore
 
 #: 会被 ``read()`` 拒绝的路径（Linux 合法文件名：单段名字里含反斜杠）。
 HOSTILE_PATH = "weird\\name.py"

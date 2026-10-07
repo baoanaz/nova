@@ -361,7 +361,7 @@ export function HistoryPage() {
               onClick={() => setDays(value)}
               className={`px-2.5 py-1 ${
                 days === value
-                  ? "bg-accent-seal text-white"
+                  ? "bg-accent-seal text-accent-contrast"
                   : "bg-paper-card text-ink-muted hover:bg-paper-base"
               }`}
             >
@@ -374,12 +374,12 @@ export function HistoryPage() {
       {error !== null && <ErrorBlock error={error} />}
 
       {runFailures.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-medium text-amber-900">
+        <div className="space-y-2 rounded-lg border border-warning-line bg-warning-soft p-3">
+          <p className="text-sm font-medium text-warning-text">
             部分项目的初始化记录读取失败：
             {runFailures.map((item) => nameOf(item.projectId)).join("、")}
           </p>
-          <p className="text-xs text-amber-800">
+          <p className="text-xs text-warning-text">
             下表<strong>只包含读取成功的项目</strong>，这些项目可能还有未显示的记录。
           </p>
           {runFailures.map((item) => (
@@ -515,7 +515,7 @@ function KindBadge({ kind, tool }: { kind: ActivityRow["kind"]; tool: string }) 
   return (
     <span
       className={`rounded px-1.5 py-0.5 whitespace-nowrap ${
-        kind === "init" ? "bg-paper-base text-ink-primary" : "bg-blue-50 text-blue-800"
+        kind === "init" ? "bg-paper-base text-ink-primary" : "bg-accent-soft text-accent-seal"
       }`}
       title={kind === "init" ? "上传链路触发的仓库索引" : "Agent 调用的 MCP 工具"}
     >
@@ -527,10 +527,10 @@ function KindBadge({ kind, tool }: { kind: ActivityRow["kind"]; tool: string }) 
 /** 状态徽标：成功 / 失败 / 证据不足 / 降级。 */
 function StateBadge({ state }: { state: ActivityRow["state"] }) {
   const map: Record<ActivityRow["state"], [string, string]> = {
-    ok: ["成功", "bg-emerald-50 text-emerald-700"],
-    failed: ["失败", "bg-rose-50 text-rose-700"],
-    insufficient: ["证据不足", "bg-amber-50 text-amber-700"],
-    degraded: ["降级", "bg-amber-50 text-amber-700"],
+    ok: ["成功", "bg-success-soft text-success-text"],
+    failed: ["失败", "bg-error-soft text-error-text"],
+    insufficient: ["证据不足", "bg-warning-soft text-warning-text"],
+    degraded: ["降级", "bg-warning-soft text-warning-text"],
   };
   const [label, cls] = map[state];
   return <span className={`rounded px-1.5 py-0.5 ${cls}`}>{label}</span>;
@@ -572,7 +572,7 @@ function DetailDialog({ row, onClose }: { row: ActivityRow | null; onClose: () =
         event.preventDefault();
         onClose();
       }}
-      className="w-[min(90vw,52rem)] rounded-lg border border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-ink-primary/40"
+      className="w-[min(90vw,52rem)] rounded-lg border border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-black/60"
     >
       {row !== null && (
         <div className="p-4">

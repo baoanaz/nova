@@ -1,10 +1,10 @@
 {
-  "name": "zace-web",
+  "name": "nova-web",
   "private": true,
   "version": "0.0.1",
   "license": "Unlicense",
   "type": "module",
-  "description": "zace 管理面：账户、项目、MCP 接入、API Key、历史记录与模型配置",
+  "description": "nova 管理面：账户、项目、MCP 接入、API Key、历史记录与模型配置",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

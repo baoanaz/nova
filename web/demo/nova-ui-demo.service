@@ -1,0 +1,20 @@
+[Unit]
+Description=nova UI demo API (synthetic data only)
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/nova-ui-demo
+LoadCredential=auth.json:/etc/nova-ui-demo/auth.json
+ExecStart=/usr/bin/node /opt/nova-ui-demo/server.mjs
+Environment=PORT=8789
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

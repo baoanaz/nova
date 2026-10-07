@@ -6,9 +6,9 @@ import pathlib
 from collections.abc import Callable, Iterator
 
 import pytest
-from zace_core.hashing import chunk_content_hash
-from zace_core.storage import Store
-from zace_core.types import (
+from nova_core.hashing import chunk_content_hash
+from nova_core.storage import Store
+from nova_core.types import (
     ChunkDef,
     EdgeDef,
     ParsedFile,

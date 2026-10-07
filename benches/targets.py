@@ -12,7 +12,7 @@
    等同靶场源码副本；清单进公开仓库，索引只走内网（见 ``benches/README.md`` 的合规一节）；
 2. ``project_id`` 是 benchmark 放行口（跳过身份核验与 ``project.json`` 校验），
    **不得**用在生产服务路径上；
-3. 索引/侧车/配置三者指纹不符时由 ``zace-core`` 如实报错，本模块**不做**任何自动重建、
+3. 索引/侧车/配置三者指纹不符时由 ``nova-core`` 如实报错，本模块**不做**任何自动重建、
    也不把"没找到索引"翻译成"降级跑一遍"。
 """
 
@@ -196,7 +196,7 @@ def build_eval_args(
     repo: str | Path | None = None,
     extra: Sequence[str] = (),
 ) -> list[str]:
-    """把靶场 + 运行参数拼成 ``zace-core eval`` 的参数表（不含 ``eval`` 子命令名）。"""
+    """把靶场 + 运行参数拼成 ``nova-core eval`` 的参数表（不含 ``eval`` 子命令名）。"""
     if not target.golden.is_dir() and not target.golden.is_file():
         raise TargetError(f"靶场 {target.name} 的 golden 不存在：{target.golden}")
     if not target.has_project_id and repo is None:

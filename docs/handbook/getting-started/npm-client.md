@@ -2,20 +2,20 @@
 
 [文档中心](../../README.md) · [客户端配置速查](../../../npm/README.md)
 
-本篇面向想理解 `zace-client` 如何打包、启动和调试的读者。只想接入 Agent，可以先看客户端配置速查。
+本篇面向想理解 `nova-client` 如何打包、启动和调试的读者。只想接入 Agent，可以先看客户端配置速查。
 
 ## 1. npm 安装的是什么
 
-`zace-client` 主包是一段 Node.js 启动器。实际扫描仓库、处理 MCP stdio、同步文件和调用远端 API 的程序由 Rust 编写，随对应平台的子包一起安装。
+`nova-client` 主包是一段 Node.js 启动器。实际扫描仓库、处理 MCP stdio、同步文件和调用远端 API 的程序由 Rust 编写，随对应平台的子包一起安装。
 
 ```text
-npm install -g zace-client
+npm install -g nova-client
           │
           ├── 主包：package.json + run.js + README + LICENSE
           │
-          └── 当前平台子包：编译好的 zace-client 或 zace-client.exe
+          └── 当前平台子包：编译好的 nova-client 或 nova-client.exe
                               │
-Agent ── MCP stdio ──► Rust 客户端 ── HTTP ──► zace-service
+Agent ── MCP stdio ──► Rust 客户端 ── HTTP ──► nova-service
 ```
 
 使用发布包只需要 Node.js 18+，无需本机安装 Rust。开发 Web UI 使用的 Node.js 22 是另一项环境要求。
@@ -28,7 +28,7 @@ Agent ── MCP stdio ──► Rust 客户端 ── HTTP ──► zace-servi
 
 | 字段 | 作用 |
 |---|---|
-| `bin` | 将 `zace-client` 命令指向 `run.js` |
+| `bin` | 将 `nova-client` 命令指向 `run.js` |
 | `files` | 控制主包携带的文件；npm 还会按自身规则包含 README、LICENSE 等 |
 | `engines.node` | Node.js 最低版本 |
 | `optionalDependencies` | 声明六个平台子包及与主包匹配的精确版本 |
@@ -39,9 +39,9 @@ Agent ── MCP stdio ──► Rust 客户端 ── HTTP ──► zace-servi
 
 | 系统 | x64 | arm64 |
 |---|---|---|
-| Linux | `zace-client-linux-x64` | `zace-client-linux-arm64` |
-| macOS | `zace-client-darwin-x64` | `zace-client-darwin-arm64` |
-| Windows | `zace-client-windows-x64` | `zace-client-windows-arm64` |
+| Linux | `nova-client-linux-x64` | `nova-client-linux-arm64` |
+| macOS | `nova-client-darwin-x64` | `nova-client-darwin-arm64` |
+| Windows | `nova-client-windows-x64` | `nova-client-windows-arm64` |
 
 Windows 的包名使用 `windows`，`os` 字段使用 Node 约定的 `win32`。子包只携带二进制，不另设同名 `bin` 命令。
 
@@ -51,11 +51,11 @@ Windows 的包名使用 `windows`，`os` 字段使用 Node 约定的 `win32`。�
 
 1. `platformPackage()` 根据 `process.platform` 和 `process.arch` 选择子包。
 2. `fromPlatformPackage()` 检查 npm 安装布局并解析二进制路径。
-3. 找不到平台包时，`fromDevChannel()` 尝试开发者指定的 `ZACE_CLIENT_BINARY`，再尝试仓库内 `client/target/{release,debug}/` 的产物。
+3. 找不到平台包时，`fromDevChannel()` 尝试开发者指定的 `NOVA_CLIENT_BINARY`，再尝试仓库内 `client/target/{release,debug}/` 的产物。
 4. `spawn()` 透传参数、环境与 stdio，转发退出码和信号。
 5. 全部失败时，打印平台信息和诊断建议并退出。
 
-**平台包的优先级高于开发通道**。如果在全局安装目录运行 `zace-client`，设置 `ZACE_CLIENT_BINARY` 不一定覆盖已安装的平台包；调试时直接运行刚构建的 Rust 二进制最明确。
+**平台包的优先级高于开发通道**。如果在全局安装目录运行 `nova-client`，设置 `NOVA_CLIENT_BINARY` 不一定覆盖已安装的平台包；调试时直接运行刚构建的 Rust 二进制最明确。
 
 MCP 的 stdout 用于协议帧，启动器诊断写入 stderr。在调试启动器时，不要把普通日志写到 stdout。
 
@@ -64,24 +64,24 @@ MCP 的 stdout 用于协议帧，启动器诊断写入 stderr。在调试启动�
 全局安装：
 
 ```bash
-npm install -g zace-client@latest
-zace-client --help
+npm install -g nova-client@latest
+nova-client --help
 ```
 
 不全局安装：
 
 ```bash
-npx --yes --prefer-online zace-client@latest --help
+npx --yes --prefer-online nova-client@latest --help
 ```
 
-`--help` 能正常输出，只证明启动器和本机二进制能执行。确认真实接入，还需要运行中的 zace-service、有效 API Key，以及 Agent 中一次实际工具调用。
+`--help` 能正常输出，只证明启动器和本机二进制能执行。确认真实接入，还需要运行中的 nova-service、有效 API Key，以及 Agent 中一次实际工具调用。
 
-固定版本时，把 `latest` 换成需要的版本；例如 `zace-client@0.0.8`。可以只查询元数据，不触发发布：
+固定版本时，把 `latest` 换成需要的版本；例如 `nova-client@0.0.8`。可以只查询元数据，不触发发布：
 
 ```bash
-npm view zace-client version
-npm view zace-client optionalDependencies
-npm view zace-client-linux-x64 version
+npm view nova-client version
+npm view nova-client optionalDependencies
+npm view nova-client-linux-x64 version
 ```
 
 请按实际平台选择第三条命令的包名。不要使用跳过 optional dependencies 的安装方式，否则可能出现主包安装成功但缺少二进制。
@@ -92,11 +92,11 @@ npm view zace-client-linux-x64 version
 
 ```bash
 cargo build --locked --manifest-path client/Cargo.toml -j 1
-./client/target/debug/zace-client --help
+./client/target/debug/nova-client --help
 node npm/run.js --help
 ```
 
-第三条命令在没有已安装平台包时，会使用仓库内构建产物，并在 stderr 打印来源。Windows 产物为 `zace-client.exe`。
+第三条命令在没有已安装平台包时，会使用仓库内构建产物，并在 stderr 打印来源。Windows 产物为 `nova-client.exe`。
 
 仅查看主包发布内容，可以做本地 dry run：
 
@@ -135,7 +135,7 @@ bash scripts/check-version.sh
 |---|---|
 | 找不到当前平台的二进制 | optional dependency 是否安装；registry 是否存在对应子包与版本 |
 | Agent 报 stdio 连接关闭 | 先运行 `--help`，查看 stderr 的平台诊断；检查可执行权限 |
-| 设置开发二进制却仍运行旧版本 | 平台包优先级更高，直接执行 `client/target/debug/zace-client` 对比 |
+| 设置开发二进制却仍运行旧版本 | 平台包优先级更高，直接执行 `client/target/debug/nova-client` 对比 |
 | 安装成功但请求返回 401 | 运行中的服务是否需要鉴权，Token 是否属于该服务且未撤销 |
 | 手动运行客户端后一直等待 | stdio 客户端在等待 Agent 的协议请求；使用 `--help` 检查程序，用 Agent 验证工具调用 |
 | 首次工具调用耗时较长 | 可能正在同步和建立索引，查看服务端项目与索引历史 |

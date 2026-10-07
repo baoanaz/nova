@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.retrieval import recall
-from zace_core.retrieval.fusion import CHANNEL_VECTOR, TIER_VECTOR
-from zace_core.retrieval.vector import (
+from nova_core.retrieval import recall
+from nova_core.retrieval.fusion import CHANNEL_VECTOR, TIER_VECTOR
+from nova_core.retrieval.vector import (
     QueryEmbeddingCache,
     VectorChannelError,
     VectorTimeoutError,
@@ -168,7 +168,7 @@ def test_recall_degrades_on_vector_exception_without_raising(
 def test_recall_degrades_on_vector_timeout(
     store, seed_file, sym, provider_cls, vector_stub
 ) -> None:
-    from zace_core.retrieval import RecallLimits
+    from nova_core.retrieval import RecallLimits
 
     seed_file(
         store,

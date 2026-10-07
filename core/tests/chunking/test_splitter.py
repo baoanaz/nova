@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 import pytest
-from zace_core.chunking import (
+from nova_core.chunking import (
     CLASS_SKELETON_KIND,
     FALLBACK_KIND,
     ID_DISAMBIGUATION_SEP,
@@ -20,11 +20,11 @@ from zace_core.chunking import (
     spec_block_id,
     split_file,
 )
-from zace_core.hashing import chunk_content_hash
-from zace_core.parsing.cpp import CppParser
-from zace_core.parsing.fallback import FALLBACK_MAX_CHARS, FALLBACK_MAX_LINES
-from zace_core.storage import Store
-from zace_core.types import ParsedFile
+from nova_core.hashing import chunk_content_hash
+from nova_core.parsing.cpp import CppParser
+from nova_core.parsing.fallback import FALLBACK_MAX_CHARS, FALLBACK_MAX_LINES
+from nova_core.storage import Store
+from nova_core.types import ParsedFile
 
 MODULE_SOURCE = '''import os
 
@@ -63,7 +63,7 @@ def _chunks_by_symbol(parsed: ParsedFile, source: str):  # type: ignore[no-untyp
 
 
 def test_chunk_id_format_and_overload_disambiguation() -> None:
-    from zace_core.types import SymbolDef
+    from nova_core.types import SymbolDef
 
     parsed = ParsedFile(
         path="src/a.c",
@@ -250,7 +250,7 @@ int after() { return 2; }
 
 
 def test_parse_failure_ignores_symbols_entirely() -> None:
-    from zace_core.types import SymbolDef
+    from nova_core.types import SymbolDef
 
     parsed = ParsedFile(
         path="broken.py",
@@ -318,7 +318,7 @@ def test_callable_fixtures_are_wired(parse_source: Callable[[str, str], ParsedFi
 
 def test_duplicate_chunk_ids_raise_value_error() -> None:
     """人为重复 id → 带明细的 ValueError，而不是静默去重/写库时才爆 IntegrityError。"""
-    from zace_core.types import SymbolDef
+    from nova_core.types import SymbolDef
 
     duplicate = SymbolDef(name="dup", fqn="dup", kind="function", start_line=1, end_line=3)
     parsed = ParsedFile(path="src/dup.py", language="python", symbols=(duplicate, duplicate))
@@ -377,7 +377,7 @@ def _id_occurrence(chunk_id: str) -> int:
 
 def test_structural_duplicates_still_fail_loudly() -> None:
     """非兜底来源的真不一致仍显式失败（消歧不把 bug 掩盖成“能跑”）。"""
-    from zace_core.types import SymbolDef
+    from nova_core.types import SymbolDef
 
     duplicate = SymbolDef(name="dup", fqn="dup", kind="function", start_line=1, end_line=3)
     parsed = ParsedFile(path="src/dup.py", language="python", symbols=(duplicate, duplicate))

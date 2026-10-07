@@ -39,8 +39,8 @@ import {
 } from "../components/ui";
 import { formatTime } from "./DashboardPage";
 
-/** 自定义 Key 的固定前缀（用户要求"必须以 zace_ 开头"）。 */
-const KEY_PREFIX = "zace_";
+/** 自定义 Key 的固定前缀（用户要求"必须以 nova_ 开头"）。 */
+const KEY_PREFIX = "nova_";
 
 export function ApiKeysPage() {
   const [keys, setKeys] = useState<ApiKeySummary[] | null>(null);
@@ -132,7 +132,7 @@ export function ApiKeysPage() {
                     <button
                       type="button"
                       onClick={() => void onRevoke(key)}
-                      className="rounded border border-rose-300 px-2 py-1 text-xs text-rose-700 hover:bg-rose-50"
+                      className="rounded border border-error-line px-2 py-1 text-xs text-error-text hover:bg-error-soft"
                     >
                       撤销
                     </button>
@@ -174,7 +174,7 @@ function CreateKeyTrigger({
       onClick={onClick}
       // 身份还没加载完就允许点：弹窗自己会按 account 决定显示哪几行，
       // 而"等一下再点"是个没必要的限制。
-      className="rounded bg-accent-seal px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+      className="rounded bg-accent-seal px-3 py-1.5 text-xs font-medium text-accent-contrast hover:opacity-90"
       title={account?.capabilities.canCustomKey ? "创建随机 Key 或自定义 Key" : "创建一个 Key"}
     >
       创建 Key
@@ -238,7 +238,7 @@ function CreateKeyDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90"
           >
             我已保存，关闭
           </button>
@@ -264,7 +264,7 @@ function CreateKeyDialog({
         {canCustomKey && (
           <label className="block text-sm">
             <span className="mb-1 flex flex-wrap items-center gap-x-2 text-xs">
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-900">
+              <span className="rounded bg-warning-soft px-1.5 py-0.5 font-medium text-warning-text">
                 🧭 {account?.title}特权
               </span>
               <span className="text-ink-muted">可自定义 Key，必须以 {KEY_PREFIX} 开头</span>
@@ -296,7 +296,7 @@ function CreateKeyDialog({
           <button
             type="submit"
             disabled={busy}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-40"
+            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90 disabled:opacity-40"
           >
             {busy ? "创建中…" : "创建"}
           </button>

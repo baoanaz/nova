@@ -375,7 +375,7 @@ describe("§D 项目删除入口", () => {
     await user.click(screen.getByRole("button", { name: "删除索引数据" }));
 
     await waitFor(() => {
-      expect(screen.getByText(/连不上 zace-service/)).toBeInTheDocument();
+      expect(screen.getByText(/连不上 nova-service/)).toBeInTheDocument();
     });
   });
 });

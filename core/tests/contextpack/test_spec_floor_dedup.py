@@ -25,12 +25,12 @@ from __future__ import annotations
 
 from dataclasses import replace
 
-from zace_core.contextpack import (
+from nova_core.contextpack import (
     BudgetConfig,
     assemble,
     estimate_render_tokens,
 )
-from zace_core.types import SpecBlockDef
+from nova_core.types import SpecBlockDef
 
 SPEC_PATH = "docs/design.md"
 SPEC_HEADING = "架构 > Token Refresh"

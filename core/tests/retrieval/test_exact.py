@@ -3,15 +3,15 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.retrieval import exact
-from zace_core.retrieval.exact import (
+from nova_core.retrieval import exact
+from nova_core.retrieval.exact import (
     explicit_tokens,
     extract_inferred,
     parse_explicit,
     recall_explicit,
     recall_inferred,
 )
-from zace_core.retrieval.fusion import CHANNEL_EXACT, CHANNEL_INFERRED, TIER_EXPLICIT, TIER_SEED
+from nova_core.retrieval.fusion import CHANNEL_EXACT, CHANNEL_INFERRED, TIER_EXPLICIT, TIER_SEED
 
 
 def _kinds(query: str) -> dict[str, str]:

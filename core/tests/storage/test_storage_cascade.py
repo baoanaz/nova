@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.storage import Store
-from zace_core.text import segment
-from zace_core.types import (
+from nova_core.storage import Store
+from nova_core.text import segment
+from nova_core.types import (
     ChunkDef,
     CodeFence,
     EdgeDef,

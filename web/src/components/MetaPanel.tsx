@@ -69,7 +69,7 @@ export function MetaPanel({ meta }: { meta: PackMeta }) {
       <p className="text-xs text-ink-muted">{freshness}</p>
 
       {meta.degraded && (
-        <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+        <div className="rounded border border-warning-line bg-warning-soft px-3 py-2 text-xs text-warning-text">
           <p className="font-medium">degraded = true</p>
           <p className="mt-1">{meta.degradedReason ?? "未提供原因"}</p>
         </div>

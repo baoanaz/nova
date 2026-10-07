@@ -19,10 +19,10 @@ from pathlib import Path
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_service.__main__ import build_parser
-from zace_service.config import Settings
-from zace_service.errors import ApiError
-from zace_service.logging import JsonFormatter, redact_text
+from nova_service.__main__ import build_parser
+from nova_service.config import Settings
+from nova_service.errors import ApiError
+from nova_service.logging import JsonFormatter, redact_text
 
 from tests.conftest import make_app, make_client
 
@@ -119,7 +119,7 @@ def test_not_implemented_helper_still_builds_501_envelope() -> None:
     因此不再有"路径存在但返 501"的路由；这个助手继续留给**未来**的新占位使用，
     这里直接验证它的信封形状（否则它会成为无人使用的死代码）。
     """
-    from zace_service.errors import not_implemented
+    from nova_service.errors import not_implemented
 
     error = not_implemented("某种能力", "TASK-XXX")
     assert error.status == 501
@@ -178,7 +178,7 @@ def test_request_id_is_echoed_and_logged(
     client: TestClient, caplog: pytest.LogCaptureFixture
 ) -> None:
     """响应带 ``X-Request-Id``，且同一 id 出现在日志行里（可检索）。"""
-    with caplog.at_level(logging.INFO, logger="zace_service.app"):
+    with caplog.at_level(logging.INFO, logger="nova_service.app"):
         response = client.get("/healthz", headers={"X-Request-Id": "fixed-request-id"})
     assert response.headers["X-Request-Id"] == "fixed-request-id"
 
@@ -207,7 +207,7 @@ def test_logs_do_not_leak_authorization_or_cookie(
     with caplog.at_level(logging.INFO):
         response = client.get(
             "/healthz",
-            headers={"Authorization": f"Bearer {secret}", "Cookie": f"zace_session={secret}"},
+            headers={"Authorization": f"Bearer {secret}", "Cookie": f"nova_session={secret}"},
         )
     assert response.status_code == 200
     assert secret not in caplog.text
@@ -230,7 +230,7 @@ def test_redact_text_masks_credentials() -> None:
 
 
 def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("ZACE_DATA_ROOT", str(tmp_path / "root"))
+    monkeypatch.setenv("NOVA_DATA_ROOT", str(tmp_path / "root"))
     resolved = Settings.from_env()
     assert resolved.data_root == tmp_path / "root"
     assert resolved.local_mode is False
@@ -239,7 +239,7 @@ def test_settings_from_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> N
 
 def test_deployment_mode_cannot_disable_full_auth_flow() -> None:
     """旧环境变量不再把普通部署切成缺少账户/API Key 的本地模式。"""
-    resolved = Settings.from_env({"ZACE_LOCAL_MODE": "true", "ZACE_REGISTER_OPEN": "false"})
+    resolved = Settings.from_env({"NOVA_LOCAL_MODE": "true", "NOVA_REGISTER_OPEN": "false"})
     assert resolved.local_mode is False
     assert resolved.auth_required is True
 

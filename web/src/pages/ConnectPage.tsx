@@ -2,7 +2,7 @@
  * 接入指南：安装 npm 包、配置 Agent，以及可选的提示词增强。
  *
  * 设计口径（用户 2026-09-13 指定）：
- * - 卡牌一：一条 `npm install -g zace-client`；使用者是工程师，不写 Node 版本等新手前置；
+ * - 卡牌一：一条 `npm install -g nova-client`；使用者是工程师，不写 Node 版本等新手前置；
  * - 卡牌二：Codex / Claude / pi 三按键，配置必定带 `--token`（缺省为占位符）；
  *   服务地址默认使用已配置的 API 基址或当前站点地址，用户可修改；
  * - 不自动带入真实 Key（避免截图/录屏泄露）；用户填了就实时替换占位符；
@@ -44,7 +44,7 @@ export function ConnectPage() {
         <p className="mt-1 text-sm text-ink-muted">安装 npm 包、配置 Agent，再按需添加提示词增强。</p>
       </div>
 
-      <Card title="1. 下载 zace-client npm 包" actions={<CopyButton text={INSTALL_COMMAND} />}>
+      <Card title="1. 下载 nova-client npm 包" actions={<CopyButton text={INSTALL_COMMAND} />}>
         <pre className="overflow-x-auto rounded bg-ink-primary p-3 font-mono text-xs text-paper-base">
           {INSTALL_COMMAND}
         </pre>
@@ -70,7 +70,7 @@ export function ConnectPage() {
             <input
               value={token}
               onChange={(event) => setToken(event.target.value)}
-              placeholder="zace_..."
+              placeholder="nova_..."
               className="w-full rounded border border-ink-line bg-paper-card px-3 py-1.5 font-mono text-sm text-ink-primary"
             />
           </label>
@@ -84,7 +84,7 @@ export function ConnectPage() {
               onClick={() => setTarget(item.id)}
               className={`rounded border px-4 py-2 text-sm ${
                 target === item.id
-                  ? "border-accent-seal bg-accent-seal text-white"
+                  ? "border-accent-seal bg-accent-seal text-accent-contrast"
                   : "border-ink-line bg-paper-card text-ink-primary hover:bg-paper-base"
               }`}
             >

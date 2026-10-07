@@ -3,7 +3,7 @@
 #
 # 为什么需要它：npm 包装器按 `v<package.json 版本>` 去 GitHub Release 找资产（旧路径），
 # 而资产由 `.github/workflows/release.yml` 在 `v*` tag 时产出。三者一旦不一致，
-# 用户 `npx zace-client` 会拿到 **HTTP 404** —— 这是最费时间排查的一类故障
+# 用户 `npx nova-client` 会拿到 **HTTP 404** —— 这是最费时间排查的一类故障
 # （表现是"包装器启动失败"，根因却在版本号）。
 #
 # TASK-MCP-NPM：主路径改为 **npm 平台子包**后，多个一类校验——6 个子包的版本号

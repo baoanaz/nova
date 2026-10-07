@@ -1,4 +1,4 @@
-# zace 操作手册
+# nova 操作手册
 
 [文档中心](../README.md) · [项目首页](../../README.md)
 

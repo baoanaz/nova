@@ -59,7 +59,7 @@ EMBED_API_KEY=sk-xxxx          # 硅基流动 key
 
 # 重新索引（必须：模型变了 → profile 变 → D-07 触发 reembed）
 set -a; source .env; set +a
-uv run zace-core ingest --repo <你的仓库> --data <数据根>
+uv run nova-core ingest --repo <你的仓库> --data <数据根>
 ```
 
 **预期行为**：`reembed` 档位——AST/符号/边**原样保留**，只重算向量（不重新解析）。
@@ -70,7 +70,7 @@ uv run zace-core ingest --repo <你的仓库> --data <数据根>
 `voyage-4-lite` / `voyage-4` / `voyage-4-large` / `voyage-code-4` **共享同一向量空间**
 （官方文档 + 实测确认），因此**理论上可混用**：用 lite 建索引、用 large 做查询。
 
-> ⚠️ **当前实现仍未支持**：zace 的 `model_id` 会随模型名变化 → 切换仍触发重嵌。
+> ⚠️ **当前实现仍未支持**：nova 的 `model_id` 会随模型名变化 → 切换仍触发重嵌。
 > 若确实需要混用（例如查询用更强模型），需要一张新卡让 `model_id` 可显式声明为
 > "共享空间标识"。**在实现前，换档位 = 全量重嵌。**
 

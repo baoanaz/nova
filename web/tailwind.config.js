@@ -4,36 +4,23 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: [
-          "Inter", "ui-sans-serif", "system-ui", "-apple-system", '"Segoe UI"',
-          '"PingFang SC"', '"Microsoft YaHei"', "sans-serif",
-        ],
+        sans: ["Inter", "ui-sans-serif", "system-ui", "-apple-system", '"Segoe UI"', '"PingFang SC"', '"Microsoft YaHei"', "sans-serif"],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "Consolas", "monospace"],
       },
-      // 方角与偏移阴影是全站统一的视觉语法；圆形身份徽章与开关仍保留 rounded-full。
-      borderRadius: { DEFAULT: "0", sm: "0", md: "0", lg: "0", xl: "0", "2xl": "0" },
+      borderRadius: { DEFAULT: "0.5rem", sm: "0.25rem", md: "0.625rem", lg: "0.75rem", xl: "1rem", "2xl": "1.25rem" },
       boxShadow: {
-        sm: "4px 4px 0 rgb(39 22 16 / 0.14)",
-        xl: "8px 8px 0 rgb(39 22 16 / 0.18)",
+        sm: "0 4px 20px rgb(0 0 0 / 0.12)",
+        xl: "0 24px 64px rgb(0 0 0 / 0.3)",
       },
-      // 沿用已有语义 token，让所有业务页面同步切换主题。
       colors: {
-        paper: {
-          base: "#fff7f2",
-          raised: "#fffcf9",
-          card: "#fffffd",
-        },
-        ink: {
-          primary: "#271610",
-          muted: "#816055",
-          line: "#d7c5bc",
-        },
-        accent: {
-          seal: "#b95336", // 加深珊瑚橙，保证白色按钮文字的对比度。
-          soft: "#fbe7da",
-          bright: "#d97757",
-        },
-        danger: { base: "#bd3434", hover: "#a12727" },
+        paper: { base: "#0B0F14", raised: "#10161F", card: "#171F2B" },
+        ink: { primary: "#E9EEF5", muted: "#A0AEC0", line: "#2A3545", control: "#718198" },
+        accent: { seal: "#93C5FD", soft: "#1B3049", bright: "#BFDBFE", contrast: "#0B0F14" },
+        brand: { gold: "#D6C3A5" },
+        success: { soft: "#122B26", text: "#6EE7B7", line: "#39896C" },
+        warning: { soft: "#302519", text: "#FDBA74", line: "#B78248" },
+        error: { soft: "#321C25", text: "#FDA4AF", line: "#B96777" },
+        danger: { base: "#BE123C", hover: "#9F1239" },
       },
     },
   },

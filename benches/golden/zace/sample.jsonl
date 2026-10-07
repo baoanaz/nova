@@ -1,4 +1,0 @@
-{"id": "zace-0001", "repo_hint": "zace", "commit": "self", "query": "chunk_id 是怎么构成的？", "lang": "zh", "category": "symbol", "expected": [{"path": "core/zace_core/types.py", "symbol": "ChunkDef"}], "notes": "dogfood：切片存储契约"}
-{"id": "zace-0002", "repo_hint": "zace", "commit": "self", "query": "检索融合为什么用 RRF K=60 而不加通道权重？", "lang": "zh", "category": "spec", "expected": [{"path": "docs/design/Module/02-检索策略.md"}], "notes": "dogfood：设计决策文档检索"}
-{"id": "zace-0003", "repo_hint": "zace", "commit": "self", "query": "Where is blob_hash defined and what does it hash?", "lang": "en", "category": "behavior", "expected": [{"path": "core/zace_core/hashing.py", "symbol": "blob_hash"}], "notes": "混合：英文问 + 代码标识符"}
-{"id": "zace-0004", "repo_hint": "zace", "commit": "self", "query": "PaymentGateway 的重试退避逻辑在哪里实现", "lang": "zh", "category": "negative", "expected": [], "notes": "负例：仓库中不存在该符号，期望 no_context_match / 无强证据"}

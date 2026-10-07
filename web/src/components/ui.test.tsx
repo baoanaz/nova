@@ -67,11 +67,11 @@ describe("ErrorBlock", () => {
   it("服务不可达时提示「先启动服务」而不是空态", () => {
     render(
       <ErrorBlock
-        error={new ApiError("network_error", "连不上 zace-service", 0)}
+        error={new ApiError("network_error", "连不上 nova-service", 0)}
       />,
     );
 
-    expect(screen.getByText("连不上 zace-service")).toBeInTheDocument();
+    expect(screen.getByText("连不上 nova-service")).toBeInTheDocument();
     // message 与 hint 相同时不重复渲染两遍。
     expect(screen.getAllByText(/先启动服务/)).toHaveLength(1);
   });

@@ -1,10 +1,10 @@
-//! 文件级 blob 与 CF-02 哈希（**与 `core/zace_core/hashing.py` 逐字节一致**）。
+//! 文件级 blob 与 CF-02 哈希（**与 `core/nova_core/hashing.py` 逐字节一致**）。
 //!
-//! 与参考实现（notace）的一处**关键差异**：zace 的 `blob_hash` 带 `0x00` 分隔符
+//! 与参考实现（notace）的一处**关键差异**：nova 的 `blob_hash` 带 `0x00` 分隔符
 //! （`sha256(path_bytes || 0x00 || content_bytes)`，CF-02 冻结），而 notace 是
 //! `sha256(path_bytes || content_bytes)` 无分隔符。**必须带分隔符**，否则服务端账本对不上。
 //!
-//! 另一处差异：zace **不做行级切块**（D-02：切片是服务端 AST 符号级的职责，客户端只传文件级
+//! 另一处差异：nova **不做行级切块**（D-02：切片是服务端 AST 符号级的职责，客户端只传文件级
 //! blob）。因此本模块只产出"一文件一 blob"。
 
 use sha2::{Digest, Sha256};
@@ -26,7 +26,7 @@ pub fn blob_hash(path: &str, content: &[u8]) -> String {
 
 /// 清理控制字符（保留 `\n` / `\r` / `\t`）——与 notace `sanitize_content` 同语义。
 ///
-/// zace 侧的等价物在 core 的读取路径上；客户端保持一致，保证同一文件两端算出同一 hash。
+/// nova 侧的等价物在 core 的读取路径上；客户端保持一致，保证同一文件两端算出同一 hash。
 pub fn sanitize_content(content: &str) -> String {
     content
         .chars()
@@ -36,7 +36,7 @@ pub fn sanitize_content(content: &str) -> String {
 
 /// 前 `probe` 字节中不可打印字符比例 `> ratio` → 判二进制。
 ///
-/// **与 core `_is_binary` 逐条同口径**（`core/zace_core/pipeline/ignore.py`）：
+/// **与 core `_is_binary` 逐条同口径**（`core/nova_core/pipeline/ignore.py`）：
 /// 1. 只看前 `probe` 字节（默认 8 KB）；
 /// 2. 窗口内有 `NUL` → **直接判二进制**（文本文件不会有 NUL）；
 /// 3. 否则按 **ASCII 控制符**（`byte < 0x20` 且非 `\t`/`\n`/`\r`）比例判定
@@ -60,7 +60,7 @@ pub fn is_binary(bytes: &[u8], probe: usize, ratio: f64) -> bool {
 mod tests {
     use super::*;
 
-    /// 跨语言常量：由 Python `zace_core.hashing.blob_hash` 生成（TASK-040R 执行记录）。
+    /// 跨语言常量：由 Python `nova_core.hashing.blob_hash` 生成（TASK-040R 执行记录）。
     #[test]
     fn blob_hash_matches_python_cf02_vectors() {
         let vectors: [(&str, &[u8], &str); 4] = [

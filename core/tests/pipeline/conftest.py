@@ -19,13 +19,13 @@ from typing import Any
 
 import numpy as np
 import pytest
+from nova_core.embedding import LocalOnnxEmbeddingProvider, get_local_spec
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.pipeline import DirectorySource, Indexer
+from nova_core.storage import Store
+from nova_core.types import BlobInput, ChangeSet
+from nova_core.vectors import VectorStore
 from tokenizers import Tokenizer, models, pre_tokenizers, processors
-from zace_core.embedding import LocalOnnxEmbeddingProvider, get_local_spec
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.pipeline import DirectorySource, Indexer
-from zace_core.storage import Store
-from zace_core.types import BlobInput, ChangeSet
-from zace_core.vectors import VectorStore
 
 #: 测试用 embedding 维度（小维度让 LanceDB 与断言都轻量）。
 TEST_DIM = 16

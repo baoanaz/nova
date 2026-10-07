@@ -29,10 +29,10 @@ import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.types import ContextPack, EvidenceItem, Flow, FlowNode, Freshness
-from zace_service import answer as answer_module
-from zace_service.answer import (
+from nova_core.engine import Engine
+from nova_core.types import ContextPack, EvidenceItem, Flow, FlowNode, Freshness
+from nova_service import answer as answer_module
+from nova_service.answer import (
     ANSWER_SECTIONS,
     SYSTEM_PROMPT,
     SYSTEM_PROMPT_RULES,
@@ -49,11 +49,11 @@ from zace_service.answer import (
     estimate_tokens,
     verify_citations,
 )
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.routers.query import LLM_FAILED_NOTICE
-from zace_service.runtime import EngineManager
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.routers.query import LLM_FAILED_NOTICE
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -63,7 +63,7 @@ from tests.conftest import (
 )
 
 #: 真实形态的假 key（脱敏断言用；含本服务签发前缀与 OpenAI 家族前缀两种形态）。
-FAKE_API_KEY = "zace_FAKE-ANSWER-KEY-abc123XYZ"
+FAKE_API_KEY = "nova_FAKE-ANSWER-KEY-abc123XYZ"
 FAKE_SK_KEY = "sk-fake-answer-key-SHOULD-NOT-LEAK-9876"
 #: 假 provider 地址（不解析、不连接——客户端被注入的 MockTransport 拦下）。
 FAKE_BASE_URL = "http://127.0.0.1:9/v1"
@@ -414,7 +414,7 @@ def test_api_key_never_appears_in_logs_or_response(
 
 def test_http_provider_registers_secret_for_global_redaction(tmp_path: Path) -> None:
     """provider 构造时把 key 登记进全局脱敏表（第二道防线：日志里出现即被抹掉）。"""
-    from zace_service.logging import REDACTED, redact_text
+    from nova_service.logging import REDACTED, redact_text
 
     HttpAnswerProvider(base_url=FAKE_BASE_URL, api_key=FAKE_SK_KEY, model="m")
     assert FAKE_SK_KEY not in redact_text(f"Authorization: Bearer {FAKE_SK_KEY}")
@@ -676,7 +676,7 @@ def test_audit_records_nulls_when_llm_not_used(ask_env: SimpleNamespace) -> None
 
 def test_audit_migration_is_idempotent_on_existing_db(tmp_path: Path) -> None:
     """既有库（TASK-084 建的旧 schema）能安全加列：``PRAGMA`` 检查后 ``ALTER``，可重复。"""
-    path = tmp_path / "zace-meta.db"
+    path = tmp_path / "nova-meta.db"
     connection = sqlite3.connect(path)
     connection.executescript(
         """

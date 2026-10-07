@@ -37,7 +37,7 @@ type PendingDelete = { projectId: string; name: string };
 /**
  * 仓库名（去掉 `@分支` 后缀）。
  *
- * TASK-111 后 `displayName` 形如 `zace@feature/x`，分支已单独成列；仓库列再带上它
+ * TASK-111 后 `displayName` 形如 `nova@feature/x`，分支已单独成列；仓库列再带上它
  * 会让同一仓库的多个分支看起来是两个仓库，反而看不出“该不该删一个”。
  * 没有后缀时原样返回（无 git 的项目、旧数据）。
  */
@@ -223,10 +223,10 @@ function QuotaPanel({ storage }: { storage: QuotaStatusView }) {
   const { user, project, warnRatio } = storage;
   const tone =
     user.status === "exceeded"
-      ? { bar: "bg-rose-600", text: "text-rose-700", label: "已超出上限" }
+      ? { bar: "bg-error-text", text: "text-error-text", label: "已超出上限" }
       : user.status === "warning"
-        ? { bar: "bg-amber-500", text: "text-amber-700", label: "接近上限" }
-        : { bar: "bg-emerald-600", text: "text-emerald-700", label: "余量充足" };
+        ? { bar: "bg-warning-text", text: "text-warning-text", label: "接近上限" }
+        : { bar: "bg-success-text", text: "text-success-text", label: "余量充足" };
 
   return (
     <section

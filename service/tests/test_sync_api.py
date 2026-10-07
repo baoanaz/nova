@@ -7,11 +7,11 @@ import time
 
 import pytest
 from fastapi.testclient import TestClient
-from zace_core.hashing import blob_hash
-from zace_core.storage import Store
-from zace_service.routers.sync import MAX_BATCH_BYTES, checkpoint_id_for
-from zace_service.runtime import EngineManager
-from zace_service.sync_state import MAX_CHECKPOINTS
+from nova_core.hashing import blob_hash
+from nova_core.storage import Store
+from nova_service.routers.sync import MAX_BATCH_BYTES, checkpoint_id_for
+from nova_service.runtime import EngineManager
+from nova_service.sync_state import MAX_CHECKPOINTS
 
 from tests.conftest import SAMPLE_FILES, SAMPLE_MODULE_PATH, TARGET_SYMBOL
 

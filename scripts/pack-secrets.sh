@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Export only zace credentials and local settings. The archive never belongs in Git.
+# Export only nova credentials and local settings. The archive never belongs in Git.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-KEY_DIR="${ZACE_KEY_DIR:-$HOME/.key/zace}"
-OUT="$KEY_DIR/zace-secrets-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
+KEY_DIR="${NOVA_KEY_DIR:-$HOME/.key/nova}"
+OUT="$KEY_DIR/nova-secrets-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
 while getopts ":o:yh" option; do
   case "$option" in
     o) OUT="$OPTARG" ;;
@@ -28,7 +28,7 @@ if [ -e "$OUT" ] || [ -L "$OUT" ]; then
 fi
 WORK="$(mktemp -d "$KEY_DIR/.pack-XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
-PKG="$WORK/zace-secrets"
+PKG="$WORK/nova-secrets"
 mkdir -p "$PKG/env"
 if [ -f "$KEY_DIR/secrets.env" ]; then
   install -m 600 "$KEY_DIR/secrets.env" "$PKG/env/secrets.env"
@@ -42,11 +42,11 @@ Path(destination).write_text(Path(source).read_text().replace(root, "<REPO>"))
 PY
 fi
 cat > "$PKG/README.txt" <<'EOF'
-Private zace credentials and local settings. Never commit or share this archive publicly.
+Private nova credentials and local settings. Never commit or share this archive publicly.
 Restore from a trusted archive:
   tar xzf <archive> -C <private-directory>
-  bash <private-directory>/zace-secrets/restore.sh <zace-repository>
-Legacy invocation also accepts: restore.sh wsl|vps <zace-repository>
+  bash <private-directory>/nova-secrets/restore.sh <nova-repository>
+Legacy invocation also accepts: restore.sh wsl|vps <nova-repository>
 Restoration backs up existing files privately. It does not install dependencies,
 configure nginx/systemd, create symlinks, start services, or restore indexes.
 EOF
@@ -59,8 +59,8 @@ case "${1:-}" in
   *) REPO="${1:-$PWD}" ;;
 esac
 REPO="$(cd "$REPO" && pwd)"
-[ -f "$REPO/pyproject.toml" ] || { echo "Not a zace repository." >&2; exit 2; }
-KEY_DIR="${ZACE_KEY_DIR:-$HOME/.key/zace}"
+[ -f "$REPO/pyproject.toml" ] || { echo "Not a nova repository." >&2; exit 2; }
+KEY_DIR="${NOVA_KEY_DIR:-$HOME/.key/nova}"
 for target in "$KEY_DIR" "$KEY_DIR/secrets.env" "$REPO/.env"; do
   [ ! -L "$target" ] || { echo "Review destination symlink first: $target" >&2; exit 2; }
 done
@@ -99,7 +99,7 @@ output, work = sys.argv[1:]
 fd = os.open(output, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 try:
     with os.fdopen(fd, "wb") as stream, tarfile.open(fileobj=stream, mode="w:gz") as archive:
-        archive.add(os.path.join(work, "zace-secrets"), arcname="zace-secrets")
+        archive.add(os.path.join(work, "nova-secrets"), arcname="nova-secrets")
 except BaseException:
     os.unlink(output)
     raise

@@ -1,21 +1,21 @@
 # Module 07 — WebUI（组件详细设计）
 
-> 系列：zace 组件详细设计（Module/），本文是第 7 篇，消费层。
+> 系列：nova 组件详细设计（Module/），本文是第 7 篇，消费层。
 > 定位按用户指示：**只保留对接思想与页面骨架，视觉画风、组件库、设计稿全部留白**，后续另立文档。
-> 依赖：全部能力来自 zace-service 的 REST API（Module/06 §2.1）；不直连 core、不碰数据目录。
+> 依赖：全部能力来自 nova-service 的 REST API（Module/06 §2.1）；不直连 core、不碰数据目录。
 > 状态：骨架（画风待定）。最后更新：2025-09-09。
 
 ## 0. 组件定位
 
-一句话：**zace 的管理面与调试面，不是分析工作台**。
+一句话：**nova 的管理面与调试面，不是分析工作台**。
 
 V1 的 web 只回答四类问题：项目索引好了吗、同步到哪了、检索效果如何（playground）、token/用量怎么管。它**不是** Graph 可视化工具，不是 IDE，也不是另一个 Cursor。
 
 ```text
-zace-web（SPA，静态托管）
+nova-web（SPA，静态托管）
    │ REST（session cookie）
    ▼
-zace-service（Module/06 §2.1 的全部端点）
+nova-service（Module/06 §2.1 的全部端点）
 ```
 
 ## 1. V1 页面骨架（Task.md §13 兑现，逐页对接）

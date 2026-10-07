@@ -42,12 +42,12 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_service.app import create_app
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_service.app import create_app
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.runtime import EngineManager
 
 from tests.conftest import (
     SAMPLE_FILES,
@@ -308,12 +308,12 @@ def test_shared_repo_second_user_resolves_but_does_not_take_over(
 
 
 def test_attach_claims_to_the_local_user(tmp_path: Path) -> None:
-    """本地模式 + 已注入 MetaDB（``zace-service local`` 的真实路径）→ attach 认领给本地用户。
+    """本地模式 + 已注入 MetaDB（``nova-service local`` 的真实路径）→ attach 认领给本地用户。
 
     §B 第二行要求 ``attach`` 认领给 ``is_local=1`` 的本地用户。本地模式默认没有账户体系
     （R34），因此这里在**元数据库已存在**时取/建一个 ``local`` 隐式账户再写归属。
     """
-    from zace_service.auth import LOCAL_USER_NAME
+    from nova_service.auth import LOCAL_USER_NAME
 
     repo = tmp_path / "repo"
     (repo / "src").mkdir(parents=True)
@@ -350,7 +350,7 @@ def test_attach_does_not_create_meta_db_in_default_local_mode(tmp_path: Path) ->
     """默认本地模式（app 级无 MetaDB）→ attach **不建库、不写归属**（R34 回归保护）。
 
     与 :func:`test_attach_claims_to_the_local_user` 合起来钉住边界：认领只在"库已存在"时发生，
-    默认本地单用户模式的行为与今天逐字一致（``zace-meta.db`` 不被顺手创建）。
+    默认本地单用户模式的行为与今天逐字一致（``nova-meta.db`` 不被顺手创建）。
     """
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -367,8 +367,8 @@ def test_attach_does_not_create_meta_db_in_default_local_mode(tmp_path: Path) ->
     assert app.state.meta_db is None
     with make_client(app) as client:
         assert client.post("/api/projects/attach", json={"root": str(repo)}).status_code == 200
-    assert app.state.meta_db is None, "本地模式不该因为 attach 而创建 zace-meta.db"
-    assert not settings.meta_db_path.exists(), "磁盘上也不该出现 zace-meta.db"
+    assert app.state.meta_db is None, "本地模式不该因为 attach 而创建 nova-meta.db"
+    assert not settings.meta_db_path.exists(), "磁盘上也不该出现 nova-meta.db"
     manager.close()
 
 
@@ -376,7 +376,7 @@ def test_attach_does_not_create_meta_db_in_default_local_mode(tmp_path: Path) ->
 
 
 def test_local_mode_ignores_ownership_entirely(tmp_path: Path) -> None:
-    """本地模式（无 ``zace_user``）：不带任何凭据即可访问全部端点，行为与今天一致（R34）。"""
+    """本地模式（无 ``nova_user``）：不带任何凭据即可访问全部端点，行为与今天一致（R34）。"""
     settings = Settings(
         data_root=tmp_path / "data", local_mode=True, local_rescan_interval_s=0.0
     )
@@ -447,7 +447,7 @@ def _mcp_call(
             "params": {
                 "protocolVersion": _MCP_PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "zace-tests", "version": "0"},
+                "clientInfo": {"name": "nova-tests", "version": "0"},
             },
         },
         headers={**_MCP_HEADERS, **headers},
@@ -493,7 +493,7 @@ def _mcp_error_reason(result: dict[str, Any] | None) -> str:
     """工具错误的**业务文本**（剥掉 SDK 的 ``Error executing tool <name>: `` 前缀）。
 
     为什么只比业务部分：前缀随工具名变化（``... search_context: ...`` vs ``ask_project`` 那条），
-    它不是 zace 的语义。
+    它不是 nova 的语义。
     """
     text = _mcp_text(result)
     _, separator, reason = text.partition(": ")
@@ -509,12 +509,12 @@ def _assert_indistinguishable_denial(result: dict[str, Any] | None) -> None:
 
     为什么不必比 projectId 字面值：它由调用方自己提交的 ``project_root`` 决定，B 本来就能算出来，
     写进文案不构成泄露。真正的泄露面是"两种结果形态不同"——例如"越权"给简短拒绝、"不存在"给
-    ``未知项目：… 请用 zace-service local --repo …`` 这种可操作提示，B 据此即可区分存在性。
+    ``未知项目：… 请用 nova-service local --repo …`` 这种可操作提示，B 据此即可区分存在性。
     """
     reason = _mcp_error_reason(result)
     assert _DENIAL_RE.match(reason), reason
     assert "未知项目" not in reason, f"不得给可区分的存在性提示：{reason}"
-    assert "zace-service local" not in reason, f"不得给可区分的存在性提示：{reason}"
+    assert "nova-service local" not in reason, f"不得给可区分的存在性提示：{reason}"
 
 
 def _materialize_repo(tmp_path: Path, name: str) -> Path:
@@ -598,7 +598,7 @@ def test_mcp_cross_user_call_is_indistinguishable_from_missing(
     _, missing = _mcp_call(
         two_users.client, tool=tool, project_root=str(ghost_root), headers=two_users.bob
     )
-    # 越权与不存在走**同一种**拒绝形态（均无 "未知项目" / "请用 zace-service local" 这类线索）。
+    # 越权与不存在走**同一种**拒绝形态（均无 "未知项目" / "请用 nova-service local" 这类线索）。
     _assert_indistinguishable_denial(missing)
     _assert_indistinguishable_denial(denied)
 
@@ -660,7 +660,7 @@ def test_mcp_identity_is_per_request_not_sticky(two_users: SimpleNamespace) -> N
             "params": {
                 "protocolVersion": _MCP_PROTOCOL,
                 "capabilities": {},
-                "clientInfo": {"name": "zace-tests", "version": "0"},
+                "clientInfo": {"name": "nova-tests", "version": "0"},
             },
         },
         headers={**_MCP_HEADERS, **two_users.alice},
@@ -729,6 +729,6 @@ def test_mcp_local_mode_unknown_project_keeps_actionable_hint(tmp_path: Path) ->
         assert status == 200, status
         assert result is not None and result.get("isError") is True
         text = _mcp_text(result)
-        assert "未知项目" in text and "zace-service local --repo" in text, text
+        assert "未知项目" in text and "nova-service local --repo" in text, text
         assert "项目不存在" not in text, "本地模式不该被云端的『不给探测面』文案顶替"
     ns.manager.close()

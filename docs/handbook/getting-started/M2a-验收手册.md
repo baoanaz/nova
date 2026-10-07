@@ -1,4 +1,4 @@
-# zace M2a 验收手册（本地单用户：编辑器里用真实问题验证）
+# nova M2a 验收手册（本地单用户：编辑器里用真实问题验证）
 
 > 适用版本：M2a-2（TASK-034 本地单用户模式 + TASK-040 service 侧 MCP 端点）
 > 手册中**每一条命令与输出都在本机真实跑过**（WSL2 Ubuntu / Python 3.12 / `mcp==2.2.0`）。
@@ -37,26 +37,26 @@ $ uv sync --all-packages --all-extras
 ## 1. 一条命令起服务
 
 ```console
-$ uv run zace-service local --repo /home/xuwenzheng/zace-scratch/demo-repo \
-      --data-root ~/zace-scratch/data-demo --port 8792
-zace-service local 已启动（127.0.0.1:8792）
+$ uv run nova-service local --repo /home/xuwenzheng/nova-scratch/demo-repo \
+      --data-root ~/nova-scratch/data-demo --port 8792
+nova-service local 已启动（127.0.0.1:8792）
   projectId : e6fe81dbaebfb65d
-  dataRoot  : /home/xuwenzheng/zace-scratch/data-demo
-  repo      : /home/xuwenzheng/zace-scratch/demo-repo
+  dataRoot  : /home/xuwenzheng/nova-scratch/data-demo
+  repo      : /home/xuwenzheng/nova-scratch/demo-repo
   身份      : 非 git 仓库 → 绝对路径 hash（D-29）；换路径/换机器 projectId 会变
   索引      : 后台进行中（state=running，已处理 0/0 个文件）
              进度：GET http://127.0.0.1:8792/api/projects/e6fe81dbaebfb65d ｜ 服务现在已可响应，不必等索引完成
   检索接口  : POST http://127.0.0.1:8792/api/query/search
   MCP       : http://127.0.0.1:8792/mcp（Streamable HTTP）
-  懒重扫    : 每 2s 一次（0=禁用，ZACE_LOCAL_RESCAN_INTERVAL 可改）
+  懒重扫    : 每 2s 一次（0=禁用，NOVA_LOCAL_RESCAN_INTERVAL 可改）
 
-zace MCP 端点：http://127.0.0.1:8792/mcp（Streamable HTTP）
+nova MCP 端点：http://127.0.0.1:8792/mcp（Streamable HTTP）
 
 Cursor（项目内 .cursor/mcp.json 或全局 ~/.cursor/mcp.json）：
-{ "mcpServers": { "zace": { "url": "http://127.0.0.1:8792/mcp" } } }
+{ "mcpServers": { "nova": { "url": "http://127.0.0.1:8792/mcp" } } }
 
 Claude Code / 其它支持 HTTP 传输的 harness：
-{ "mcpServers": { "zace": { "url": "http://127.0.0.1:8792/mcp" } } }
+{ "mcpServers": { "nova": { "url": "http://127.0.0.1:8792/mcp" } } }
 （URL = http://127.0.0.1:8792/mcp；若编辑器要求 JSON 文件，直接写上面的对象即可）
 只支持 stdio 的 harness 需要一个 stdio 代理（在本地把 stdio 转发到本 URL）——归 M2c 的 Rust client（TASK-040R），当前版本未提供。
 ```
@@ -64,12 +64,12 @@ Claude Code / 其它支持 HTTP 传输的 harness：
 要点：
 
 - **`--repo` 必须是绝对路径**，且是**目录**（不是文件）。不存在 → 启动失败并给出可读错误。
-- **`--data-root` 建议显式指定**（默认 `~/.zace`）：不同仓库用不同数据根，删除/重建互不影响。
+- **`--data-root` 建议显式指定**（默认 `~/.nova`）：不同仓库用不同数据根，删除/重建互不影响。
 - **`身份` 一行很重要**：带 git remote 的仓库走 D-29 的 `remoteUrl + 相对路径` 身份（换机器同
   projectId，索引可复用）；非 git 目录退化为**绝对路径 hash**（换路径/换机器 projectId 会变）。
 - **服务立刻开始监听**，不等索引完成。`Ctrl+C` 停止（前台运行）。
-- 只想要配置片段、不起服务：`uv run zace-service mcp-config --port 8787`。
-- 纯服务模式（不绑仓库、走客户端上传）：`uv run zace-service serve`。
+- 只想要配置片段、不起服务：`uv run nova-service mcp-config --port 8787`。
+- 纯服务模式（不绑仓库、走客户端上传）：`uv run nova-service serve`。
 
 ---
 
@@ -83,7 +83,7 @@ $ curl -s http://127.0.0.1:8792/api/projects/e6fe81dbaebfb65d | python3 -m json.
     "projectId": "e6fe81dbaebfb65d",
     "displayName": "demo-repo",
     "createdAt": 1789089930,
-    "attachedRoot": "/home/xuwenzheng/zace-scratch/demo-repo",
+    "attachedRoot": "/home/xuwenzheng/nova-scratch/demo-repo",
     "indexProgress": {
         "state": "done",
         "startedAt": 1789089930,
@@ -141,11 +141,11 @@ embedding 与向量写入，而那一段没有回调点。
 $ curl -s http://127.0.0.1:8792/healthz | python3 -m json.tool
 {
     "status": "ok", "version": "0.0.1",
-    "dataRoot": "/home/xuwenzheng/zace-scratch/data-demo",
+    "dataRoot": "/home/xuwenzheng/nova-scratch/data-demo",
     "localMode": true, "auth": "disabled(local)",
     "core": { "importable": true },
     "projects": [ { "projectId": "e6fe81dbaebfb65d",
-                    "attachedRoot": "/home/xuwenzheng/zace-scratch/demo-repo",
+                    "attachedRoot": "/home/xuwenzheng/nova-scratch/demo-repo",
                     "indexProgress": { "state": "done", "processedFiles": 2, "totalFiles": 2, ... } } ]
 }
 ```
@@ -157,22 +157,22 @@ $ curl -s http://127.0.0.1:8792/healthz | python3 -m json.tool
 起服务时已经把片段打出来了（§1 末尾），也可以随时单独取：
 
 ```console
-$ uv run zace-service mcp-config --port 8792
-zace MCP 端点：http://127.0.0.1:8792/mcp（Streamable HTTP）
+$ uv run nova-service mcp-config --port 8792
+nova MCP 端点：http://127.0.0.1:8792/mcp（Streamable HTTP）
 
 Cursor（项目内 .cursor/mcp.json 或全局 ~/.cursor/mcp.json）：
-{ "mcpServers": { "zace": { "url": "http://127.0.0.1:8792/mcp" } } }
+{ "mcpServers": { "nova": { "url": "http://127.0.0.1:8792/mcp" } } }
 
 Claude Code / 其它支持 HTTP 传输的 harness：
-{ "mcpServers": { "zace": { "url": "http://127.0.0.1:8792/mcp" } } }
+{ "mcpServers": { "nova": { "url": "http://127.0.0.1:8792/mcp" } } }
 （URL = http://127.0.0.1:8792/mcp；若编辑器要求 JSON 文件，直接写上面的对象即可）
 只支持 stdio 的 harness 需要一个 stdio 代理（在本地把 stdio 转发到本 URL）——归 M2c 的 Rust client（TASK-040R），当前版本未提供。
 ```
 
 - **Cursor**：把那段 JSON 写进 `.cursor/mcp.json`（项目内）或 `~/.cursor/mcp.json`（全局），
-  重启/刷新 MCP 面板，应当看到 server `zace` 带着两个工具 `search_context` / `ask_project`。
+  重启/刷新 MCP 面板，应当看到 server `nova` 带着两个工具 `search_context` / `ask_project`。
 - **本地模式没有 token**：URL 里不出现任何密钥（那是 M2c 才有的事）。
-- **server 名是 `zace`**（`initialize` 返回 `serverInfo.name = "zace"`）。
+- **server 名是 `nova`**（`initialize` 返回 `serverInfo.name = "nova"`）。
 - **URL 里的 `/mcp` 可以直接用，没有重定向**（见 §7 的实现说明）。
 
 ---
@@ -184,7 +184,7 @@ Claude Code / 其它支持 HTTP 传输的 harness：
 ```jsonc
 // 工具参数（CF-06 冻结的两个工具）
 search_context: { query: "令牌过期后在哪里刷新？",
-                  project_root: "/home/xuwenzheng/zace-scratch/demo-repo",
+                  project_root: "/home/xuwenzheng/nova-scratch/demo-repo",
                   max_tokens: 10000 }     // 可选，默认 10000，上限 16000
 ask_project:    { question: "…同上的自然语言问题…", project_root: "…", max_tokens: 10000 }
 ```
@@ -192,7 +192,7 @@ ask_project:    { question: "…同上的自然语言问题…", project_root: "
 ### 4.1 期望看到什么（真实返回）
 
 ```text
-[zace] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=inferred,bm25,vector · degraded=false
+[nova] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=inferred,bm25,vector · degraded=false
 
 ## Relevant Context
 ### Code
@@ -225,7 +225,7 @@ confidence: medium | index: fresh (58s ago) | budget: 605/10.0K
 
 | 看到的东西 | 含义 |
 |---|---|
-| 首行 `[zace] answerable=… confidence=…` | 服务端 meta 的一行摘要。`render_markdown` 本身只渲染 `confidence`，`answerable` 由这一行补上（诚实反映"证据够不够"，编辑器据此决定要不要声明证据不足） |
+| 首行 `[nova] answerable=… confidence=…` | 服务端 meta 的一行摘要。`render_markdown` 本身只渲染 `confidence`，`answerable` 由这一行补上（诚实反映"证据够不够"，编辑器据此决定要不要声明证据不足） |
 | `[E1] 符号 — 文件:行号` | 证据块。**行号是硬要求**：没有行号就没法在编辑器里跳转 |
 | `reason: …` | 排序理由（哪几个通道命中、排名、图/同符号等信号）。出问题时可看它诊断 |
 | `### Missing Evidence` | 缺失证据段（本例没有）。**`answerable=false` 时也照常返回已有证据**，不会给空结果 |
@@ -282,13 +282,13 @@ asyncio.run(main())
 
 ```console
 $ NO_PROXY=127.0.0.1,localhost uv run python mcp_client_demo.py \
-    "http://127.0.0.1:8792/mcp" "/home/xuwenzheng/zace-scratch/demo-repo" "令牌过期后在哪里刷新？"
-== initialize == server=zace protocol=2025-11-25
+    "http://127.0.0.1:8792/mcp" "/home/xuwenzheng/nova-scratch/demo-repo" "令牌过期后在哪里刷新？"
+== initialize == server=nova protocol=2025-11-25
 == tools/list == (2 个)
   - search_context(query, project_root, max_tokens) required=['query', 'project_root'] additionalProperties=False
   - ask_project(question, project_root, max_tokens) required=['question', 'project_root'] additionalProperties=False
 == tools/call search_context == isError=False
-[zace] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · ...
+[nova] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · ...
 ```
 
 > **WSL 上的坑**：如果你设了 `http_proxy`（本机实测环境里设了），务必让 127.0.0.1 走直连
@@ -302,7 +302,7 @@ $ NO_PROXY=127.0.0.1,localhost uv run python mcp_client_demo.py \
 ```text
 Deep 模式（LLM 总结）尚未接入（Phase 3）；以下为检索与组装结果，可直接作为上下文使用。
 
-[zace] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=bm25,vector · degraded=true
+[nova] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=bm25,vector · degraded=true
 ```
 
 - LLM 属 Phase 3；M2a 的 `ask_project` **不假装**给出了答案——第一行就写明，且
@@ -315,22 +315,22 @@ Deep 模式（LLM 总结）尚未接入（Phase 3）；以下为检索与组装�
 这是 M2 的验收实测：451 个文件的真实仓库，用**用户种子问题**调 `tools/call`（真实进程 + 官方 SDK 客户端）：
 
 ```console
-$ uv run zace-service local --repo /home/xuwenzheng/4_AIBOX/gitlab/minicpm/aibox-super-sdk \
-      --data-root ~/zace-scratch/data-aibox --port 8794
+$ uv run nova-service local --repo /home/xuwenzheng/4_AIBOX/gitlab/minicpm/aibox-super-sdk \
+      --data-root ~/nova-scratch/data-aibox --port 8794
   projectId : 8f39057792cf72e8
   身份      : git remote（D-29）
-{"logger": "zace_service.indexer", "msg": "索引完成：8f39057792cf72e8（parsed=434/451，added=434，modified=0，deleted=0，errors=2）"}
+{"logger": "nova_service.indexer", "msg": "索引完成：8f39057792cf72e8（parsed=434/451，added=434，modified=0，deleted=0，errors=2）"}
 # 索引耗时：startedAt=1789093437 → finishedAt=1789096917，共 58 分钟（本机同时有其它进程占 CPU）
 
 $ MCP_PRINT_LIMIT=0 NO_PROXY=127.0.0.1,localhost uv run python mcp_client_demo.py \
     http://127.0.0.1:8794/mcp /home/xuwenzheng/4_AIBOX/gitlab/minicpm/aibox-super-sdk \
     "workflow 在记忆系统里是怎么定义和使用的？"
-== initialize == server=zace protocol=2025-11-25
+== initialize == server=nova protocol=2025-11-25
 == tools/list == (2 个)
   - search_context(query, project_root, max_tokens) required=['query', 'project_root'] additionalProperties=False
   - ask_project(question, project_root, max_tokens) required=['question', 'project_root'] additionalProperties=False
 == tools/call search_context == isError=False
-[zace] answerable=true · confidence=medium · evidence=6 · docs=5 · mode=fast · channels=bm25,vector · degraded=false
+[nova] answerable=true · confidence=medium · evidence=6 · docs=5 · mode=fast · channels=bm25,vector · degraded=false
 
 ## Relevant Context
 ### Code
@@ -362,7 +362,7 @@ confidence: medium | index: fresh (1 h ago) | budget: 2.8K/10.0K
 **索引未完成时问同一句**（同一次运行的中间态，供对比）：
 
 ```text
-[zace] answerable=false · confidence=low · evidence=1 · docs=6 · mode=fast · channels=bm25 · degraded=false
+[nova] answerable=false · confidence=low · evidence=1 · docs=6 · mode=fast · channels=bm25 · degraded=false
 ```
 
 `channels` 只剩 `bm25`（向量还没写完）、`answerable=false`：服务**不假装就绪**，但也不把已有结果丢掉。
@@ -376,7 +376,7 @@ confidence: medium | index: fresh (1 h ago) | budget: 2.8K/10.0K
 
 ```console
 $ # 往被索引的仓库里加一个函数
-$ cat >> ~/zace-scratch/demo-repo/session.py <<'EOF'
+$ cat >> ~/nova-scratch/demo-repo/session.py <<'EOF'
 
 def revoke_token(token: str) -> bool:
     """吊销会话 token（新增函数）。"""
@@ -385,9 +385,9 @@ EOF
 
 $ sleep 4    # 默认间隔 2 秒，等过这个窗口
 $ uv run python mcp_client_demo.py "http://127.0.0.1:8792/mcp" \
-    "/home/xuwenzheng/zace-scratch/demo-repo" "revoke_token 吊销会话是怎么实现的？"
+    "/home/xuwenzheng/nova-scratch/demo-repo" "revoke_token 吊销会话是怎么实现的？"
 == tools/call search_context == isError=False
-[zace] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=inferred,bm25,vector · degraded=false
+[nova] answerable=true · confidence=medium · evidence=1 · docs=1 · mode=fast · channels=inferred,bm25,vector · degraded=false
 
 [E1] revoke_token — session.py:1-18
      reason: inferred symbol revoke_token + inferred rank 1 + bm25 -5.2784 + bm25 rank 1 + vector 0.9306 + vector rank 1 + query symbol == chunk symbol +1.0 + 3-channel consensus +0.5 + entry point / exported symbol +0.2 + 相邻区间合并
@@ -399,8 +399,8 @@ $ uv run python mcp_client_demo.py "http://127.0.0.1:8792/mcp" \
 
 | 手段 | 用法 |
 |---|---|
-| 改间隔 | 启动前设 `ZACE_LOCAL_RESCAN_INTERVAL=10`（秒；默认 2.0） |
-| 禁用懒重扫 | `ZACE_LOCAL_RESCAN_INTERVAL=0`（测试或"只读演示"用） |
+| 改间隔 | 启动前设 `NOVA_LOCAL_RESCAN_INTERVAL=10`（秒；默认 2.0） |
+| 禁用懒重扫 | `NOVA_LOCAL_RESCAN_INTERVAL=0`（测试或"只读演示"用） |
 | 手动触发一次 | `curl -X POST http://127.0.0.1:8792/api/projects/e6fe81dbaebfb65d/rescan` → `202` + 当前进度 |
 
 两条纪律（验收时值得知道，避免误判）：
@@ -417,7 +417,7 @@ $ uv run python mcp_client_demo.py "http://127.0.0.1:8792/mcp" \
 ```text
 Error executing tool search_context: 项目 79043b7afde92ac6 暂无可用索引（chunks=0），当前索引状态：idle（本进程还没为它跑过索引）。
 如果刚启动本地服务，后台索引可能还在跑：**稍后重试本查询**，或用 GET /api/projects/79043b7afde92ac6 查看 indexProgress；
-如果一直是空，请确认仓库路径正确并重新 `zace-service local --repo <根目录>`（或 POST /api/projects/{id}/rescan 手动触发增量重扫）。
+如果一直是空，请确认仓库路径正确并重新 `nova-service local --repo <根目录>`（或 POST /api/projects/{id}/rescan 手动触发增量重扫）。
 ```
 
 处理：等索引跑完（§2），或按提示 `rescan`。`state=running` 时这条消息会带
@@ -447,7 +447,7 @@ Error executing tool search_context: project_root 含反斜杠，必须是**正�
 **服务里没有这个项目**（没 attach 过 / 索引数据根不对）：
 
 ```text
-Error executing tool search_context: 未知项目：/home/xuwenzheng/zace-scratch/no-such-indexed-dir 对应的 projectId df94e7b4d795324b 在本服务里没有索引记录（D-29 身份）。本地模式请用 `zace-service local --repo /home/xuwenzheng/zace-scratch/no-such-indexed-dir` 起服务，或先 POST /api/projects/attach；远端模式请先同步（POST /api/sync/batch-upload）。
+Error executing tool search_context: 未知项目：/home/xuwenzheng/nova-scratch/no-such-indexed-dir 对应的 projectId df94e7b4d795324b 在本服务里没有索引记录（D-29 身份）。本地模式请用 `nova-service local --repo /home/xuwenzheng/nova-scratch/no-such-indexed-dir` 起服务，或先 POST /api/projects/attach；远端模式请先同步（POST /api/sync/batch-upload）。
 ```
 
 注意报错里直接给了**你该敲的那条命令**（含正确的 project_root）。若同一个仓库被 attach 到
@@ -507,7 +507,7 @@ $ curl -s http://127.0.0.1:8792/healthz
 | 工具数 | **恰好 2 个**（CF-06 冻结）：`search_context` / `ask_project`。不做 prompts/resources |
 | 检索执行 | core 调用是阻塞的，工具内部走线程池，不占事件循环 |
 | `/mcp` 与 CF-05 | `/mcp` **不在** REST 的 OpenAPI 路径集合里（路径快照测试不受影响） |
-| 重启后的行为 | attach 关系只存内存：重启后 `POST /api/projects/{id}/rescan` 会返回 `409 local_root_unknown`——重新 `zace-service local --repo` 即可 |
+| 重启后的行为 | attach 关系只存内存：重启后 `POST /api/projects/{id}/rescan` 会返回 `409 local_root_unknown`——重新 `nova-service local --repo` 即可 |
 
 ---
 
@@ -527,11 +527,11 @@ $ curl -s http://127.0.0.1:8792/healthz
 
 ## 9. 15 分钟验收清单（照着打勾）
 
-- [ ] `uv sync --all-packages --all-extras` 成功，`uv run zace-service --help` 有 `local` / `mcp-config` 子命令
-- [ ] `uv run zace-service local --repo <你的仓库绝对路径> --data-root <数据根> --port 8787` 起服务，就绪信息里有 projectId / 身份 / MCP URL
+- [ ] `uv sync --all-packages --all-extras` 成功，`uv run nova-service --help` 有 `local` / `mcp-config` 子命令
+- [ ] `uv run nova-service local --repo <你的仓库绝对路径> --data-root <数据根> --port 8787` 起服务，就绪信息里有 projectId / 身份 / MCP URL
 - [ ] `curl -s http://127.0.0.1:8787/healthz` → `"status":"ok"`，且 `projects[0].indexProgress` 可见
 - [ ] 轮询 `GET /api/projects/{id}` 直到 `state="done"`（期间服务一直可用）
-- [ ] 把 `.cursor/mcp.json` 写好，编辑器能看到 `zace` 的两个工具
+- [ ] 把 `.cursor/mcp.json` 写好，编辑器能看到 `nova` 的两个工具
 - [ ] 在编辑器里问一个**你自己仓库的真实问题**，返回里出现 `文件:行号` 证据
 - [ ] 改一个文件、等 2 秒再问相关问题，能命中新代码
 - [ ] 故意问一个不存在的路径 → 看到"未知项目"的可读报错（不是 500）
@@ -546,16 +546,16 @@ $ curl -s http://127.0.0.1:8792/healthz
 
 ```console
 $ bash scripts/m2a-smoke.sh --repo /home/xuwenzheng/github/hello-agents \
-      --data-root /tmp/zace-smoke --query "记忆工具如何实现多轮检索？"
+      --data-root /tmp/nova-smoke --query "记忆工具如何实现多轮检索？"
 [1/5] key 已就绪（来源已解析，长度 51，不回显内容）
-[2/5] 起服务：zace-service local --repo /home/xuwenzheng/github/hello-agents --data-root /tmp/zace-smoke --port 8799
-        projectId=e9ee9dd1d41a7d2c ｜ 服务日志：/tmp/zace-smoke/zace-smoke-service.log
+[2/5] 起服务：nova-service local --repo /home/xuwenzheng/github/hello-agents --data-root /tmp/nova-smoke --port 8799
+        projectId=e9ee9dd1d41a7d2c ｜ 服务日志：/tmp/nova-smoke/nova-smoke-service.log
 [3/5] 等索引完成（上限 1800s，每 5s 轮询一次；被 429 中断时最多重试 3 次）
         state=running，本次已解析 0/1862 个文件…
         ...（约 5 分钟）
         索引完成：state=done，本次解析 1482/1862 个文件（无改动时 processed=0 属正常）
 [4/5] 调 MCP tools/call search_context（断言返回里有「文件:行号」）
-[zace] answerable=true · confidence=medium · evidence=22 · docs=4 · mode=fast · channels=bm25,vector · degraded=false
+[nova] answerable=true · confidence=medium · evidence=22 · docs=4 · mode=fast · channels=bm25,vector · degraded=false
 
 ## Relevant Context
 ### Code
@@ -565,7 +565,7 @@ $ bash scripts/m2a-smoke.sh --repo /home/xuwenzheng/github/hello-agents \
      79 |     """搜索记忆演示 - 实现语义理解的检索"""
      ...
 [OK] 冒烟通过：MCP 返回包含「文件:行号」证据。
-[5/5] 已清理数据根：/tmp/zace-smoke（--keep 可保留）
+[5/5] 已清理数据根：/tmp/nova-smoke（--keep 可保留）
 ```
 
 > 上面是本机**真实输出**（2026-09-13，`hello-agents` 全量 1862 文件 / 9971 chunks）。
@@ -575,14 +575,14 @@ $ bash scripts/m2a-smoke.sh --repo /home/xuwenzheng/github/hello-agents \
 
 | 坑 | 脚本的处理 |
 |---|---|
-| **F3：非交互 shell 拿不到 key**——`~/.bashrc` 的 `export zace_embeding_API_KEY=` 只对**交互式** shell 生效；脚本、子 AI、CI 都是非交互进程 | 脚本按 `$EMBED_API_KEY` → `--env-file`（默认 `./.env`）→ `~/.bashrc` 的 `--key-var`（默认 `zace_embeding_API_KEY`）顺序自己解析；**找不到时明确报错并打印三条解决命令**（不静默继续、不回显 key） |
+| **F3：非交互 shell 拿不到 key**——`~/.bashrc` 的 `export nova_embeding_API_KEY=` 只对**交互式** shell 生效；脚本、子 AI、CI 都是非交互进程 | 脚本按 `$EMBED_API_KEY` → `--env-file`（默认 `./.env`）→ `~/.bashrc` 的 `--key-var`（默认 `nova_embeding_API_KEY`）顺序自己解析；**找不到时明确报错并打印三条解决命令**（不静默继续、不回显 key） |
 | **本机有 `http_proxy`** → 客户端把 `127.0.0.1:8799` 也走代理，连接失败 | 脚本 `export NO_PROXY=127.0.0.1,localhost`（MCP 客户端进程内也再设一次，同 §4.2） |
 
 **用法**
 
 ```bash
 bash scripts/m2a-smoke.sh --help          # 全部参数
-bash scripts/m2a-smoke.sh --repo <仓库绝对路径> [--data-root /tmp/zace-smoke] [--port 8799]
+bash scripts/m2a-smoke.sh --repo <仓库绝对路径> [--data-root /tmp/nova-smoke] [--port 8799]
 #   --query  "你自己的真实问题"   # 默认是一个演示问题，换掉更贴近你的仓库
 #   --timeout 1800                # 等索引上限（秒）
 #   --keep                        # 结束后保留数据根与服务日志，便于排错
@@ -592,7 +592,7 @@ bash scripts/m2a-smoke.sh --repo <仓库绝对路径> [--data-root /tmp/zace-smo
 
 - 依赖已装：`uv sync --all-packages --all-extras`（MCP 客户端用 `mcp` 官方 SDK）；
 - **云端 embedding 的 key**（脚本会把 `EMBED_MODE=api` / `EMBED_MODEL=BAAI/bge-m3` / `EMBED_DIM=1024`
-  / `EMBED_BATCH_SIZE=4` 等导出给 `zace-service` 子进程，可用同名环境变量覆盖）——不想给 key 就先用
+  / `EMBED_BATCH_SIZE=4` 等导出给 `nova-service` 子进程，可用同名环境变量覆盖）——不想给 key 就先用
   `EMBED_MODE=local` + 本地模型（见 `.env.example` 末段）；
 - **`--data-root` 不要落在被索引仓库内部**（脚本会拒绝，避免污染仓库）。
 
@@ -607,8 +607,8 @@ bash scripts/m2a-smoke.sh --repo <仓库绝对路径> [--data-root /tmp/zace-smo
 
 | 现象 | 先看哪里 |
 |---|---|
-| `[错误] 找不到 embedding API key` | 按提示三选一注入；确认 `~/.bashrc` 里的变量名（`grep -n zace_embeding_API_KEY ~/.bashrc`） |
-| 服务 60s 内未就绪 | 脚本会打印服务日志尾部；手动起一次看完整报错：`uv run zace-service local --repo … --port …` |
+| `[错误] 找不到 embedding API key` | 按提示三选一注入；确认 `~/.bashrc` 里的变量名（`grep -n nova_embeding_API_KEY ~/.bashrc`） |
+| 服务 60s 内未就绪 | 脚本会打印服务日志尾部；手动起一次看完整报错：`uv run nova-service local --repo … --port …` |
 | 等索引超时（state 一直 `running`） | 这是**真实进度**（服务端没有百分比，§2）；加大 `--timeout`，或检查是否撞了 provider 限流（日志里有 `429`） |
 | 日志里反复 `HTTP 429` / `TPM limit reached` | 降低批次后重跑：`EMBED_BATCH_SIZE=2 bash scripts/m2a-smoke.sh …`；或加大重试 `--max-retries 6 --retry-wait 120`（根因属 TASK-046 §D） |
 | 断言失败（没有「文件:行号」） | ① `--query` 换成仓库里确实存在的概念；② 查 `GET /api/projects/{id}` 的 `sync.chunks` 是否 > 0；③ 若 `channels` 只有 `bm25`，说明向量还没就绪 |

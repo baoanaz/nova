@@ -6,13 +6,17 @@
 
 | 路径 | 用途 | 来源 |
 |---|---|---|
-| [logo.svg](logo.svg) | README 项目标识，暖白与珊瑚橙配色、代码括号和偏移阴影 | 本项目绘制，采用项目 Unlicense |
+| [nova-logo.webp](nova-logo.webp) | NOVA 人像与星球标志，登录页和侧栏使用同源素材 | 用户提供的 `LOGO/LOGO.png`；使用授权由素材权利人保留 |
+| [screenshots/nova-login.png](screenshots/nova-login.png) | NOVA 登录页 | 当前构建，空表单，不含凭据 |
+| [screenshots/nova-dashboard.png](screenshots/nova-dashboard.png) | NOVA 控制台首页 | 当前构建，合成账户及指标 |
+| [screenshots/nova-login-mobile.png](screenshots/nova-login-mobile.png) | 手机登录页 | 当前构建，390px 宽度 |
+| [screenshots/nova-dashboard-mobile.png](screenshots/nova-dashboard-mobile.png) | 手机控制台 | 当前构建，合成账户及指标 |
 | [screenshots/connect.png](screenshots/connect.png) | README 快速开始横向截图 | 用户提供的接入指南页面截图 |
 | [screenshots/dashboard.png](screenshots/dashboard.png) | 控制台页面截图 | 当前 UI 演示构建，内容为合成数据 |
 
 ## 放置约定
 
-- Logo 使用 SVG，保持可缩放；截图使用 PNG，文件名描述页面用途。
+- 用户提供的写实 Logo 使用 WebP，浏览器图标使用 PNG；截图使用 PNG，文件名描述页面用途。
 - 展示图放 `screenshots/`，Markdown 使用相对链接引用。
 - 截图只使用演示数据，不包含真实 Key、密码、个人仓库代码或会话信息。
 - 更新截图时替换对应页面文件并检查引用；历史验收图片继续随 `docs/archive/` 中的原记录保存。

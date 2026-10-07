@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from zace_core.retrieval.expand import GRAPH_REASON_PREFIX, SYNTHESIZED_REASON
-from zace_core.retrieval.rerank import (
+from nova_core.retrieval.expand import GRAPH_REASON_PREFIX, SYNTHESIZED_REASON
+from nova_core.retrieval.rerank import (
     FEATURE_CONSENSUS3,
     FEATURE_DEPRECATED_PATH,
     FEATURE_DOCTYPE,
@@ -31,7 +31,7 @@ from zace_core.retrieval.rerank import (
     rerank,
     with_weights,
 )
-from zace_core.types import Candidate, SpecBlockDef
+from nova_core.types import Candidate, SpecBlockDef
 
 
 def _candidate(

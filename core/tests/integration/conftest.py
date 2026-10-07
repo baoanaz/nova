@@ -27,21 +27,21 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from zace_core.contextpack import assemble
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.pipeline import DirectorySource, Indexer, IngestReport
-from zace_core.retrieval import (
+from nova_core.contextpack import assemble
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.pipeline import DirectorySource, Indexer, IngestReport
+from nova_core.retrieval import (
     RecallResult,
     recall,
     recall_vector,
 )
-from zace_core.retrieval.expand import ExpansionResult, expand
-from zace_core.retrieval.fusion import CHANNEL_VECTOR, merge
-from zace_core.retrieval.rerank import collect_signals, rerank
-from zace_core.storage import Store
-from zace_core.text import segment
-from zace_core.types import BlobInput, Candidate, ChangeSet, ContextPack
-from zace_core.vectors import VectorStore
+from nova_core.retrieval.expand import ExpansionResult, expand
+from nova_core.retrieval.fusion import CHANNEL_VECTOR, merge
+from nova_core.retrieval.rerank import collect_signals, rerank
+from nova_core.storage import Store
+from nova_core.text import segment
+from nova_core.types import BlobInput, Candidate, ChangeSet, ContextPack
+from nova_core.vectors import VectorStore
 
 __all__ = [
     "DESIGN_DOC",

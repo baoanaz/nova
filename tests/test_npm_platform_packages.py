@@ -169,10 +169,10 @@ def test_verify_has_platforms_and_latest_phases():
 def test_no_win32_in_package_names():
     """npm 包名不得含 `win32-`（真实故障：`Package name triggered spam detection`）。
 
-    实测（2026-09-17）：`zace-client-win32-x64` 发布被 registry 拒绝，
-    完整错误 `403 Forbidden - PUT .../zace-client-win32-x64 - Package name triggered
+    实测（2026-09-17）：`nova-client-win32-x64` 发布被 registry 拒绝，
+    完整错误 `403 Forbidden - PUT .../nova-client-win32-x64 - Package name triggered
     spam detection`。同一次发布里前 4 个包（linux/darwin）全部成功，
-    换成 `zace-client-windows-x64` 后正常——`win32` 是恶意软件命名的常见特征词。
+    换成 `nova-client-windows-x64` 后正常——`win32` 是恶意软件命名的常见特征词。
 
     注意：**npm 包名**用 `windows`，而 package.json 的 `os` 字段必须仍是 `win32`
     （那是 Node `process.platform` 的取值，不能被"统一"掉）。

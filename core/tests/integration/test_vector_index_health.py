@@ -19,12 +19,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 
-from zace_core.chunking import PARSER_CONFIG_KEY
-from zace_core.engine import Engine
-from zace_core.hashing import blob_hash
-from zace_core.storage import Store
-from zace_core.types import BlobInput, ChangeSet
-from zace_core.vectors import VectorStore
+from nova_core.chunking import PARSER_CONFIG_KEY
+from nova_core.engine import Engine
+from nova_core.hashing import blob_hash
+from nova_core.storage import Store
+from nova_core.types import BlobInput, ChangeSet
+from nova_core.vectors import VectorStore
 
 from .conftest import DESIGN_DOC, QUERY, TOKEN_MODULE, DeterministicBigramEmbedding
 

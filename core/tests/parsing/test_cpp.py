@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from zace_core.parsing.cpp import CppParser
-from zace_core.types import EdgeDef, ParsedFile, SymbolDef
+from nova_core.parsing.cpp import CppParser
+from nova_core.types import EdgeDef, ParsedFile, SymbolDef
 
 SAMPLE_DIR = Path(__file__).parent / "samples" / "cpp"
 SAMPLE_PREFIX = "core/tests/parsing/samples/cpp/"

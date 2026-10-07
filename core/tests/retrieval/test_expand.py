@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zace_core.retrieval.expand import (
+from nova_core.retrieval.expand import (
     GRAPH_REASON_PREFIX,
     GRAPH_TIER,
     SYNTHESIZED_REASON,
@@ -10,8 +10,8 @@ from zace_core.retrieval.expand import (
     build_flows,
     expand,
 )
-from zace_core.retrieval.fusion import KIND_SPEC, make_candidate
-from zace_core.types import EdgeDef, SpecBlockDef
+from nova_core.retrieval.fusion import KIND_SPEC, make_candidate
+from nova_core.types import EdgeDef, SpecBlockDef
 
 
 def _cand(store, path: str, fqn: str, start: int, *, score: float, tier: int = 1):

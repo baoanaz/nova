@@ -20,15 +20,15 @@ fi
 # Keep performance measurements tied to the baseline, irrespective of local settings.
 source configs/profiles/epyc-2c2g.env
 set +a
-ZACE_SECRETS_FILE="${ZACE_SECRETS_FILE:-$HOME/.key/zace/secrets.env}"
-OUT="${ZACE_BENCH_OUT:-$ROOT/.local/bench/$(date -u +%Y%m%dT%H%M%S%NZ)-$MODE}"
+NOVA_SECRETS_FILE="${NOVA_SECRETS_FILE:-$HOME/.key/nova/secrets.env}"
+OUT="${NOVA_BENCH_OUT:-$ROOT/.local/bench/$(date -u +%Y%m%dT%H%M%S%NZ)-$MODE}"
 umask 077
 mkdir -p "$(dirname "$OUT")"
 mkdir "$OUT" || { echo "Output must be a new directory; refusing to reuse a benchmark." >&2; exit 2; }
-git rev-parse HEAD > "$OUT/zace-commit.txt"
-ZACE_DIRTY=false
-[ -z "$(git status --porcelain --untracked-files=normal)" ] || ZACE_DIRTY=true
-printf '%s\n' "$ZACE_DIRTY" > "$OUT/zace-dirty.txt"
+git rev-parse HEAD > "$OUT/nova-commit.txt"
+NOVA_DIRTY=false
+[ -z "$(git status --porcelain --untracked-files=normal)" ] || NOVA_DIRTY=true
+printf '%s\n' "$NOVA_DIRTY" > "$OUT/nova-dirty.txt"
 if [ "$MODE" = hardware ]; then
   exec .venv/bin/python benches/embed-bench/hardware_probe.py --out "$OUT/hardware.json"
 fi
@@ -41,7 +41,7 @@ if [ -n "$(git -C "$REPO" status --porcelain --untracked-files=normal)" ]; then
   exit 2
 fi
 if [ "$MODE" != local ] && { [ -z "${EMBED_API_KEY:-}" ] || [ "${EMBED_API_KEY:-}" = pa-xxxx ]; }; then
-  echo "Missing Voyage EMBED_API_KEY in $ZACE_SECRETS_FILE; no API request was made." >&2
+  echo "Missing Voyage EMBED_API_KEY in $NOVA_SECRETS_FILE; no API request was made." >&2
   exit 2
 fi
 git -C "$REPO" rev-parse HEAD > "$OUT/langchain-commit.txt"

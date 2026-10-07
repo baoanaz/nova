@@ -1,4 +1,4 @@
-# zace-client（Rust，MCP 最终形态）
+# nova-client（Rust，MCP 最终形态）
 
 stdio MCP 客户端 + 本地同步代理（Module/05；MCP 最终形态，D-39 / R38）。
 
@@ -6,22 +6,22 @@ stdio MCP 客户端 + 本地同步代理（Module/05；MCP 最终形态，D-39 /
 编辑器（Claude Code / Codex / Cursor）
    │ stdio JSON-RPC 2.0
    ▼
-zace-client ── 本地：扫描 / 三层忽略 / CF-02 blob_hash / 增量对账 / 缓存 / checkpoint
+nova-client ── 本地：扫描 / 三层忽略 / CF-02 blob_hash / 增量对账 / 缓存 / checkpoint
    │ HTTPS + Bearer
    ▼
-zace-service（VPS）── 检索 / 组装 / 渲染（D-21：渲染只在服务端）
+nova-service（VPS）── 检索 / 组装 / 渲染（D-21：渲染只在服务端）
 ```
 
 - 两个工具：`search_context` / `ask_project`（CF-06 冻结；不暴露底层检索工具，D-12）
 - 懒同步：每次 tool call 自动保证工作区新鲜（D-27），无常驻 watcher
-- 忽略三层：`.zaceignore` > `.gitignore`（`ignore` crate 真实解析）> 内置默认（D-28 / R42）
+- 忽略三层：`.novaignore` > `.gitignore`（`ignore` crate 真实解析）> 内置默认（D-28 / R42）
 - 客户端零业务智能：切片/检索/渲染全在服务端（D-02 / D-34）
 
 ## 构建
 
 ```bash
 cd client
-cargo build --release          # 产物：target/release/zace-client
+cargo build --release          # 产物：target/release/nova-client
 cargo test                     # 33 个单元测试（含跨语言身份/blob 常量表）
 ```
 
@@ -30,18 +30,18 @@ cargo test                     # 33 个单元测试（含跨语言身份/blob �
 ```jsonc
 {
   "mcpServers": {
-    "zace": {
-      "command": "/绝对路径/client/target/release/zace-client",
-      "env": { "ZACE_BASE_URL": "http://127.0.0.1:8787" }
+    "nova": {
+      "command": "/绝对路径/client/target/release/nova-client",
+      "env": { "NOVA_BASE_URL": "http://127.0.0.1:8787" }
     }
   }
 }
 ```
 
-云端（M2c）：`ZACE_BASE_URL=https://zace.example.com` + `ZACE_API_TOKEN=<token>`。
+云端（M2c）：`NOVA_BASE_URL=https://nova.example.com` + `NOVA_API_TOKEN=<token>`。
 
-命令行参数与环境变量一一对应：`--base-url`/`ZACE_BASE_URL`、`--token`/`ZACE_API_TOKEN`、
-`--cache-root`/`ZACE_CLIENT_CACHE`（默认 `~/.cache/zace`）。
+命令行参数与环境变量一一对应：`--base-url`/`NOVA_BASE_URL`、`--token`/`NOVA_API_TOKEN`、
+`--cache-root`/`NOVA_CLIENT_CACHE`（默认 `~/.cache/nova`）。
 
 ## 手工核对
 
@@ -50,7 +50,7 @@ cargo test                     # 33 个单元测试（含跨语言身份/blob �
 cargo run --example identity -- /path/to/repo
 
 # 与 core 对照（两者必须逐字节一致）
-uv run python -c "from zace_core.engine import repo_identity, project_id_for as p; \
+uv run python -c "from nova_core.engine import repo_identity, project_id_for as p; \
   i=repo_identity('/path/to/repo'); print(i.identity_key, p(i.identity_key))"
 ```
 

@@ -1,5 +1,5 @@
 /**
- * 唯一请求出口：所有对 zace-service 的调用都在这里（Module/07 §2）。
+ * 唯一请求出口：所有对 nova-service 的调用都在这里（Module/07 §2）。
  *
  * 两条纪律：
  * 1. **错误只有一种形态**：CF-05 信封 `{error:{code,message}}` → `ApiError`；网络/代理失败 →
@@ -31,10 +31,10 @@ export type {
  * API 基址。
  *
  * 默认空串 = 同源（生产由 Caddy 同源托管；开发由 Vite 代理）。
- * `VITE_ZACE_API_BASE` 用于两种场景：web 与服务不同源部署，以及端到端测试直连真实服务
+ * `VITE_NOVA_API_BASE` 用于两种场景：web 与服务不同源部署，以及端到端测试直连真实服务
  * （`web/src/pages/e2e.test.tsx`）。
  */
-export const API_BASE: string = import.meta.env.VITE_ZACE_API_BASE ?? "";
+export const API_BASE: string = import.meta.env.VITE_NOVA_API_BASE ?? "";
 
 export const DEFAULT_MAX_TOKENS = 10_000;
 export const MAX_MAX_TOKENS = 20_000;
@@ -42,8 +42,8 @@ export const MAX_QUERY_CHARS = 2_000;
 
 /** 服务未启动时的可操作提示（与 `docs/handbook/getting-started/M2a-验收手册.md` §1 的命令一致）。 */
 export const SERVICE_DOWN_MESSAGE =
-  "连不上 zace-service。请先启动服务（示例：uv run zace-service local --repo <你的仓库>），" +
-  "或在开发模式下确认 Vite 代理的 ZACE_WEB_API 指向正确的地址。";
+  "连不上 nova-service。请先启动服务（示例：uv run nova-service local --repo <你的仓库>），" +
+  "或在开发模式下确认 Vite 代理的 NOVA_WEB_API 指向正确的地址。";
 
 export class ApiError extends Error {
   readonly code: string;
@@ -99,7 +99,7 @@ export function errorHint(error: unknown): string | null {
     case "invalid_name":
       return "账户名不能为空，且不超过 64 个字符。";
     case "local_mode":
-      return "本地单用户模式没有账户与 API Key（R34）：把 ZACE_LOCAL_MODE 设为 false 才启用。";
+      return "本地单用户模式没有账户与 API Key（R34）：把 NOVA_LOCAL_MODE 设为 false 才启用。";
     case "token_not_found":
       return "该 API Key 不存在或已被撤销。";
     // ---- TASK-110 邀请码与身份分级 ----
@@ -108,7 +108,7 @@ export function errorHint(error: unknown): string | null {
     case "custom_key_forbidden":
       return "自定义 API Key 是【拓荒者】特权（内测玩家与管理员可用）：可留空让服务端随机生成。";
     case "invalid_custom_key":
-      return "自定义 Key 必须以 zace_ 开头，且其后至少 16 个字符（只能用字母、数字、- 与 _）。";
+      return "自定义 Key 必须以 nova_ 开头，且其后至少 16 个字符（只能用字母、数字、- 与 _）。";
     case "key_taken":
       return "这个 Key 已被使用：换一个（Key 明文在库里唯一）。";
     case "quota_exceeded":
@@ -135,7 +135,7 @@ export function errorHint(error: unknown): string | null {
       return "邀请码必须是 6 位大写字母/数字，且首字母与类型一致。";
     // ---- TASK-062/064 统计 ----
     case "meta_db_unavailable":
-      return "元数据库（zace-meta.db）未就绪：历史与用量暂时读不到。";
+      return "元数据库（nova-meta.db）未就绪：历史与用量暂时读不到。";
     default:
       return null;
   }

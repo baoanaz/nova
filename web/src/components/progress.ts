@@ -74,8 +74,8 @@ export function describeIndexProgress(
  */
 export const TONE_CLASS: Record<ProgressTone, string> = {
   idle: "bg-paper-base text-ink-muted border-ink-line",
-  running: "bg-blue-50 text-blue-800 border-blue-200",
-  done: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  warning: "bg-amber-50 text-amber-900 border-amber-300",
-  failed: "bg-rose-50 text-rose-800 border-rose-200",
+  running: "bg-accent-soft text-accent-seal border-accent-seal",
+  done: "bg-success-soft text-success-text border-success-line",
+  warning: "bg-warning-soft text-warning-text border-warning-line",
+  failed: "bg-error-soft text-error-text border-error-line",
 };

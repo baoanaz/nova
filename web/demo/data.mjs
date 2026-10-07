@@ -70,8 +70,8 @@ export function demoData(name, days = 30) {
     "/api/projects": projects,
     "/api/usage/summary": usage,
     "/api/auth/tokens": [
-      { id: "demo-key-1", name: "Laptop · Codex", prefix: "zace_demo01", createdAt: now - 7 * 86400, lastUsedAt: now - 120, isCustom: false },
-      { id: "demo-key-2", name: "Workstation · Claude", prefix: "zace_demo02", createdAt: now - 3 * 86400, lastUsedAt: now - 600, isCustom: true },
+      { id: "demo-key-1", name: "Laptop · Codex", prefix: "nova_demo01", createdAt: now - 7 * 86400, lastUsedAt: now - 120, isCustom: false },
+      { id: "demo-key-2", name: "Workstation · Claude", prefix: "nova_demo02", createdAt: now - 3 * 86400, lastUsedAt: now - 600, isCustom: true },
     ],
     "/api/admin/users": { users, limit: 200 },
     "/api/admin/invites": {

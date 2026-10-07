@@ -13,12 +13,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from zace_core.engine import Engine
-from zace_service.app import create_app
-from zace_service.auth import SESSION_COOKIE
-from zace_service.config import Settings
-from zace_service.metadb import MetaDB
-from zace_service.runtime import EngineManager
+from nova_core.engine import Engine
+from nova_service.app import create_app
+from nova_service.auth import SESSION_COOKIE
+from nova_service.config import Settings
+from nova_service.metadb import MetaDB
+from nova_service.runtime import EngineManager
 
 from tests.conftest import DeterministicBigramEmbedding, make_client
 
@@ -27,7 +27,7 @@ PASSWORD = "correct-horse-battery"
 
 def _invite(ns, kind: str = "C") -> str:
     """造一个邀请码（TASK-110：注册必须有码）。"""
-    from zace_service.invites import generate_code
+    from nova_service.invites import generate_code
 
     code = generate_code(kind)
     ns.app.state.meta_db.create_invite(code, kind)
@@ -110,7 +110,7 @@ def test_remote_mode_requires_credentials(cloud, method: str, path: str) -> None
 
 def test_invalid_and_revoked_tokens_are_rejected(cloud) -> None:
     """无效 token 与**已撤销** token 都必须被拒（A1 实测里两者都能检索成功）。"""
-    invalid = {"Authorization": "Bearer zace_totally-invalid"}
+    invalid = {"Authorization": "Bearer nova_totally-invalid"}
     assert cloud.client.get("/api/projects", headers=invalid).status_code == 401
 
     _bootstrap(cloud)
@@ -126,7 +126,7 @@ def test_invalid_and_revoked_tokens_are_rejected(cloud) -> None:
 def test_unauthorized_body_does_not_reveal_which_detail_failed(cloud) -> None:
     """401 不区分"无效/已撤销/过期"（Module/06 §2.2 的探测面纪律）。"""
     messages = set()
-    for header in ("Bearer zace_nope", "Bearer ", ""):
+    for header in ("Bearer nova_nope", "Bearer ", ""):
         response = cloud.client.get(
             "/api/projects", headers={"Authorization": header} if header else {}
         )
@@ -266,8 +266,8 @@ def test_token_plaintext_appears_only_in_the_creation_response(cloud) -> None:
     """明文只在创建时返回一次：列表接口不含明文，也不含哈希。"""
     _bootstrap(cloud)
     created = cloud.client.post("/api/auth/tokens", json={"name": "laptop"}).json()
-    assert created["token"].startswith("zace_")
-    assert created["prefix"].startswith("zace_")
+    assert created["token"].startswith("nova_")
+    assert created["prefix"].startswith("nova_")
 
     listing = cloud.client.get("/api/auth/tokens").json()
     assert len(listing) == 1
@@ -389,7 +389,7 @@ def test_meta_db_session_resolution_is_thread_safe(tmp_path: Path) -> None:
     """``MetaDB`` 每线程一个连接：跨线程解析会话不抛 ``sqlite3`` 线程错误。"""
     import threading
 
-    db = MetaDB.open(tmp_path / "zace-meta.db")
+    db = MetaDB.open(tmp_path / "nova-meta.db")
     user = db.create_user("t", "x")
     session = db.create_session(user.id, ttl_s=60)
     results: list[bool] = []

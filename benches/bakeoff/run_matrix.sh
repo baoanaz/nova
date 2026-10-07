@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# TASK-015A：embedding bake-off 全矩阵驱动（可断点续跑；产物落在 ~/.cache/zace-bakeoff/）
+# TASK-015A：embedding bake-off 全矩阵驱动（可断点续跑；产物落在 ~/.cache/nova-bakeoff/）
 #
 # 用法（靶场 checkout 用环境变量给；没给或路径不存在 → 跳过该靶场）：
-#   ZACE_REPO=$PWD \
+#   NOVA_REPO=$PWD \
 #   HELLO_AGENTS_REPO=<hello-agents 检出> \
 #   COCKPIT_REPO=<cockpit-agents-py 检出（内部仓库，需要权限）> \
 #     bash benches/bakeoff/run_matrix.sh lane1     # e5-small 基线 + 截断 A/B + bge-m3
@@ -18,7 +18,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PY="$ROOT/.venv/bin/python"
 SCRIPT="benches/bakeoff/embed_compare.py"
-LOGDIR="$HOME/.cache/zace-bakeoff/logs"
+LOGDIR="$HOME/.cache/nova-bakeoff/logs"
 mkdir -p "$LOGDIR"
 
 # 靶场表：name|repo_path|golden_dir。repo 为空或路径不存在 → 跳过（并说明原因）。
@@ -34,12 +34,12 @@ add_target() {  # name repo golden
   fi
   TARGETS+=("$1|$2|$3")
 }
-add_target zace              "${ZACE_REPO:-$ROOT}"            benches/golden/zace
+add_target nova              "${NOVA_REPO:-$ROOT}"            benches/golden/nova
 add_target hello-agents      "${HELLO_AGENTS_REPO:-}"         benches/golden/hello-agents
 add_target cockpit-agents-py "${COCKPIT_REPO:-}"              benches/golden/cockpit-agents-py
 
 if [ "${#TARGETS[@]}" -eq 0 ]; then
-  echo "没有可用靶场：至少设置 ZACE_REPO / HELLO_AGENTS_REPO / COCKPIT_REPO 之一" >&2
+  echo "没有可用靶场：至少设置 NOVA_REPO / HELLO_AGENTS_REPO / COCKPIT_REPO 之一" >&2
   exit 2
 fi
 
@@ -76,7 +76,7 @@ case "${1:-}" in
     ;;
   *)
     echo "usage: bash benches/bakeoff/run_matrix.sh {lane1|lane2}" >&2
-    echo "  靶场用环境变量给：ZACE_REPO / HELLO_AGENTS_REPO / COCKPIT_REPO" >&2
+    echo "  靶场用环境变量给：NOVA_REPO / HELLO_AGENTS_REPO / COCKPIT_REPO" >&2
     exit 2
     ;;
 esac

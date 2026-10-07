@@ -5,13 +5,13 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+import nova_core.storage
 import pytest
-import zace_core.storage
-from zace_core.storage import SCHEMA_VERSION, SchemaMismatchError, Store
+from nova_core.storage import SCHEMA_VERSION, SchemaMismatchError, Store
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 CONTRACT_DDL = REPO_ROOT / "docs" / "contracts" / "index-schema.sql"
-PACKAGE_DDL = Path(zace_core.storage.__file__).parent / "schema.sql"
+PACKAGE_DDL = Path(nova_core.storage.__file__).parent / "schema.sql"
 
 EXPECTED_TABLES = {
     "index_config",

@@ -2,9 +2,9 @@
 """依赖方向强制检查（D-33 / D-34 / D-35）。
 
 规则：
-1. zace-core 的依赖清单禁止出现 HTTP 服务框架 / 用户体系 / 租户依赖（纯库纪律，D-34）；
-2. zace-core 源码禁止 import 服务框架与上层包（zace_service / zace_web）；
-3. zace-service 源码禁止 import web/client 层。
+1. nova-core 的依赖清单禁止出现 HTTP 服务框架 / 用户体系 / 租户依赖（纯库纪律，D-34）；
+2. nova-core 源码禁止 import 服务框架与上层包（nova_service / nova_web）；
+3. nova-service 源码禁止 import web/client 层。
 
 CI 中运行：uv run python scripts/check_dependency_direction.py
 """
@@ -49,10 +49,10 @@ FORBIDDEN_CORE_IMPORTS = {
     "argon2",
     "passlib",
     "bcrypt",
-    "zace_service",
-    "zace_web",
+    "nova_service",
+    "nova_web",
 }
-FORBIDDEN_SERVICE_IMPORTS = {"zace_web", "zace_client"}
+FORBIDDEN_SERVICE_IMPORTS = {"nova_web", "nova_client"}
 
 violations: list[str] = []
 
@@ -95,9 +95,9 @@ def check_imports(pkg_dir: Path, forbidden: set[str], label: str) -> None:
 
 def main() -> int:
     check_core_deps()
-    check_imports(ROOT / "core" / "zace_core", FORBIDDEN_CORE_IMPORTS, "core 纯库 D-34")
+    check_imports(ROOT / "core" / "nova_core", FORBIDDEN_CORE_IMPORTS, "core 纯库 D-34")
     check_imports(
-        ROOT / "service" / "zace_service", FORBIDDEN_SERVICE_IMPORTS, "service 不上探 D-33"
+        ROOT / "service" / "nova_service", FORBIDDEN_SERVICE_IMPORTS, "service 不上探 D-33"
     )
     if violations:
         print("依赖方向检查失败：")

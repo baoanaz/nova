@@ -1,4 +1,4 @@
-# zace 开发交接
+# nova 开发交接
 
 > 当前环境更新：2026-10-07 UTC。公开使用入口是 [README.md](README.md)，
 > 安装清单是 [ENVIRONMENT.txt](ENVIRONMENT.txt)，操作指南在 [docs/handbook/](docs/handbook/README.md)。
@@ -10,16 +10,16 @@
 Rust/Cargo 1.99.0 与 C/C++ 工具链。虚拟环境、缓存、索引和测试产物都留在仓库内的忽略目录。
 旧失效虚拟环境与改动前重要文件备份于本机 `backups/`。
 
-凭据统一在 `$HOME/.key/zace/secrets.env`，目录 0700、文件 0600；
+凭据统一在 `$HOME/.key/nova/secrets.env`，目录 0700、文件 0600；
 仓库内 `.env` 只加载外部密钥。Voyage 与 LLM 凭据已恢复并通过实际请求验证；
 LLM 使用用户指定的 DeepSeek 模型，网关地址与认证均不进入公共配置。
 已有 SSH 部署密钥与供应商 API Key 不是同一类凭据。
 
-已识别的 5 份内部用例/问答/报告及私有清单已迁至 `$HOME/.key/zace/benchmarks/`；
+已识别的 5 份内部用例/问答/报告及私有清单已迁至 `$HOME/.key/nova/benchmarks/`；
 公开默认清单只保留公共靶场与自检，内部测试通过 `--targets-file` 显式选择。
 Git 历史仍含迁移前内容，公开历史前需要另外处理。
 
-本机 `zace-service` 未启动，旧持久基准索引没有出现在历史文档指定位置。
+本机 `nova-service` 未启动，旧持久基准索引没有出现在历史文档指定位置。
 不假定新机器已经部署或已经有可复用索引。环境恢复不会自动启动生产服务。
 
 ## 新 VPS 复测
@@ -63,7 +63,7 @@ LangChain 保持 `e75dae1f53c99c2b5ddb0c7bb36022c6aea25569`，
 已登记的后续工作包括 TASK-093 真实数据采集、TASK-023 真实场景用例。
 
 - 检索质量参数 R29/R30 仍冻结；不根据现有 smoke/golden 集拟合后直接调参。
-- `docs/contracts/**`、`docs/design/**` 和 `core/zace_core/{types,interfaces,hashing}.py`
+- `docs/contracts/**`、`docs/design/**` 和 `core/nova_core/{types,interfaces,hashing}.py`
   属冻结面，变更遵循 [契约流程](docs/contracts/PROCESS.md)。
 - TASK-109 已合并；不要把历史 pending 标记当作未完成。
 - TASK-114/115 已优化 CLI 整仓冷启动，但实际客户端仍有串行分批上传和请求内 ingest，

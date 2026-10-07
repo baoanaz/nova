@@ -23,7 +23,7 @@ const PARITY_REPO: &[(&str, &str)] = &[
         ".gitignore",
         "hacks/\nlogs/\nAI-notes.tmp\n.claude/\n.codex/\n",
     ),
-    (".zaceinclude", "my-notes\n"),
+    (".novainclude", "my-notes\n"),
     ("hacks/skills/SKILL.md", "# 技能\n"),
     ("hacks/skills/learned/helper.py", "HELPER = 1\n"),
     (".claude/settings.json", "{}\n"),
@@ -47,8 +47,8 @@ const PARITY_EXPECTED: &[&str] = &[
     ".claude/skills/review/SKILL.md",
     ".claude/skills/review/reference.md",
     ".gitignore",
+    ".novainclude",
     ".pi/agent/skills/learned/SKILL.md",
-    ".zaceinclude",
     "AGENTS.md",
     "HANDOFF.md",
     "README.md",
@@ -70,7 +70,7 @@ fn build_parity_repo(root: &Path) {
 
 /// 与 `IndexManager::scan()` 同口径的清单（walker 并集 + 文件判定 + 去重排序）。
 fn scan_files(root: &Path) -> Vec<String> {
-    let rules = zace_client::ignore::IgnoreRules::load(root);
+    let rules = nova_client::ignore::IgnoreRules::load(root);
     let mut files = BTreeSet::new();
     for entry in rules.walk_union() {
         let Ok(entry) = entry else { continue };

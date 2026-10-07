@@ -19,7 +19,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null
 [ -f "$ROOT/.env" ] && { set -a; . "$ROOT/.env"; set +a; }
 
-DATA_ROOT_DEFAULT="${ZACE_DATA_ROOT:-$HOME/.zace}"
+DATA_ROOT_DEFAULT="${NOVA_DATA_ROOT:-$HOME/.nova}"
 
 die() { echo "bench-bundle: $*" >&2; exit 1; }
 
@@ -65,7 +65,7 @@ pack_bundle() {
   [ -d "$project_dir/vectors" ] || die "向量库缺失：$project_dir/vectors（先 ingest）"
 
   # 查询向量侧车留在被 Git 忽略的本机目录，靶场始终只读。
-  local cache="${ZACE_BENCH_VECTOR_CACHE:-$ROOT/.local/bench/query-vectors.json}"
+  local cache="${NOVA_BENCH_VECTOR_CACHE:-$ROOT/.local/bench/query-vectors.json}"
   local work
   work="$(mktemp -d)"
 
@@ -185,7 +185,7 @@ else:
 PY
   echo
   echo "下一步（任意 checkout，无需重新索引）："
-  echo "  uv run zace-core eval --repo <任意 checkout> --data $data_root \\"
+  echo "  uv run nova-core eval --repo <任意 checkout> --data $data_root \\"
   echo "    --project-id $project_id --golden benches/golden/<repo_hint> --report benches/results/<name>.md"
   echo "  # 离线（无 key）：再加 --vector-cache <侧车路径> --replay"
   rm -rf "$tmp"

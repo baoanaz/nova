@@ -20,8 +20,8 @@ node_modules/
 web/dist/
 .pnpm-store/
 
-# --- zace 运行时产物（本地调试可能落在仓库内）---
-.zace/
+# --- nova 运行时产物（本地调试可能落在仓库内）---
+.nova/
 data/
 .local/
 backups/
@@ -36,7 +36,7 @@ backups/
 *.key
 *.p12
 *.pfx
-zace-secrets*.tar.gz
+nova-secrets*.tar.gz
 secrets/
 
 # --- 编辑器 / 系统 ---
@@ -56,6 +56,6 @@ npm/*.tgz
 # 为何必须排除：这些是几 MB 的 ELF/Mach-O/PE 文件，进 git 会让仓库失控，
 # 且**本机编的产物与 CI 编的不同 flavour**（实测：本地 gnu 动态 / CI musl 静态），
 # 一旦提交就可能被误当成发布产物。
-npm/platforms/*/zace-client
-npm/platforms/*/zace-client.exe
+npm/platforms/*/nova-client
+npm/platforms/*/nova-client.exe
 npm/platforms/*/*.tgz

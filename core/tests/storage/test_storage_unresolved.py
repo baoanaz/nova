@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from zace_core.storage import EdgeTargetUpdate, RefResolution, Store
-from zace_core.types import ChunkDef, EdgeDef, ParsedFile, SymbolDef, UnresolvedRef
+from nova_core.storage import EdgeTargetUpdate, RefResolution, Store
+from nova_core.types import ChunkDef, EdgeDef, ParsedFile, SymbolDef, UnresolvedRef
 
 
 def test_apply_file_change_writes_pending_refs_with_name_tail(

@@ -2,14 +2,14 @@
 
 [文档中心](../../README.md) · [项目首页](../../../README.md)
 
-本指南在 Linux / WSL 中运行一套真实 zace：Python 后端、React UI 和可供 Agent 使用的 MCP 客户端。Windows 用户可以把服务端放在 WSL 中，客户端使用 Windows npm 包。
+本指南在 Linux / WSL 中运行一套真实 nova：Python 后端、React UI 和可供 Agent 使用的 MCP 客户端。Windows 用户可以把服务端放在 WSL 中，客户端使用 Windows npm 包。
 
 完成后：
 
 | 入口 | 地址 | 用途 |
 |---|---|---|
 | Web UI | `http://127.0.0.1:5173` | 初始化账户、管理项目和 API Key、查看历史、配置 LLM |
-| API 服务 | `http://127.0.0.1:8787` | `zace-client --base-url` 使用的实际后端地址 |
+| API 服务 | `http://127.0.0.1:8787` | `nova-client --base-url` 使用的实际后端地址 |
 | 公网 UI 演示 | <http://23.159.248.240:8088> | 模拟数据展示，不承担真实索引与 MCP 请求 |
 
 ## 1. 环境要求
@@ -34,15 +34,15 @@ npm --version
 ## 2. 获取代码与安装依赖
 
 ```bash
-git clone https://github.com/baoanaz/zace.git
-cd zace
+git clone https://github.com/baoanaz/zace.git nova
+cd nova
 bash scripts/setup-dev.sh --with-web
 ```
 
 安装脚本会安装锁定依赖，并在不存在时创建：
 
 - `.env`：本机配置，来自 `.env.example`。
-- `$HOME/.key/zace/secrets.env`：仓库外的私有凭据文件，初始 Key 为空。
+- `$HOME/.key/nova/secrets.env`：仓库外的私有凭据文件，初始 Key 为空。
 - `.venv/`、`web/node_modules/`：本机依赖。
 - `.local/`：缓存、运行数据和日志等本地产物。
 
@@ -50,7 +50,7 @@ bash scripts/setup-dev.sh --with-web
 
 ## 3. 配置 embedding 与 LLM
 
-用本机编辑器打开 `$HOME/.key/zace/secrets.env`，将供应商签发的 Key 填入已有字段：
+用本机编辑器打开 `$HOME/.key/nova/secrets.env`，将供应商签发的 Key 填入已有字段：
 
 ```dotenv
 EMBED_API_KEY=填写你的_embedding_API_Key
@@ -76,7 +76,7 @@ set +a
 终端 A，在已加载 `.env` 的仓库根目录启动后端：
 
 ```bash
-uv run zace-service serve --host 127.0.0.1 --port 8787
+uv run nova-service serve --host 127.0.0.1 --port 8787
 ```
 
 终端 B，在仓库根目录启动前端：
@@ -88,7 +88,7 @@ npm --prefix web run dev -- --host 127.0.0.1 --strictPort
 打开 <http://127.0.0.1:5173>。Vite 会把 `/api` 和 `/healthz` 请求代理到 `127.0.0.1:8787`。若后端改为其他端口，启动前端时指定对应地址：
 
 ```bash
-ZACE_WEB_API=http://127.0.0.1:8891 \
+NOVA_WEB_API=http://127.0.0.1:8891 \
   npm --prefix web run dev -- --host 127.0.0.1 --strictPort
 ```
 
@@ -108,20 +108,20 @@ curl --fail http://127.0.0.1:8787/api/meta
 3. 在 **API Key** 页面创建 Key，保存只展示一次的明文。
 4. 在 **设置** 页面配置可选的个人 LLM 总结模型。
 
-`.env.example` 中的 `ZACE_ADMIN_NAME` 用于指定部署管理员名称；全新部署的 bootstrap 本身会把首个账户设为管理员。实际数据位于 `ZACE_DATA_ROOT`，更换这个目录相当于切换另一套账户和索引数据。
+`.env.example` 中的 `NOVA_ADMIN_NAME` 用于指定部署管理员名称；全新部署的 bootstrap 本身会把首个账户设为管理员。实际数据位于 `NOVA_DATA_ROOT`，更换这个目录相当于切换另一套账户和索引数据。
 
 ## 6. 配置 MCP 接入
 
 ```bash
-npm install -g zace-client@latest
-zace-client --help
+npm install -g nova-client@latest
+nova-client --help
 ```
 
 例如，在 Codex 的 `~/.codex/config.toml` 中填写：
 
 ```toml
-[mcp_servers.zace]
-command = "zace-client"
+[mcp_servers.nova]
+command = "nova-client"
 args = ["--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
 startup_timeout_ms = 60000
 ```
@@ -139,7 +139,7 @@ startup_timeout_ms = 60000
 只想绑定本机仓库、暂时不需要账户体系时，可以停止普通服务，使用独立数据根启动：
 
 ```bash
-uv run zace-service local \
+uv run nova-service local \
   --repo /绝对路径/你的仓库 \
   --data-root .local/local-data \
   --host 127.0.0.1 --port 8787
@@ -153,10 +153,10 @@ uv run zace-service local \
 
 | 现象 | 检查方式 |
 |---|---|
-| UI 提示无法连接 | 确认后端已启动，Vite 的 `ZACE_WEB_API` 指向实际端口 |
+| UI 提示无法连接 | 确认后端已启动，Vite 的 `NOVA_WEB_API` 指向实际端口 |
 | 首次索引失败 | 检查 embedding 凭据是否加载、供应商地址和模型是否匹配 |
 | MCP 返回 401 | 使用实际服务创建的有效 API Key，不使用 UI 演示站地址 |
-| 出现初始化页面但原来有账户 | 检查当前 `ZACE_DATA_ROOT` 是否与原部署一致 |
+| 出现初始化页面但原来有账户 | 检查当前 `NOVA_DATA_ROOT` 是否与原部署一致 |
 | `ask_project` 提示未配置 | 配齐总结模型、地址和 Key；核对上游协议 |
 | 找不到客户端二进制 | 检查 npm 是否安装了当前平台的 optional dependency，见 [npm 包学习](../getting-started/npm-client.md) |
 | 端口被占用 | 停止占用进程或更换端口，并同步 Vite 代理与 MCP 地址 |

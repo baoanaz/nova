@@ -1,6 +1,6 @@
 # Module 05 — MCP 与同步（组件详细设计）
 
-> 系列：zace 组件详细设计（Module/），本文是第 5 篇，入口层。
+> 系列：nova 组件详细设计（Module/），本文是第 5 篇，入口层。
 > 内部双子模块：**MCP 适配层**（薄协议壳）+ **Workspace 同步客户端**（厚实的本地代理）——二者必须分开设计，notace 全部 9 个文件都在后者上（Background/01）。
 > 依赖：消费 02-04 的检索/组装/总结能力（经服务端 API）；本地侧只做同步与协议。
 > 状态：草案（待评审）。最后更新：2026-09-09。
@@ -13,7 +13,7 @@
 Codex / Claude Code / Cursor（Harness）
         │ MCP stdio（JSON-RPC 2.0）
         ▼
-┌─ zace local client（本组件）─────────────┐
+┌─ nova local client（本组件）─────────────┐
 │  MCP 适配层：tools schema / 错误映射 /      │
 │             stdout 协议纯净 / stderr 日志   │   ← 薄，无任何检索逻辑
 │  同步客户端：scan / ignore / hash / cache / │
@@ -21,7 +21,7 @@ Codex / Claude Code / Cursor（Harness）
 └──────────────┬────────────────────────┘
                │ HTTPS + Bearer（服务端 API）
                ▼
-        zace VPS（01 索引 / 02 检索 / 03 组装 / 04 总结）
+        nova VPS（01 索引 / 02 检索 / 03 组装 / 04 总结）
 ```
 
 **核心原则**：
@@ -89,9 +89,9 @@ ask_project:
 ### 3.1 忽略规则三层（D-28，补齐 notace 最大缺陷）
 
 ```text
-优先级：.zaceignore（项目内用户自定义）> .gitignore（真实解析，含否定规则）
+优先级：.novaignore（项目内用户自定义）> .gitignore（真实解析，含否定规则）
         > 内置默认（.git node_modules target dist build .venv __pycache__ .tox
-                    .idea .vscode .zace blobs 缓存目录等）
+                    .idea .vscode .nova blobs 缓存目录等）
 通用过滤：>128KB 跳过；>10% 不可打印字符判二进制跳过（notace 参数沿用）
 Rust 实现直接用 ignore crate（原生支持 .gitignore 语义）
 ```
@@ -99,7 +99,7 @@ Rust 实现直接用 ignore crate（原生支持 .gitignore 语义）
 ### 3.2 本地缓存与 verified cache hit【已验证：notace 模式】
 
 ```text
-.zace/index.json：
+.nova/index.json：
   { "version": 1, "configHash": "...",          // 同步配置指纹，变更即失效
     "projectId": "...", "checkpointId": "...",
     "files": { "src/a.cpp": { "mtime", "size", "contentHash", "blobHashes": [...] } } }
@@ -148,7 +148,7 @@ resolve_project(root):
 下次 tool call：增量对账后正常检索
 ```
 
-notace 的 180s 一把梭在十万文件级 C++ monorepo 会翻车（Background/01 §5 的超时注释自证）；zace 把"首次体验"从阻塞改为**可重试的进度反馈**。
+notace 的 180s 一把梭在十万文件级 C++ monorepo 会翻车（Background/01 §5 的超时注释自证）；nova 把"首次体验"从阻塞改为**可重试的进度反馈**。
 
 ### 3.6 freshness 语义（D-30：上传完成 ≠ 索引完成）
 
@@ -188,8 +188,8 @@ ask_project：
 
 ## 6. 客户端形态与 CLI
 
-- Rust 单二进制（notace 同款技术选型），npm platform-packages 分发（npx zace 即用）
-- CLI 子命令：`zace login`（配置 server_url+token → ~/.config/zace/config.json）、`zace sync`（手动，debug 用）、`zace status`（同步/缓存状态）、`zace mcp`（输出各 harness 的 MCP 配置 JSON）
+- Rust 单二进制（notace 同款技术选型），npm platform-packages 分发（npx nova 即用）
+- CLI 子命令：`nova login`（配置 server_url+token → ~/.config/nova/config.json）、`nova sync`（手动，debug 用）、`nova status`（同步/缓存状态）、`nova mcp`（输出各 harness 的 MCP 配置 JSON）
 
 ## 7. 安全要点（本组件范围内）
 
@@ -211,7 +211,7 @@ token 只存本地 config + 内存；不出现在任何日志/错误/URL；stdou
 1. **MCP SDK 语言**：客户端定为 Rust 二进制 → rmcp（官方 Rust SDK）成熟度待验证；不成熟则回退 notace 式手写（500 行内，协议面小）。
 2. **batch-upload 是否需要 gzip**：文本源码压缩比 ~4x，大仓库首同步带宽减负——实现成本低，但 V1 先测裸传输耗时再定。
 3. **deleted 通知的幂等语义**：服务端重复收到同一删除通知（重试导致）需幂等处理——01 的级联删除按 (project, path) 幂等设计即可，需在 API 合同中明确。
-4. **多 harness 并发同一 project_root**：两个编辑器同时挂 zace MCP → 两个客户端进程各自有缓存/后台线程——V1 接受（最终一致），V2 考虑文件锁。
+4. **多 harness 并发同一 project_root**：两个编辑器同时挂 nova MCP → 两个客户端进程各自有缓存/后台线程——V1 接受（最终一致），V2 考虑文件锁。
 
 ## 10. 与外部建议稿（本文覆盖前版本）的对照
 
@@ -224,7 +224,7 @@ token 只存本地 config + 内存；不出现在任何日志/错误/URL；stdou
 | Source 同步与 Retrieval Chunk 分离 | **采纳**（S3，即 D-01/D-02 的客户端侧表述） |
 | 工具 schema 简单化 | **采纳**（§2.1） |
 | 其未覆盖，本文补充 | ① project identity 解析（§3.4，跨机器共享索引的关键）；② .gitignore 真实解析三层规则（§3.1，notace 最大缺陷的补齐）；③ freshness 语义：上传≠索引（§3.6）；④ 首同步断点续传+进度反馈（§3.5，对 notace 180s 阻塞的改良）；⑤ 分层超时矩阵（§4）；⑥ 渲染位置在服务端的权衡（§5） |
-| 立场差异 | 其建议本地缓存 `.zace/index.json` 放项目内——**采纳但补两条**：缓存目录必须进内置 ignore（防自食）；config 放 `~/.config/zace/` 与项目内缓存分离（token 不落项目目录） |
+| 立场差异 | 其建议本地缓存 `.nova/index.json` 放项目内——**采纳但补两条**：缓存目录必须进内置 ignore（防自食）；config 放 `~/.config/nova/` 与项目内缓存分离（token 不落项目目录） |
 
 ## 11. 决策登记（已同步 INDEX.md）
 

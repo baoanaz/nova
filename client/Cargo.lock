@@ -1574,7 +1574,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "zace-client"
+name = "nova-client"
 version = "0.0.8"
 dependencies = [
  "anyhow",

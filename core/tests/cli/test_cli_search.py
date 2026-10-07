@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
-from zace_core.cli.app import main
-from zace_core.engine import Engine
-from zace_core.interfaces import EmbeddingProfile
-from zace_core.text import segment
+from nova_core.cli.app import main
+from nova_core.engine import Engine
+from nova_core.interfaces import EmbeddingProfile
+from nova_core.text import segment
 
 from .conftest import E2E_QUERY, E2E_TARGET_PATH, E2E_TARGET_SYMBOL, TEST_PROFILE
 

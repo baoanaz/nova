@@ -24,8 +24,8 @@ answerable=False → confidence 一律 low（不用中等把握掩盖不可回�
 
 from __future__ import annotations
 
-from zace_core.contextpack import BudgetConfig, assemble
-from zace_core.types import SpecBlockDef
+from nova_core.contextpack import BudgetConfig, assemble
+from nova_core.types import SpecBlockDef
 
 NOISE_PATH = "docs/记忆系统调研.md"
 OTHER_PATH = "docs/架构总览.md"

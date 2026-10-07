@@ -6,8 +6,8 @@ import re
 import sqlite3
 
 import pytest
-from zace_core.text import segment
-from zace_core.text.segmenter import _jieba_segment
+from nova_core.text import segment
+from nova_core.text.segmenter import _jieba_segment
 
 #: 快速路径与 jieba **逐 token 相同**的 ASCII 样本（代码里最常见的形态）。
 _ASCII_SHAPE_IDENTICAL = (
@@ -106,7 +106,7 @@ def test_literal_grouping_differs_but_tokens_match(text: str) -> None:
 
 def test_ascii_fast_path_does_not_load_jieba(monkeypatch: pytest.MonkeyPatch) -> None:
     """快速路径不得触发 jieba 导入/建词典——这正是 P0-1 收益的来源。"""
-    from zace_core.text import segmenter
+    from nova_core.text import segmenter
 
     monkeypatch.setattr(segmenter, "_jieba", None)
     assert segment("def f(x): return 1") == "def f ( x ) : return 1"

@@ -1,18 +1,18 @@
-# zace-client npm 发布
+# nova-client npm 发布
 
 ## 1. 架构
 
-`zace-client` 是启动器（`run.js`），真正的二进制由 **6 个平台子包**提供，
+`nova-client` 是启动器（`run.js`），真正的二进制由 **6 个平台子包**提供，
 它们是主包的 `optionalDependencies`：
 
 ```text
-zace-client
-├── zace-client-linux-x64
-├── zace-client-linux-arm64
-├── zace-client-darwin-x64
-├── zace-client-darwin-arm64
-├── zace-client-windows-x64
-└── zace-client-windows-arm64
+nova-client
+├── nova-client-linux-x64
+├── nova-client-linux-arm64
+├── nova-client-darwin-x64
+├── nova-client-darwin-arm64
+├── nova-client-windows-x64
+└── nova-client-windows-arm64
 ```
 
 npm 按子包自己的 `os`/`cpu` 字段只装本平台那一个，启动器按路径直接执行它。
@@ -21,7 +21,7 @@ npm 按子包自己的 `os`/`cpu` 字段只装本平台那一个，启动器按�
 ## 2. 用户如何使用
 
 ```bash
-npx --yes --prefer-online zace-client@latest --base-url <服务地址> --token <API Key>
+npx --yes --prefer-online nova-client@latest --base-url <服务地址> --token <API Key>
 ```
 
 - `--yes`：MCP 子进程没有 TTY，缺它可能卡在确认提示；
@@ -86,8 +86,8 @@ smoke 通过后才切过去。
 | 现象 | 处置 |
 |---|---|
 | 用户 `npx` 行为没变 | npx 缓存了旧包，确认配置里有 `--prefer-online` |
-| 用户报「找不到本平台的二进制」 | 该平台子包没发或版本不一致：`npm view zace-client-<os>-<arch> version` |
-| CI smoke 失败 | `npx --yes --prefer-online zace-client@next` 手动复现；查该平台子包能否安装 |
+| 用户报「找不到本平台的二进制」 | 该平台子包没发或版本不一致：`npm view nova-client-<os>-<arch> version` |
+| CI smoke 失败 | `npx --yes --prefer-online nova-client@next` 手动复现；查该平台子包能否安装 |
 | CI verify 报「查不到」（publish 是绿的） | registry 读端缓存还没传播，稍等几分钟重跑该 job；**不要放弃版本号** |
 | `npm publish` 报 `cannot publish over` | 该版本已发布过（不可逆）。换 patch 版本号 |
 | CI publish 401 | 缺 `NPM_TOKEN` secret，或 token 不是 Automation 类型 |

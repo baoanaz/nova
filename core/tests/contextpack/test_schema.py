@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 from jsonschema import Draft202012Validator
-from zace_core.contextpack import (
+from nova_core.contextpack import (
     BudgetConfig,
     IndexSignals,
     assemble,
     collect_index_signals,
     to_json,
 )
-from zace_core.types import Flow, FlowNode, Freshness, SpecBlockDef
+from nova_core.types import Flow, FlowNode, Freshness, SpecBlockDef
 
 SCHEMA_PATH = (
     Path(__file__).resolve().parents[3] / "docs" / "contracts" / "contextpack.schema.json"

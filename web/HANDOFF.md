@@ -1,6 +1,6 @@
-# zace-web 交接说明（TASK-070 / 账户 console）
+# nova-web 交接说明（TASK-070 / 账户 console）
 
-> 交接人：lane-b 实施会话 ｜ 日期：2026-09-14 ｜ 分支：`feature/task-070-webui_xwz0914`（工位 `zace-lane-b`）
+> 交接人：lane-b 实施会话 ｜ 日期：2026-09-14 ｜ 分支：`feature/task-070-webui_xwz0914`（工位 `nova-lane-b`）
 > 基线：`main @ 401c045`（已含 TASK-060/062/064 后端）｜ 状态：**review，已提交本地，未 push**
 
 ## 0. 一句话现状
@@ -17,7 +17,7 @@
 | "大页面再来一个 API Key 管理，可以创建、删除 Key" | ✅ 创建（明文只显示一次）/列表/撤销 | `web/src/pages/ApiKeysPage.tsx` |
 | "大页面再来一个历史记录，看到什么时候进行了什么索引，量是多少，token 多少，消耗多少等使用次数记录" | ✅ 索引记录 + 使用记录两个页签 | `web/src/pages/HistoryPage.tsx` |
 | "接入指南这页太多垃圾信息，只要三个按键 codex、claude、pi + 一个代码框给出配置" | ✅ 三按键 + 单份可复制片段 | `web/src/pages/ConnectPage.tsx`、`app/connect-info.ts` |
-| "你改完 UI，就去改后端吧" | ✅ 后端已由 TASK-060/062/064 落地并合入 main | `service/zace_service/{auth,metadb,stats}.py` |
+| "你改完 UI，就去改后端吧" | ✅ 后端已由 TASK-060/062/064 落地并合入 main | `service/nova_service/{auth,metadb,stats}.py` |
 
 ## 2. 当前进展
 
@@ -27,7 +27,7 @@
 - 账户面板：账户资料、索引成功/失败次数、平均耗时、磁盘占用、使用次数与 P95
 - API Key 管理、历史记录（索引/使用）、接入指南（三按键）
 - 删除全部"未就绪"占位页（原 TASK-070 §E/§F）
-- 接入片段与 `npm/README.md` 逐字对齐（`npx zace-client --base-url/--token`）
+- 接入片段与 `npm/README.md` 逐字对齐（`npx nova-client --base-url/--token`）
 
 ### 后端（main 已合并，非本分支产出）
 
@@ -37,7 +37,7 @@
 `GET /api/usage/{summary,projects/{id}}`。
 
 > ⚠️ **路径纠正**：迁移通知里写的是 `/api/auth/keys`，**实际是 `/api/auth/tokens`**
-> （CF-05 与 `service/zace_service/routers/auth.py`）。前端按实际实现对接。
+> （CF-05 与 `service/nova_service/routers/auth.py`）。前端按实际实现对接。
 
 ### 验证记录
 
@@ -74,7 +74,7 @@ npx vitest run src/pages/console.e2e.test.tsx   # 2 passed
 
 ## 4. 关键约定（接手必读，别踩）
 
-1. **只在工位里干活**：`cd /home/xuwenzheng/github/ACE/zace-lane-b`，不要回主仓库改代码。
+1. **只在工位里干活**：`cd /home/xuwenzheng/github/ACE/nova-lane-b`，不要回主仓库改代码。
 2. **文件所有权**：本卡只拥有 `web/**`；**不要碰 `service/**`**（后端会话领地）。
 3. **改接入片段要同步两处**：`web/src/app/connect-info.ts` ↔ `npm/README.md`。
 4. **不自研 ContextPack 渲染**（D-21/D-40）：只渲染服务端 `markdown`。
@@ -87,11 +87,11 @@ npx vitest run src/pages/console.e2e.test.tsx   # 2 passed
 ## 5. 本地跑起来（2 分钟）
 
 ```bash
-cd /home/xuwenzheng/github/ACE/zace-lane-b
+cd /home/xuwenzheng/github/ACE/nova-lane-b
 export NO_PROXY=127.0.0.1,localhost
 
 # 终端 A：本地模式（免账户，最快看到界面）
-uv run zace-service local --repo /home/xuwenzheng/github/ACE/zace-lane-b/web --port 8787
+uv run nova-service local --repo /home/xuwenzheng/github/ACE/nova-lane-b/web --port 8787
 
 # 终端 B
 cd web && npm ci && npm run dev     # 打开 http://127.0.0.1:5173
@@ -100,12 +100,12 @@ cd web && npm ci && npm run dev     # 打开 http://127.0.0.1:5173
 要看登录页 / API Key / 面板，用云端形态（需先建首个账户）：
 
 ```bash
-ZACE_DATA_ROOT=/tmp/zace-ui \
-  uv run zace-service serve --port 8891
+NOVA_DATA_ROOT=/tmp/nova-ui \
+  uv run nova-service serve --port 8891
 # 打开 http://127.0.0.1:8891/api/meta 确认 needsBootstrap=true，然后：
 curl -c /tmp/c -X POST http://127.0.0.1:8891/api/auth/bootstrap \
   -H 'Content-Type: application/json' -d '{"name":"owner","password":"correct-horse-battery"}'
-cd web && ZACE_WEB_API=http://127.0.0.1:8891 npm run dev
+cd web && NOVA_WEB_API=http://127.0.0.1:8891 npm run dev
 ```
 
 > ⚠️ 后端默认 embedding 已切到 **Voyage**（`.env.example`：`EMBED_MODEL=voyage-4-lite`），

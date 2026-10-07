@@ -36,13 +36,13 @@
 | `ttfb_probe.py` | 只调 `/v1/embeddings`、不落盘：并发下的 TTFB 与聚合吞吐分解 | ✅ | ❌ | 少量 token |
 | `throughput_probe.py` | 固定样本的批量吞吐扫描（并发 / 批大小 / 预算） | ✅ | ❌ | 少量 token |
 | `profile_repo.py` | 仓库画像：文件 / chunk / token 分布（免 API，出题与估算用） | ❌ | ❌ | 免费 |
-| `run_targets.sh` | WSL 侧三靶场一键跑批（历史工具，产物在 `~/.cache/zace-bench`） | ✅ | ✅ | 烧 token |
+| `run_targets.sh` | WSL 侧三靶场一键跑批（历史工具，产物在 `~/.cache/nova-bench`） | ✅ | ✅ | 烧 token |
 
 ## 指标口径（**引用数字前必须先对齐口径**）
 
 | 字段 | 定义 | 常见误用 |
 |---|---|---|
-| `ingest.wall_s` | `engine.ingest_repo()` 的墙钟（探针跑法） | 与 CLI `zace-core ingest` 的墙钟**不等价**：探针额外做全量 tokenize，`vps-la-2c2g` 上高 ~19% |
+| `ingest.wall_s` | `engine.ingest_repo()` 的墙钟（探针跑法） | 与 CLI `nova-core ingest` 的墙钟**不等价**：探针额外做全量 tokenize，`vps-la-2c2g` 上高 ~19% |
 | `network_busy_s` | **所有** HTTP 请求在飞区间的**并集** | 并发下不能把每请求耗时相加（会重复计时） |
 | `embedding_window_s` | `provider.embed()` 调用窗口（含窗口内非网络部分） | 它 ≥ `network_busy_s`，两者之差是窗口内的本地开销 |
 | `api_mb_per_s_network_busy` | `response_mb ÷ network_busy_s` | **推荐口径**；历史上用过的"÷ 嵌入窗口"口径已作废 |
@@ -58,14 +58,14 @@
 ## 运行纪律（2 GiB 小机器必读）
 
 ```bash
-systemd-run --unit=zace-offline-core --collect --uid=root --working-directory="$PWD" \
+systemd-run --unit=nova-offline-core --collect --uid=root --working-directory="$PWD" \
   -p MemoryHigh=1200M -p MemoryMax=1500M -p MemorySwapMax=256M \
   -p IPAddressDeny=any -p IPAddressAllow=localhost -- \
   .venv/bin/python benches/embed-bench/sync_probe.py \
     --kind core --repo ../benchmark/langchain \
     --fixture .local/fixtures/langchain-voyage-4-lite.sqlite \
     --out .local/bench/offline-core-new
-# --kind client 测用户路径；输出目录必须不存在。日志通过 journalctl -u zace-offline-core 查看。
+# --kind client 测用户路径；输出目录必须不存在。日志通过 journalctl -u nova-offline-core 查看。
 ```
 
 - `MemoryMax` 是保命线：2026-09-15 04:06 有一次全量向量 ingest 把机器拖到失联（见 VPS 报告 §4.1）；

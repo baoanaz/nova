@@ -10,9 +10,9 @@
 
 ## 部署与凭据
 
-- API/LLM 凭据存放在仓库外的 `$HOME/.key/zace/secrets.env`，目录 `0700`、文件 `0600`。
-- 生产服务使用 HTTPS；设置 `ZACE_COOKIE_SECURE=true`。
-- `zace-service local` 是显式的单用户、无鉴权模式，只绑定回环地址使用。
+- API/LLM 凭据存放在仓库外的 `$HOME/.key/nova/secrets.env`，目录 `0700`、文件 `0600`。
+- 生产服务使用 HTTPS；设置 `NOVA_COOKIE_SECURE=true`。
+- `nova-service local` 是显式的单用户、无鉴权模式，只绑定回环地址使用。
 - 不将索引、账户数据库、请求日志或隐私包提交到仓库。
 - 已暴露的凭据应在签发方撤销并重新签发；删除当前文件不能撤销历史中的凭据。
 

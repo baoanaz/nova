@@ -8,15 +8,15 @@ from __future__ import annotations
 
 import inspect
 
-from zace_core.retrieval.bm25 import (
+from nova_core.retrieval.bm25 import (
     bm25_query_text,
     filter_bm25_tokens,
     is_noise_token,
     recall_bm25,
 )
-from zace_core.retrieval.fusion import CHANNEL_BM25, TIER_SEED
-from zace_core.storage import Store
-from zace_core.text import segment
+from nova_core.retrieval.fusion import CHANNEL_BM25, TIER_SEED
+from nova_core.storage import Store
+from nova_core.text import segment
 
 
 def test_chinese_query_hits_after_segmentation(store, seed_file, sym) -> None:

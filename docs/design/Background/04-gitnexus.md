@@ -29,10 +29,10 @@ scan → structure → [springConfig, markdown, cobol] → parse → [routes, to
 
 - **节点表按类型分表**：File/Folder/Function/Class/Interface/Method/Constructor/CodeElement/Struct/Enum/Macro/Typedef/Union/Namespace/Trait/Impl/TypeAlias/Const/Static/Property/Record/Delegate/Annotation/Template/Module/**Community/Process**/Route/Tool/Section/Embedding
 - **单 CodeRelation 表**：28 种 type（CONTAINS/DEFINES/CALLS/IMPORTS/INHERITS/EXTENDS/IMPLEMENTS/.../HANDLES_ROUTE/FETCHES/HANDLES_TOOL/ENTRY_POINT_OF/INJECTS/ADVICED_BY/...），边带 type/confidence/reason/step 属性
-- 与 codegraph 对比：codegraph 是"窄边表+类型列"（SQLite 单 edges 表），GitNexus 是"图数据库分表+统一关系表"。zace 用 SQLite/PG 的话更接近 codegraph 模式
+- 与 codegraph 对比：codegraph 是"窄边表+类型列"（SQLite 单 edges 表），GitNexus 是"图数据库分表+统一关系表"。nova 用 SQLite/PG 的话更接近 codegraph 模式
 - **过载消歧的 Node ID 方案**（Known limitations 一节，坦白得很）：ID 带参数数后缀 `#<paramCount>`，碰撞时加类型 hash `~type1,type2`，C++ const 加 `$const`。**并明说其代价**：新增重载会使 ID 变化（save#1 → save#1~int）
 
-## 3. Process/Flow 提取（zace "Code Flow" 的最佳参考）
+## 3. Process/Flow 提取（nova "Code Flow" 的最佳参考）
 
 src/core/ingestion/process-processor.ts：
 ```
@@ -65,7 +65,7 @@ context 工具（360° 符号视图）返回时附带：
 - 外部边界（externalBoundary）明确标注"不是缺陷"
 - **"REQUIRES RE-INDEX"警告**：这些 causes 依赖新版本分析器写入的元数据，旧索引上的 0 不可信——连"零值本身可能是旧索引"这种元不确定性都建模了
 
-对 zace：Task.md 的 Missing Evidence 设计应该升格为这种"**可计数的无知模型**"——不只是"缺什么"，而是"为什么缺、缺多少、能不能补"。
+对 nova：Task.md 的 Missing Evidence 设计应该升格为这种"**可计数的无知模型**"——不只是"缺什么"，而是"为什么缺、缺多少、能不能补"。
 
 ## 5. 混合检索
 
@@ -74,7 +74,7 @@ context 工具（360° 符号视图）返回时附带：
 - **标准 RRF (K=60)** 融合；group 模式下多 repo 结果也用 RRF 合并
 - FTS 不可用时优雅降级为纯语义（修过 #1489 崩溃教训）
 
-## 6. 语言支持（对 zace C/C++/Python 最有参考价值）
+## 6. 语言支持（对 nova C/C++/Python 最有参考价值）
 
 语言目录：C、C++、Java、Kotlin、Python、JS、TS、Go、Rust、Swift、PHP、Ruby、C#、Dart、Vue、Zig、COBOL + Spring 深度集成。
 
@@ -88,7 +88,7 @@ context 工具（360° 符号视图）返回时附带：
 - arity 元数据辅助调用消歧
 
 ### 通用语言 provider 模式
-每个语言 = defineLanguage() 组合：class/field/method/variable/call extractor 配置 + import resolver 配置 + tree-sitter queries + scope captures + arity compatibility。**"语言 = 配置组合"的插件化思路**值得 zace 采纳。
+每个语言 = defineLanguage() 组合：class/field/method/variable/call extractor 配置 + import resolver 配置 + tree-sitter queries + scope captures + arity compatibility。**"语言 = 配置组合"的插件化思路**值得 nova 采纳。
 
 ## 7. 增量与存储
 
@@ -98,12 +98,12 @@ context 工具（360° 符号视图）返回时附带：
 - parse-cache.ts（70K）：跨 run 的解析缓存
 - v8-sidecar / memory-budget：大仓库的内存工程
 
-## 8. Server 模式（zace 远端形态的参考）
+## 8. Server 模式（nova 远端形态的参考）
 
-- `gitnexus serve`：私有服务（Render Blueprint：server $25 + web $7 + disk $2.5 ≈ $35/月，与 zace 的 VPS 预算同量级）
+- `gitnexus serve`：私有服务（Render Blueprint：server $25 + web $7 + disk $2.5 ≈ $35/月，与 nova 的 VPS 预算同量级）
 - analyze-job / analyze-worker（IPC + worker 进程）/ git-clone（远端拉取）/ upload-ingest（上传摄取）/ sse-progress
 - HTTP MCP transport：默认 127.0.0.1，暴露 0.0.0.0 必须带 --auth-token 否则拒启；CORS 限制回环；timingSafeEqual 比较 token
-- **鉴权薄弱**：单 token 全权限（README 自认"token 是唯一控制，持 token 可读所有已索引 repo"）——zace 的多用户/项目隔离需求必须自己补，这里没有现成答案
+- **鉴权薄弱**：单 token 全权限（README 自认"token 是唯一控制，持 token 可读所有已索引 repo"）——nova 的多用户/项目隔离需求必须自己补，这里没有现成答案
 
 ## 9. MCP 工具面（16+）
 
@@ -114,11 +114,11 @@ list_repos / query（Process 检索）/ cypher（裸图查询）/ **context**（
 - 工具描述极长且教学化（context 工具的 description 有 40+ 行）
 - 输出有 maxTokens 参数控制 MCP 响应体积
 
-## 10. 值得 zace 借鉴（按优先级，仅思想层面）
+## 10. 值得 nova 借鉴（按优先级，仅思想层面）
 
 1. **epistemic envelope / causes 计数**——Missing Evidence 的正确打开方式
 2. **Process/Flow 提取**（入口点评分 + DFS 追踪 + 去重 + 命名）——"执行流"作为一等公民
-3. **C++ 语义解析的投入清单**：two-phase lookup / 模板约束 / 转换序列 / inline namespace——zace 做 C++ 时的功能清单（V1 可以先不做，但架构不要堵死）
+3. **C++ 语义解析的投入清单**：two-phase lookup / 模板约束 / 转换序列 / inline namespace——nova 做 C++ 时的功能清单（V1 可以先不做，但架构不要堵死）
 4. **Pipeline Phase DAG**：typed deps + 拓扑执行 + 单图累加——索引流水线的组织方式
 5. **语言 = provider 配置组合** 的插件化
 6. **Node ID 过载消歧方案的代价分析**（ID 稳定性 vs 消歧能力）
@@ -127,7 +127,7 @@ list_repos / query（Process 检索）/ cypher（裸图查询）/ **context**（
 
 ## 11. 不采纳 / 风险
 
-1. Spring 深度集成（AOP/DI/Actuator/AsyncAPI）是 Java 企业场景特化，zace 场景（C/C++/Python）不需要
-2. LadybugDB 依赖本身较新（0.19），生态风险；zace V1 用 SQLite/PG 更稳
-3. 单 token 鉴权模型不满足 zace 多用户需求
-4. 2839 文件的复杂度本身就是警告：zace 要控制规模
+1. Spring 深度集成（AOP/DI/Actuator/AsyncAPI）是 Java 企业场景特化，nova 场景（C/C++/Python）不需要
+2. LadybugDB 依赖本身较新（0.19），生态风险；nova V1 用 SQLite/PG 更稳
+3. 单 token 鉴权模型不满足 nova 多用户需求
+4. 2839 文件的复杂度本身就是警告：nova 要控制规模

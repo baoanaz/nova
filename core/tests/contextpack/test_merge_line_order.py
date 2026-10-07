@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from zace_core.contextpack import BudgetConfig, assemble, render_markdown
+from nova_core.contextpack import BudgetConfig, assemble, render_markdown
 
 NUMBERED = re.compile(r"^\s*(\d+) \| (.*)$")
 ELISION = re.compile(r"^\.\.\. （省略 (\d+) 行）$")

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://zace.dev/contracts/contextpack.schema.json",
-  "title": "ContextPack（zace 统一返回合同，CF-03）",
+  "$id": "https://nova.dev/contracts/contextpack.schema.json",
+  "title": "ContextPack（nova 统一返回合同，CF-03）",
   "description": "来源 docs/design/Module/03-上下文组装.md §2（D-21 双层合同）。内部 JSON 合同；对外 Markdown 由同一 formatter 渲染。字段名冻结，禁止改名。",
   "type": "object",
   "additionalProperties": false,

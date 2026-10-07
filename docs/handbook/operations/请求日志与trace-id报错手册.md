@@ -87,19 +87,19 @@ V1 没有管理员角色，所以**没有"帮别人查"的口子**。
 
 ## 5. 日志保存在哪、留多久（窗口机制）
 
-- **落盘位置**：`$ZACE_DATA_ROOT/logs/request.log`（JSONL，一行一条请求）。
-  默认 `ZACE_DATA_ROOT=~/.zace`，即 `~/.zace/logs/request.log`。
+- **落盘位置**：`$NOVA_DATA_ROOT/logs/request.log`（JSONL，一行一条请求）。
+  默认 `NOVA_DATA_ROOT=~/.nova`，即 `~/.nova/logs/request.log`。
 - **服务重启后仍在**（这是落盘而非内存的意义）；同时 stderr 也仍有一份实时输出。
 - **有界保留（窗口）**：两个维度取交集，不会无限增长——
 
   | 维度 | 变量 | 默认 |
   |---|---|---|
-  | 单文件上限 | `ZACE_LOG_MAX_BYTES` | 8388608（8 MiB）；写满即轮转 |
-  | 轮转备份数 | `ZACE_LOG_BACKUP_COUNT` | 9（连同当前文件共 10 个） |
-  | 保留天数 | `ZACE_LOG_RETENTION_DAYS` | 14（启动时清理超期文件） |
+  | 单文件上限 | `NOVA_LOG_MAX_BYTES` | 8388608（8 MiB）；写满即轮转 |
+  | 轮转备份数 | `NOVA_LOG_BACKUP_COUNT` | 9（连同当前文件共 10 个） |
+  | 保留天数 | `NOVA_LOG_RETENTION_DAYS` | 14（启动时清理超期文件） |
 
   默认上界约 `8 MiB × 10 = 80 MiB`、14 天。超窗的旧请求会查不到（返回 404），这是设计行为。
-- **脱敏**：`Authorization` 头、cookie、API key（含裸 `sk-` / `zace_` 串）**一律不落盘**；
+- **脱敏**：`Authorization` 头、cookie、API key（含裸 `sk-` / `nova_` 串）**一律不落盘**；
   日志只记 method/path/status/耗时/身份/错误码，**不记请求体**。
 
 ## 6. 快速排查表

@@ -2,7 +2,7 @@
  * 接入指南：两卡牌（npm 下载 + Agent 接入）+ 片段与真实客户端参数一致（TASK-080）。
  *
  * 这组用例守的是"页面上写的能跑通"：
- * - 命令/参数名必须与 npm 包的真实 CLI 一致（`--base-url` / `--token`；包名 `zace-client`）；
+ * - 命令/参数名必须与 npm 包的真实 CLI 一致（`--base-url` / `--token`；包名 `nova-client`）；
  * - **`--token` 永远出现**（缺省为占位符）——旧实现里空 token 会让整段消失，
  *   用户因此不知道存在鉴权，这是本卡的核心回归点。
  */
@@ -22,15 +22,15 @@ import {
   TOKEN_PLACEHOLDER,
 } from "./connect-info";
 
-const CTX = { baseUrl: "https://zace.example.com", token: "zace_abc123" };
+const CTX = { baseUrl: "https://nova.example.com", token: "nova_abc123" };
 
 /** 用户主动清空地址与 Key 后的上下文。 */
 const EMPTY_CTX = { baseUrl: "", token: "" };
 
 describe("卡牌一：下载客户端", () => {
   it("安装命令用的是 npm 上的真实包名", () => {
-    expect(CLIENT_PACKAGE).toBe("zace-client");
-    expect(INSTALL_COMMAND).toBe("npm install -g zace-client");
+    expect(CLIENT_PACKAGE).toBe("nova-client");
+    expect(INSTALL_COMMAND).toBe("npm install -g nova-client");
   });
 });
 
@@ -67,9 +67,9 @@ describe("卡牌二：Agent 接入片段", () => {
     expect(server.args).toEqual([
       CLIENT_PACKAGE,
       "--base-url",
-      "https://zace.example.com",
+      "https://nova.example.com",
       "--token",
-      "zace_abc123",
+      "nova_abc123",
     ]);
     expect(server.args.join(" ")).not.toContain(TOKEN_PLACEHOLDER);
     expect(server.args.join(" ")).not.toContain(BASE_URL_PLACEHOLDER);
@@ -79,12 +79,12 @@ describe("卡牌二：Agent 接入片段", () => {
     const expected = stdioServer(CTX).args;
 
     const toml = codexToml(CTX);
-    expect(toml).toContain("[mcp_servers.zace]");
+    expect(toml).toContain("[mcp_servers.nova]");
     expect(toml).toContain('command = "npx"');
     expect(toml).toContain("startup_timeout_ms = 60000");
     // 字段顺序与用户给的样例一致。
     expect(toml.split("\n").map((line) => line.split(" =")[0])).toEqual([
-      "[mcp_servers.zace]",
+      "[mcp_servers.nova]",
       "command",
       "args",
       "startup_timeout_ms",
@@ -92,13 +92,13 @@ describe("卡牌二：Agent 接入片段", () => {
     for (const arg of expected) expect(toml).toContain(`"${arg}"`);
 
     const pi = JSON.parse(snippetFor("pi", CTX)) as {
-      mcpServers: { zace: { command: string; args: string[] } };
+      mcpServers: { nova: { command: string; args: string[] } };
     };
-    expect(pi.mcpServers.zace.command).toBe("npx");
-    expect(pi.mcpServers.zace.args).toEqual(expected);
+    expect(pi.mcpServers.nova.command).toBe("npx");
+    expect(pi.mcpServers.nova.args).toEqual(expected);
 
     const command = claudeCommand(CTX);
-    expect(command.startsWith("claude mcp add-json zace --scope user '")).toBe(true);
+    expect(command.startsWith("claude mcp add-json nova --scope user '")).toBe(true);
     const payload = JSON.parse(
       command.slice(command.indexOf("{"), command.lastIndexOf("}") + 1),
     ) as { type: string; command: string; args: string[] };
@@ -110,18 +110,18 @@ describe("卡牌二：Agent 接入片段", () => {
   it("Codex TOML 与用户给的样例逐字对齐", () => {
     expect(codexToml({ baseUrl: "http://localhost:5174", token: "您的API Key" })).toBe(
       [
-        "[mcp_servers.zace]",
+        "[mcp_servers.nova]",
         'command = "npx"',
-        'args = ["zace-client", "--base-url", "http://localhost:5174", "--token", "您的API Key"]',
+        'args = ["nova-client", "--base-url", "http://localhost:5174", "--token", "您的API Key"]',
         "startup_timeout_ms = 60000",
       ].join("\n"),
     );
   });
 
   it("pi 产出标准 .mcp.json 结构", () => {
-    const parsed = JSON.parse(snippetFor("pi", CTX)) as { mcpServers: { zace: unknown } };
-    expect(stdioConfig(CTX).mcpServers.zace.args).toEqual(
-      (parsed.mcpServers.zace as { args: string[] }).args,
+    const parsed = JSON.parse(snippetFor("pi", CTX)) as { mcpServers: { nova: unknown } };
+    expect(stdioConfig(CTX).mcpServers.nova.args).toEqual(
+      (parsed.mcpServers.nova as { args: string[] }).args,
     );
   });
 });

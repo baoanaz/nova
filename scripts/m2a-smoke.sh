@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# zace M2a 一键冒烟：起服务 → 等索引 → 调 MCP → 断言返回里有「文件:行号」。
+# nova M2a 一键冒烟：起服务 → 等索引 → 调 MCP → 断言返回里有「文件:行号」。
 #
 # 用法（详见 docs/handbook/getting-started/M2a-验收手册.md §10）：
-#   bash scripts/m2a-smoke.sh --repo /path/to/repo [--data-root /tmp/zace-smoke] [--port 8799]
+#   bash scripts/m2a-smoke.sh --repo /path/to/repo [--data-root /tmp/nova-smoke] [--port 8799]
 #                             [--query "…"] [--keep] [--timeout 1800] [--api-key-env VAR]
 #
 # 本脚本把本环境的两个坑固化下来（见 docs/plan/phase2-m2b-w6.md §2.4 F3 与手册 §4.2）：
 #   1. key 注入：~/.bashrc 的 export 只对交互式 shell 生效，脚本/子 AI 是**非交互**进程，
-#      拿不到 zace_embeding_API_KEY。本脚本按下面的顺序自己找 key（找不到就明确报错并给出解决命令）；
+#      拿不到 nova_embeding_API_KEY。本脚本按下面的顺序自己找 key（找不到就明确报错并给出解决命令）；
 #   2. NO_PROXY=127.0.0.1,localhost：本机有 http_proxy，否则客户端会走代理连本机端口而失败。
 #
 # 它**不修改被索引的仓库**，也**不写入 key**（只从环境/文件读取，不落盘、不回显）。
@@ -17,18 +17,18 @@ set -euo pipefail
 # 默认值（可用 CLI 覆盖；不硬编码任何本机绝对路径为唯一选项）
 # --------------------------------------------------------------------------
 REPO=""
-DATA_ROOT="${ZACE_SMOKE_DATA_ROOT:-/tmp/zace-smoke}"
-PORT="${ZACE_SMOKE_PORT:-8799}"
+DATA_ROOT="${NOVA_SMOKE_DATA_ROOT:-/tmp/nova-smoke}"
+PORT="${NOVA_SMOKE_PORT:-8799}"
 HOST="127.0.0.1"
-QUERY="${ZACE_SMOKE_QUERY:-令牌过期后在哪里刷新？}"
-TIMEOUT_S="${ZACE_SMOKE_TIMEOUT:-1800}"     # 等索引的上限（秒）；超时如实报当前进度
-POLL_S="${ZACE_SMOKE_POLL:-5}"              # 轮询间隔（秒）
-MAX_RETRIES="${ZACE_SMOKE_MAX_RETRIES:-3}"  # 被限流（429）中断后的重试次数
-RETRY_WAIT_S="${ZACE_SMOKE_RETRY_WAIT:-90}" # 每次重试前的等待（秒），让 TPM 窗口过去
+QUERY="${NOVA_SMOKE_QUERY:-令牌过期后在哪里刷新？}"
+TIMEOUT_S="${NOVA_SMOKE_TIMEOUT:-1800}"     # 等索引的上限（秒）；超时如实报当前进度
+POLL_S="${NOVA_SMOKE_POLL:-5}"              # 轮询间隔（秒）
+MAX_RETRIES="${NOVA_SMOKE_MAX_RETRIES:-3}"  # 被限流（429）中断后的重试次数
+RETRY_WAIT_S="${NOVA_SMOKE_RETRY_WAIT:-90}" # 每次重试前的等待（秒），让 TPM 窗口过去
 KEEP=0
-KEY_VAR="${ZACE_SMOKE_KEY_VAR:-zace_embeding_API_KEY}"   # 从 ~/.bashrc 提取的变量名
-BASHRC="${ZACE_SMOKE_BASHRC:-$HOME/.bashrc}"
-ENV_FILE="${ZACE_SMOKE_ENV_FILE:-.env}"
+KEY_VAR="${NOVA_SMOKE_KEY_VAR:-nova_embeding_API_KEY}"   # 从 ~/.bashrc 提取的变量名
+BASHRC="${NOVA_SMOKE_BASHRC:-$HOME/.bashrc}"
+ENV_FILE="${NOVA_SMOKE_ENV_FILE:-.env}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERVICE_LOG=""
 SERVICE_PID=""
@@ -38,15 +38,15 @@ warn() { printf '%s\n' "$*" >&2; }
 
 usage() {
   cat <<'EOF'
-zace M2a 一键冒烟：起服务 → 等索引 → 调 MCP → 断言返回里有「文件:行号」。
+nova M2a 一键冒烟：起服务 → 等索引 → 调 MCP → 断言返回里有「文件:行号」。
 
 用法（详见 docs/handbook/getting-started/M2a-验收手册.md §10）：
-  bash scripts/m2a-smoke.sh --repo /path/to/repo [--data-root /tmp/zace-smoke] [--port 8799]
+  bash scripts/m2a-smoke.sh --repo /path/to/repo [--data-root /tmp/nova-smoke] [--port 8799]
                             [--query "…"] [--keep] [--timeout 1800]
 
 本脚本把本环境的两个坑固化下来（w6 §2.4 F3 与手册 §4.2）：
   1. key 注入：~/.bashrc 的 export 只对交互式 shell 生效，脚本/子 AI 是**非交互**进程，
-     拿不到 zace_embeding_API_KEY。本脚本自己按顺序找 key（找不到就报错并给出解决命令）；
+     拿不到 nova_embeding_API_KEY。本脚本自己按顺序找 key（找不到就报错并给出解决命令）；
   2. NO_PROXY=127.0.0.1,localhost：本机有 http_proxy，否则客户端会走代理连本机端口而失败。
 
 它**不修改被索引的仓库**，也**不写入 key**（只从环境/文件读取，不落盘、不回显）。
@@ -55,7 +55,7 @@ EOF
 
 参数：
   --repo PATH        要索引并查询的仓库绝对路径（必填）
-  --data-root PATH   数据根（默认 /tmp/zace-smoke；不要指向被索引仓库内部）
+  --data-root PATH   数据根（默认 /tmp/nova-smoke；不要指向被索引仓库内部）
   --port N           服务端口（默认 8799）
   --query TEXT       冒烟查询（默认「令牌过期后在哪里刷新？」；换成你仓库里的真实问题更好）
   --timeout N        等索引的上限秒数（默认 1800）
@@ -63,7 +63,7 @@ EOF
   --max-retries N    被 429 限流中断后的重试次数（默认 3；0 = 不重试）
   --retry-wait N     每次重试前等待秒数（默认 90，让 TPM 窗口过去）
   --keep             结束后不删数据根、不停服务（调试用）
-  --key-var NAME     从 ~/.bashrc 提取的 key 变量名（默认 zace_embeding_API_KEY）
+  --key-var NAME     从 ~/.bashrc 提取的 key 变量名（默认 nova_embeding_API_KEY）
   --env-file PATH    优先读取的 .env 文件（默认 ./.env；不存在则跳过）
   -h, --help         显示本帮助
 
@@ -141,7 +141,7 @@ if ! EMBED_API_KEY="$(find_key)"; then
   warn "  注意：~/.bashrc 的 export 只对交互式 shell 生效；脚本/子进程是非交互的，拿不到它。"
   exit 2
 fi
-# 必须 export：zace-service 是子进程，只从**环境**读 EMBED_API_KEY。
+# 必须 export：nova-service 是子进程，只从**环境**读 EMBED_API_KEY。
 # （实测踩过：只做 shell 赋值 `VAR=$(...)` 而不 export，服务会收到空 key 并以 HTTP 401 失败。
 export EMBED_API_KEY
 if [ "${EMBED_API_KEY:0:5}" = "sk-xx" ] || [ "${EMBED_API_KEY}" = "xxx" ]; then
@@ -154,7 +154,7 @@ log "[1/5] key 已就绪（来源已解析，长度 ${#EMBED_API_KEY}，不回�
 export NO_PROXY="127.0.0.1,localhost"
 export no_proxy="127.0.0.1,localhost"
 
-# 云端 embedding 配置：必须显式 export 给 zace-service 子进程（D-44 的代码默认仍是 local）。
+# 云端 embedding 配置：必须显式 export 给 nova-service 子进程（D-44 的代码默认仍是 local）。
 # 可用环境变量覆盖；默认值 = W6 拍板的硅基流动 bge-m3。
 export EMBED_MODE="${EMBED_MODE:-api}"
 export EMBED_MODEL="${EMBED_MODEL:-BAAI/bge-m3}"
@@ -169,10 +169,10 @@ export EMBED_BATCH_SIZE="${EMBED_BATCH_SIZE:-4}"
 # 1. 起服务（local 模式：绑仓库 + 后台索引）
 # --------------------------------------------------------------------------
 mkdir -p "$DATA_ROOT"
-SERVICE_LOG="$DATA_ROOT/zace-smoke-service.log"
-log "[2/5] 起服务：zace-service local --repo $REPO --data-root $DATA_ROOT --port $PORT"
+SERVICE_LOG="$DATA_ROOT/nova-smoke-service.log"
+log "[2/5] 起服务：nova-service local --repo $REPO --data-root $DATA_ROOT --port $PORT"
 cd "$REPO_ROOT"
-uv run zace-service local --repo "$REPO" --data-root "$DATA_ROOT" --port "$PORT" \
+uv run nova-service local --repo "$REPO" --data-root "$DATA_ROOT" --port "$PORT" \
   >"$SERVICE_LOG" 2>&1 &
 SERVICE_PID=$!
 

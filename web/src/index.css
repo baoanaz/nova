@@ -3,144 +3,90 @@
 @tailwind utilities;
 
 @layer base {
-  body {
-    @apply min-w-[320px] bg-paper-base font-sans text-ink-primary antialiased;
-    background-image:
-      radial-gradient(ellipse at 0 0, rgb(217 119 87 / 0.08), transparent 50%),
-      radial-gradient(ellipse at 100% 0, rgb(96 165 250 / 0.04), transparent 40%);
-    background-attachment: fixed;
-  }
-
-  h1, h2, h3 {
-    font-family: inherit;
-    text-wrap: balance;
-  }
-
-  button, a, input, select, textarea {
-    -webkit-tap-highlight-color: transparent;
-  }
-
+  :root { color-scheme: dark; }
+  body { @apply min-w-[320px] bg-paper-base font-sans text-ink-primary antialiased; }
+  h1, h2, h3 { font-family: inherit; text-wrap: balance; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
-
-  :focus-visible {
-    outline: 2px solid theme("colors.accent.seal");
-    outline-offset: 3px;
-  }
-
+  :focus-visible { outline: 2px solid theme("colors.accent.seal"); outline-offset: 3px; }
   input:not([type="checkbox"]):not([type="radio"]), select, textarea {
     min-width: 0;
-    min-height: 2.5rem;
+    min-height: 2.75rem;
     accent-color: theme("colors.accent.seal");
   }
-
-  input::placeholder, textarea::placeholder { color: theme("colors.ink.muted"); opacity: 0.75; }
-  ::selection { background-color: theme("colors.accent.soft"); color: theme("colors.ink.primary"); }
+  input::placeholder, textarea::placeholder { color: theme("colors.ink.muted"); opacity: 1; }
+  ::selection { background: theme("colors.accent.soft"); color: theme("colors.ink.primary"); }
 }
 
 @layer components {
-  .brand-mark {
-    @apply inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent-bright bg-accent-soft text-accent-seal;
-    box-shadow: 3px 3px 0 rgb(217 119 87 / 0.18);
-  }
-
+  .brand-mark { @apply h-11 w-11 shrink-0 rounded-lg object-cover; }
   .sidebar-link {
-    @apply flex min-h-11 items-center gap-3 border-2 border-transparent px-3 py-2.5 font-medium;
-    transition: background-color 150ms, border-color 150ms, box-shadow 150ms;
+    @apply flex min-h-11 items-center gap-3 rounded-lg border border-transparent px-3 py-2.5 font-medium;
+    transition: background-color 150ms, color 150ms;
   }
-
-  .sidebar-link:hover {
-    @apply border-ink-line bg-paper-card text-ink-primary;
-    box-shadow: 3px 3px 0 rgb(39 22 16 / 0.1);
-  }
-
-  .sidebar-link[aria-current="page"] {
-    @apply border-accent-bright bg-accent-soft text-accent-seal;
-    box-shadow: 3px 3px 0 rgb(217 119 87 / 0.22);
-  }
-
+  .sidebar-link:hover { @apply bg-paper-card text-ink-primary; }
+  .sidebar-link[aria-current="page"] { @apply border-accent-seal/40 bg-accent-soft text-accent-seal; }
   .ui-button,
   .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):not([role="switch"]):not([aria-pressed]) {
-    min-height: 2.25rem;
-    border-width: 1px;
-    border-color: theme("colors.ink.line");
-    box-shadow: 2px 2px 0 rgb(39 22 16 / 0.14);
-    transition: box-shadow 150ms, background-color 150ms, transform 150ms;
+    min-height: 2.5rem;
+    border-radius: 0.5rem;
+    transition: background-color 150ms, border-color 150ms;
   }
-
   .ui-button:hover:not(:disabled),
-  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):hover:not(:disabled):not([role="switch"]):not([aria-pressed]) {
-    box-shadow: 3px 3px 0 rgb(39 22 16 / 0.18);
-    transform: translateY(-1px);
+  .page-content :where(button.border):hover:not(:disabled):not([role="switch"]):not([aria-pressed]) {
+    border-color: theme("colors.accent.seal");
   }
-
-  .ui-button:active:not(:disabled),
-  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):active:not(:disabled):not([role="switch"]):not([aria-pressed]) {
-    box-shadow: 1px 1px 0 rgb(39 22 16 / 0.14);
-    transform: translate(1px, 1px);
-  }
-
-  .page-content {
-    @apply min-w-0 space-y-7;
-  }
-
-  .page-content h1 {
-    @apply text-2xl font-bold tracking-tight md:text-3xl;
-  }
-
-  .page-content :where(section, div).bg-paper-card.shadow-sm {
-    border-width: 2px;
-  }
-
-  .page-content :where(section, div).bg-paper-card.shadow-sm > h2 {
-    @apply mb-5 text-base;
-  }
-
+  .page-content { @apply min-w-0 space-y-7; }
+  .page-content h1 { @apply text-2xl font-semibold tracking-tight md:text-3xl; }
+  .page-content :where(section, div).bg-paper-card.shadow-sm { @apply rounded-xl; border-width: 1px; }
+  .page-content :where(section, div).bg-paper-card.shadow-sm > h2 { @apply mb-5 text-base; }
   .page-content table { font-variant-numeric: tabular-nums; }
   .page-content thead { @apply bg-paper-raised text-ink-muted; }
-  .page-content tbody tr:hover { background-color: theme("colors.paper.base"); }
+  .page-content tbody tr:hover { background: theme("colors.paper.base"); }
   .page-content :where(th, td) { padding-top: 0.85rem; padding-bottom: 0.85rem; }
-
-  .panel-heading {
-    @apply flex items-center gap-2.5;
-  }
-
-  .panel-heading > svg { @apply text-accent-seal; }
-
-  .range-picker {
-    @apply inline-flex max-w-full flex-wrap gap-1.5 border border-ink-line bg-paper-card p-1.5;
-  }
-
-  .range-picker button {
-    @apply min-h-8 whitespace-nowrap px-3 py-1.5 text-xs font-medium;
-  }
+  .panel-heading { @apply flex items-center gap-2.5; }
+  .panel-heading > svg { @apply text-ink-muted; }
+  .range-picker { @apply inline-flex max-w-full flex-wrap gap-1 rounded-lg border border-ink-control bg-paper-raised p-1; }
+  .range-picker button { @apply min-h-8 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium; }
 
   .login-art {
-    background-image: radial-gradient(theme("colors.ink.line") 1px, transparent 1px);
-    background-size: 20px 20px;
+    background:
+      radial-gradient(ellipse at 50% 42%, rgb(147 197 253 / 0.08), transparent 60%),
+      theme("colors.paper.base");
   }
-
+  .login-art::before {
+    content: "";
+    position: absolute;
+    inset: 10% 8%;
+    border: 1px solid rgb(214 195 165 / 0.14);
+    border-radius: 50%;
+    transform: rotate(-26deg) scaleX(1.18);
+    pointer-events: none;
+  }
   .login-art::after {
     content: "";
     position: absolute;
-    inset: 0;
-    background: linear-gradient(180deg, theme("colors.paper.raised"), transparent 35%, theme("colors.paper.base"));
+    width: 90%; height: 45%; left: 5%; bottom: -35%;
+    border-radius: 50%;
+    box-shadow: 0 -2px 0 rgb(191 219 254 / 0.65), 0 -18px 90px rgb(147 197 253 / 0.12);
     pointer-events: none;
   }
-
-  .context-motif {
-    @apply relative mt-12 flex h-32 max-w-sm items-center justify-center;
-  }
-
-  .context-motif::before { content: ""; @apply absolute left-0 right-0 border-t-2 border-dashed border-accent-bright/40; }
-  .context-motif > span { @apply relative flex h-16 w-16 items-center justify-center border-2 border-ink-line bg-paper-card text-accent-seal shadow-sm; }
-  .context-motif > span:nth-child(2) { @apply mx-10 -translate-y-6 border-accent-bright bg-accent-soft; }
+  .login-logo { @apply mx-auto w-full max-w-[19rem] rounded-[2rem]; }
+  .login-form input { min-height: 3rem; background: theme("colors.paper.raised"); }
 
   @media (max-width: 767px) {
     input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
   }
-
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+  }
+}
+
+/* 控件轮廓独立于装饰分隔线：对卡片底色对比度至少 3:1。 */
+@layer utilities {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea,
+  button.border-ink-line, [role="switch"].border-ink-line {
+    border-color: theme("colors.ink.control");
   }
 }

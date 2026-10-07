@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from zace_core.engine import Engine
-from zace_core.retrieval.vector import QueryEmbeddingCache
+from nova_core.engine import Engine
+from nova_core.retrieval.vector import QueryEmbeddingCache
 
 from .conftest import DESIGN_DOC, QUERY, TOKEN_MODULE, DeterministicBigramEmbedding
 
@@ -29,8 +29,8 @@ def _engine(tmp_path: Path) -> tuple[Engine, str]:
 
 
 def _ingest(engine: Engine, project_id: str) -> None:
-    from zace_core.hashing import blob_hash
-    from zace_core.types import BlobInput, ChangeSet
+    from nova_core.hashing import blob_hash
+    from nova_core.types import BlobInput, ChangeSet
 
     files = {"src/token_service.py": TOKEN_MODULE, "docs/token.md": DESIGN_DOC}
     payloads = [(path, data.encode("utf-8")) for path, data in files.items()]
