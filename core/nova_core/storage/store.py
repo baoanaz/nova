@@ -210,6 +210,27 @@ def _delete_fts_for_file(conn: sqlite3.Connection, file_path: str) -> None:
         conn.executemany("DELETE FROM chunks_fts WHERE rowid = ?", [(r["rowid"],) for r in rows])
 
 
+def _insert_rows(
+    conn: sqlite3.Connection, prefix: str, rows: Sequence[tuple], *, returning: str = "",
+) -> list[sqlite3.Row]:
+    """Bound multi-row statements by the connection's actual parameter limit."""
+    if not rows:
+        return []
+    columns = len(rows[0])
+    size = max(1, min(128, conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER) // columns))
+    placeholders = "(" + ",".join("?" for _ in range(columns)) + ")"
+    result = []
+    for start in range(0, len(rows), size):
+        batch = rows[start:start + size]
+        cursor = conn.execute(
+            prefix + " VALUES " + ",".join([placeholders] * len(batch)) + returning,
+            tuple(value for row in batch for value in row),
+        )
+        if returning:
+            result.extend(cursor.fetchall())
+    return result
+
+
 def _insert_fts_row(conn: sqlite3.Connection, rowid: int, chunk: ChunkDef) -> None:
     """写入 jieba 预分词文本（D-20/D-45）；渲染一律读 chunks.content 原文。"""
     conn.execute(
@@ -402,80 +423,69 @@ class Store:
                 ),
             )
 
-            chunk_ids = set()
-            for chunk in new_chunks:
-                cursor = conn.execute(
-                    "INSERT INTO chunks(id, file_path, symbol_fqn, symbol_kind, start_line,"
-                    " end_line, signature, docstring, content, content_hash)"
-                    " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        chunk.id,
-                        chunk.file_path,
-                        chunk.symbol_fqn,
-                        chunk.symbol_kind,
-                        chunk.start_line,
-                        chunk.end_line,
-                        chunk.signature,
-                        chunk.docstring,
-                        chunk.content,
-                        chunk.content_hash,
-                    ),
+            returning = " RETURNING id, rowid" if sqlite3.sqlite_version_info >= (3, 35, 0) else ""
+            chunk_rows = _insert_rows(
+                conn,
+                "INSERT INTO chunks(id, file_path, symbol_fqn, symbol_kind, start_line,"
+                " end_line, signature, docstring, content, content_hash)",
+                [(c.id, c.file_path, c.symbol_fqn, c.symbol_kind, c.start_line,
+                  c.end_line, c.signature, c.docstring, c.content, c.content_hash)
+                 for c in new_chunks],
+                returning=returning,
+            )
+            if not returning:
+                chunk_rows = conn.execute(
+                    "SELECT id, rowid FROM chunks WHERE file_path = ?", (file_path,),
+                ).fetchall()
+            # RETURNING order is unspecified: bind FTS rows through chunk identity.
+            rowids = {str(row["id"]): int(row["rowid"]) for row in chunk_rows}
+            chunk_ids = set(rowids)
+            if len(new_chunks) == 1:
+                _insert_fts_row(conn, rowids[new_chunks[0].id], new_chunks[0])
+            else:
+                _insert_rows(
+                    conn,
+                    "INSERT INTO chunks_fts(rowid, content_seg, signature_seg,"
+                    " docstring_seg, file_path)",
+                    [(rowids[c.id], segment(c.content), segment(c.signature),
+                      segment(c.docstring), c.file_path) for c in new_chunks],
                 )
-                chunk_ids.add(chunk.id)
-                _insert_fts_row(conn, int(cursor.lastrowid or 0), chunk)
 
+            symbol_rows = []
             for symbol in parsed.symbols:
                 symbol_id = f"{file_path}:{symbol.fqn}:{symbol.start_line}"
-                conn.execute(
-                    "INSERT INTO symbols(id, name, fqn, kind, chunk_id, file_path, start_line,"
-                    " end_line, is_exported) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        symbol_id,
-                        symbol.name,
-                        symbol.fqn,
-                        symbol.kind,
-                        symbol_id if symbol_id in chunk_ids else None,
-                        file_path,
-                        symbol.start_line,
-                        symbol.end_line,
-                        int(symbol.is_exported),
-                    ),
-                )
+                symbol_rows.append((
+                    symbol_id, symbol.name, symbol.fqn, symbol.kind,
+                    symbol_id if symbol_id in chunk_ids else None,
+                    file_path, symbol.start_line, symbol.end_line, int(symbol.is_exported),
+                ))
+            _insert_rows(
+                conn,
+                "INSERT INTO symbols(id, name, fqn, kind, chunk_id, file_path, start_line,"
+                " end_line, is_exported)",
+                symbol_rows,
+            )
 
-            for block in parsed.spec_blocks:
-                conn.execute(
-                    "INSERT INTO spec_blocks(id, file_path, doctype, heading, heading_path,"
-                    " heading_level, start_line, end_line, content, code_fences)"
-                    " VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        f"{block.path}:{block.heading_path}:{block.start_line}",
-                        block.path,
-                        block.doctype,
-                        block.heading,
-                        block.heading_path,
-                        block.level,
-                        block.start_line,
-                        block.end_line,
-                        block.content,
-                        json.dumps(
-                            [
-                                {"lang": fence.lang, "content": fence.content, "line": fence.line}
-                                for fence in block.code_fences
-                            ],
-                            ensure_ascii=False,
-                        ),
-                    ),
-                )
+            _insert_rows(
+                conn,
+                "INSERT INTO spec_blocks(id, file_path, doctype, heading, heading_path,"
+                " heading_level, start_line, end_line, content, code_fences)",
+                [(
+                    f"{b.path}:{b.heading_path}:{b.start_line}", b.path, b.doctype,
+                    b.heading, b.heading_path, b.level, b.start_line, b.end_line, b.content,
+                    json.dumps([
+                        {"lang": f.lang, "content": f.content, "line": f.line}
+                        for f in b.code_fences
+                    ], ensure_ascii=False),
+                ) for b in parsed.spec_blocks],
+            )
 
-            if parsed.edges:
-                conn.executemany(
-                    "INSERT OR IGNORE INTO edges(source, target, kind, line, provenance)"
-                    " VALUES(?, ?, ?, ?, ?)",
-                    [
-                        (e.source_fqn, e.target_name, e.kind, e.line, e.provenance)
-                        for e in parsed.edges
-                    ],
-                )
+            _insert_rows(
+                conn,
+                "INSERT OR IGNORE INTO edges(source, target, kind, line, provenance)",
+                [(e.source_fqn, e.target_name, e.kind, e.line, e.provenance)
+                 for e in parsed.edges],
+            )
 
             self._insert_unresolved_rows(conn, parsed.unresolved, file_path, parsed.language)
 
