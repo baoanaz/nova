@@ -42,6 +42,12 @@ def serve(args, provider):
     from nova_service.config import Settings
     from nova_service.runtime import EngineManager
 
+    try:  # Same startup preload as `nova-service serve`; absent on older source trees.
+        from nova_core.preload import preload_runtime
+    except ImportError:
+        preload_runtime = None
+    disabled = os.environ.get('NOVA_PRELOAD', '').strip().lower() in ('0', 'false', 'no', 'off')
+    preload = preload_runtime() if preload_runtime is not None and not disabled else None
     app = create_app(Settings(data_root=args.out / 'index', local_mode=True))
     manager = EngineManager(args.out / 'index', Engine.open(args.out / 'index', provider=provider))
     app.state.engine_manager = manager
@@ -58,7 +64,7 @@ def serve(args, provider):
 
     @app.get('/bench/metrics')
     def metrics():
-        return {**snapshot(), 'ingests': reports,
+        return {**snapshot(), 'ingests': reports, 'preload_s': preload,
                 'engine_source': sys.modules[Engine.__module__].__file__}
 
     uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='warning')

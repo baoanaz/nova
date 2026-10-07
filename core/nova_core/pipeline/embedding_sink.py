@@ -52,11 +52,14 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from queue import Empty, Queue
 
+import numpy as np
+
 from nova_core.chunking import embedding_text
 from nova_core.interfaces import EmbeddingProvider
-from nova_core.types import ChunkDef, VectorRow
+from nova_core.types import ChunkDef
 from nova_core.vectors import VectorStore
 from nova_core.vectors.cache import EmbeddingCache, EmbeddingCacheError
+from nova_core.vectors.store import as_matrix
 
 logger = logging.getLogger(__name__)
 
@@ -181,14 +184,19 @@ class EmbeddingSink:
     # ------------------------------------------------------------------ 内部
 
     def _process_window(self, window: Sequence[ChunkDef]) -> None:
+        """处理一个窗口。向量全程是 float32 矩阵（不逐元素转 Python float，见
+        :meth:`VectorStore.upsert_matrix`）；表里查不到的 id 直接追加，不走整表 merge。"""
         stored = self._vectors.get_hashes([chunk.id for chunk in window])
         pending = [chunk for chunk in window if stored.get(chunk.id) != chunk.content_hash]
         self.stats.skipped += len(window) - len(pending)
         if not pending:
             return
+        new_ids = {chunk.id for chunk in pending if chunk.id not in stored}
 
         # 一层：向量表里已有的同内容行（含本 run 更早窗口刚写入的行——落库即可见）。
-        reuse = self._vectors.get_vectors_by_hash([chunk.content_hash for chunk in pending])
+        reuse = self._vectors.get_vector_arrays_by_hash(
+            [chunk.content_hash for chunk in pending]
+        )
         # 二层：跨项目缓存（TASK-111）。缓存是优化，任何异常都降级为未命中。
         if self._cache is not None:
             missing = [
@@ -197,54 +205,66 @@ class EmbeddingSink:
                 if digest not in reuse
             ]
             try:
-                for digest, vector in self._cache.lookup(self._model_id, missing).items():
+                for digest, vector in self._cache.lookup_arrays(self._model_id, missing).items():
                     reuse.setdefault(digest, ("", vector))
             except EmbeddingCacheError as exc:
                 logger.warning("embedding 缓存读取失败，按未命中处理：%s", exc)
 
-        moves: list[VectorRow] = []
+        moves: list[ChunkDef] = []
         to_embed: list[ChunkDef] = []
         for chunk in pending:
-            hit = reuse.get(chunk.content_hash)
-            if hit is None:
+            if chunk.content_hash in reuse:
+                moves.append(chunk)
+            else:
                 to_embed.append(chunk)
-                continue
-            moves.append(
-                VectorRow(chunk_id=chunk.id, content_hash=chunk.content_hash, vector=hit[1])
-            )
-            self.stats.deduped += 1
         if moves:
-            self.stats.upserted += self._vectors.upsert(moves)
+            self.stats.deduped += len(moves)
+            self.stats.upserted += self._vectors.upsert_matrix(
+                [chunk.id for chunk in moves],
+                [chunk.content_hash for chunk in moves],
+                np.stack([reuse[chunk.content_hash][1] for chunk in moves]),
+                new_ids=new_ids,
+            )
         if to_embed:
-            self._embed_unique(to_embed)
+            self._embed_unique(to_embed, new_ids)
 
-    def _embed_unique(self, chunks: Sequence[ChunkDef]) -> None:
+    def _embed_unique(self, chunks: Sequence[ChunkDef], new_ids: set[str]) -> None:
         """窗口内按 ``content_hash`` 去重后嵌入，再把同一向量挂到各 chunk id 上。"""
         groups: dict[str, list[ChunkDef]] = {}
         for chunk in chunks:
             groups.setdefault(chunk.content_hash, []).append(chunk)
         digests = list(groups)
-        vectors = self._embedding.embed([embedding_text(groups[d][0]) for d in digests])
-        if len(vectors) != len(digests):
+        matrix = self._embed_matrix([embedding_text(groups[d][0]) for d in digests])
+        if len(matrix) != len(digests):
             raise RuntimeError(
-                f"embedding 返回行数不匹配：期望 {len(digests)}，实际 {len(vectors)}"
+                f"embedding 返回行数不匹配：期望 {len(digests)}，实际 {len(matrix)}"
             )
-        rows: list[VectorRow] = []
-        fresh: dict[str, Sequence[float]] = {}
-        for digest, vector in zip(digests, vectors, strict=True):
-            normalized = list(vector)
-            fresh[digest] = normalized
+        matrix = as_matrix(matrix, self._vectors.dim)
+        ids: list[str] = []
+        hashes: list[str] = []
+        rows: list[int] = []
+        for position, digest in enumerate(digests):
             for chunk in groups[digest]:
-                rows.append(
-                    VectorRow(chunk_id=chunk.id, content_hash=digest, vector=normalized)
-                )
-        self.stats.upserted += self._vectors.upsert(rows)
+                ids.append(chunk.id)
+                hashes.append(digest)
+                rows.append(position)
+        self.stats.upserted += self._vectors.upsert_matrix(
+            ids, hashes, matrix[rows], new_ids=new_ids
+        )
         self.stats.embedded += len(rows)
         if self._cache is not None:
             try:
-                self._cache.put(self._model_id, dict(fresh))
+                self._cache.put_matrix(self._model_id, digests, matrix)
             except EmbeddingCacheError as exc:  # 缓存写失败不影响索引
                 logger.warning("embedding 缓存写入失败：%s", exc)
+
+    def _embed_matrix(self, texts: list[str]) -> np.ndarray | list[list[float]]:
+        """优先用 provider 的 ``embed_array``（float32 矩阵，省掉 Python float 物化）；
+        未实现的 provider 走 CF-09 的 ``embed``。"""
+        embed_array = getattr(self._embedding, "embed_array", None)
+        if embed_array is not None:
+            return embed_array(texts)
+        return self._embedding.embed(texts)
 
 
 _SENTINEL = object()

@@ -287,3 +287,100 @@ def test_close_only_closes_owned_client() -> None:
     )
     owned.close()
     assert owned._client.is_closed  # 断言自建客户端的释放行为（私有字段仅测试可见）
+
+
+# ---------------------------------------------------------------------------
+# base64 向量 / 矩阵接口（冷启动：省掉 JSON 浮点解析与 Python float 物化）
+# ---------------------------------------------------------------------------
+
+
+VOYAGE_URL = "https://api.voyageai.com"
+
+
+def _b64(vector: list[float]) -> str:
+    import base64
+
+    return base64.b64encode(np.asarray(vector, dtype="<f4").tobytes()).decode("ascii")
+
+
+def test_voyage_requests_and_decodes_base64() -> None:
+    from nova_core.embedding.registry import get_transport
+
+    raw = [[3.0, 4.0, 0.0, 0.0], [0.0, 0.0, 5.0, 0.0]]
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        rows = [{"index": i, "embedding": _b64(v)} for i, v in enumerate(raw)]
+        return httpx.Response(200, json={"data": rows})
+
+    provider, requests = make_provider(
+        handler, transport=get_transport("voyage"), base_url=VOYAGE_URL
+    )
+    matrix = provider.embed_array(["a", "b"])
+    body = json.loads(requests[0].content)
+    assert body["encoding_format"] == "base64"
+    assert matrix.dtype == np.float32 and matrix.shape == (2, 4)
+    assert np.allclose(matrix[0], [0.6, 0.8, 0.0, 0.0], atol=1e-6)
+    assert provider.embed(["a", "b"]) == matrix.tolist()
+
+
+def test_base64_and_json_responses_give_identical_vectors() -> None:
+    from nova_core.embedding.registry import get_transport
+
+    raw = np.random.default_rng(3).standard_normal((3, 4)).astype(np.float32)
+
+    def b64_handler(_: httpx.Request) -> httpx.Response:
+        rows = [{"index": i, "embedding": _b64(v.tolist())} for i, v in enumerate(raw)]
+        return httpx.Response(200, json={"data": rows})
+
+    def json_handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=embedding_body([v.tolist() for v in raw]))
+
+    voyage, _ = make_provider(
+        b64_handler, transport=get_transport("voyage"), base_url=VOYAGE_URL
+    )
+    generic, requests = make_provider(json_handler)
+    assert np.array_equal(voyage.embed_array(["a", "b", "c"]), generic.embed_array(["a", "b", "c"]))
+    assert "encoding_format" not in json.loads(requests[0].content)
+
+
+def test_invalid_base64_vector_raises_response_error() -> None:
+    from nova_core.embedding.registry import get_transport
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": "@@not-base64@@"}]})
+
+    provider, _ = make_provider(handler, transport=get_transport("voyage"), base_url=VOYAGE_URL)
+    with pytest.raises(ApiResponseError, match="base64"):
+        provider.embed(["a"])
+
+
+def test_base64_dim_mismatch_raises() -> None:
+    from nova_core.embedding.registry import get_transport
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"data": [{"index": 0, "embedding": _b64([1.0, 2.0])}]})
+
+    provider, _ = make_provider(handler, transport=get_transport("voyage"), base_url=VOYAGE_URL)
+    with pytest.raises(EmbeddingDimMismatchError):
+        provider.embed(["a"])
+
+
+def test_embed_array_empty_input_has_model_dim() -> None:
+    def handler(_: httpx.Request) -> httpx.Response:  # pragma: no cover - 不应被调用
+        raise AssertionError("空输入不应发请求")
+
+    provider, _ = make_provider(handler)
+    assert provider.embed_array([]).shape == (0, 4)
+    assert provider.embed([]) == []
+
+
+def test_voyage_behind_custom_base_url_keeps_json() -> None:
+    """经中转/代理的 base_url 不请求 base64（对端未必认这个参数）。"""
+    from nova_core.embedding.registry import get_transport
+
+    def handler(_: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=embedding_body([[1.0, 0.0, 0.0, 0.0]]))
+
+    provider, requests = make_provider(handler, transport=get_transport("voyage"))
+    provider.embed(["a"])
+    assert "encoding_format" not in json.loads(requests[0].content)

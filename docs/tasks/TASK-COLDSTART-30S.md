@@ -194,3 +194,71 @@ The bins directory contains `baseline-debug` and `baseline-release`. It invokes
 `sync_probe.py --client <binary>` with phase timing disabled. Compare suites using
 `compare_acceptance.py <baseline-directory> <candidate-directory>`; its content
 checks must pass before a performance improvement is accepted.
+
+## Round 4 candidate: arrow-native vectors, base64, startup preload (NOT yet measured)
+
+Implemented without VPS access; all timings below are local micro-benchmarks only.
+The VPS run decides acceptance. Code-only analysis motivating it: the previous
+architecture report measured ~38 service CPU core-seconds for ~52s wall on 2 vCPU,
+i.e. the run is effectively GIL-serial, so Python-level CPU removed from vector
+workers directly frees the main (parse/SQLite) thread.
+
+1. **Vector path without Python floats.** Each 1024-d vector used to be converted
+   to Python floats several times per window (`list(vector)`, `[float(v)…]` dict
+   rows for LanceDB, again for the shared cache, plus pyarrow inference).
+   `EmbeddingSink` now keeps a float32 `(n, dim)` matrix end to end;
+   `VectorStore.upsert_matrix` / `EmbeddingCache.put_matrix` build
+   `FixedSizeListArray` tables directly; `get_vector_arrays_by_hash` /
+   `lookup_arrays` read via `to_arrow()`. Old list-returning APIs are kept as
+   wrappers. Values are bit-identical for float32 sources (float64 inputs round
+   to nearest float32, same as the old pyarrow path); tests assert equality.
+2. **Fewer LanceDB merges/commits.** Ids that the window's `get_hashes` just
+   reported absent (and unique within the call) are appended with `add()`;
+   existing or duplicated ids still use `merge_insert` exactly as before. One
+   commit per window per table (batch 1024/512 → 4096). The shared cache keeps
+   `merge_insert` because two consumers may write the same content concurrently.
+3. **Voyage base64.** The Voyage transport requests `encoding_format=base64`
+   (float32 little-endian per Voyage docs) and decodes with `np.frombuffer`;
+   JSON float arrays are still accepted. Only enabled when the endpoint is the
+   official Voyage URL (relays behind a custom base_url keep JSON). Other
+   transports are unchanged. Not
+   exercised by the offline replay; needs one small paid sanity call before relying
+   on it in production.
+4. **Startup preload.** `nova_core.preload.preload_runtime()` imports lancedb,
+   initializes jieba and tree-sitter parsers. `nova-service serve/local` call it
+   before listening; `NOVA_PRELOAD=0` disables it. `sync_probe.py` calls it in the
+   server process when the source tree has it (older trees skip it) and records
+   `preload_s` in `/bench/metrics`. Startup is outside the Tool timer by design
+   (user decision: everything preloadable counts as the real scenario). Note
+   `server_cpu_s` (RUSAGE_SELF) now includes preload CPU.
+
+Replay note: `ReplayEmbedding.embed_array` returns the fixture's float32 rows as a
+matrix (mirrors the base64 path). Baseline trees never call it and keep the old
+`.tolist()` path, so their numbers are unchanged.
+
+Local evidence (fast dev box, not the VPS): 20k×1024 vectors in 4000-row windows
+through lookup + store + cache writes: old path 3.02s → new path 0.70s, with exact
+float32 equality of every stored and cached vector. Preload on the dev box: lancedb
+0.96s, jieba 0.27s, parsers 0.01s.
+
+Validation: 1420 core+service tests passed / 4 documented xfails; ruff and the
+dependency-direction check pass.
+
+**Requested VPS verification** (same acceptance protocol as above):
+
+- Content checks via `compare_acceptance.py` must pass (logical SQLite, FTS, all
+  20,931 vectors, Tool output). LanceDB row order may differ from merge-based
+  writes; if Tool output differs ONLY in the order of equal-score hits, report it
+  rather than accept or reject silently.
+- Run the candidate twice: default, and with `NOVA_PRELOAD=0`, so the preload
+  contribution is separable from items 1–2.
+- Interleaved control vs candidate with `paired_acceptance.py` is preferred.
+- If budget allows, enable phase probes in one separate untimed run (or
+  `py-spy record --gil` on the server PID) to decide whether to move
+  parse/split/segment into a worker process next.
+
+Independent read-only subagent review: no correctness break found. Noted risks,
+not fixed: `upsert_matrix(new_ids=…)` relies on the caller's per-ingest id
+uniqueness (guaranteed today by splitter/PK/path dedup); exception types for null
+or non-numeric vectors changed (no caller depends on them); base64 vs JSON
+bit-equality from the real Voyage service is unverified.

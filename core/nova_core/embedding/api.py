@@ -24,6 +24,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import re
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -139,6 +141,11 @@ class OpenAiCompatibleEmbeddingProvider:
             )
         self._concurrency = concurrency
         self._endpoint = embeddings_endpoint(base_url)
+        #: 只对厂商官方 endpoint 请求 base64：经 base_url 指向的中转/代理不一定认这个参数。
+        self._base64 = self._transport.supports_base64 and (
+            self._transport.base_url is not None
+            and self._endpoint == embeddings_endpoint(self._transport.base_url)
+        )
         self._api_key = api_key or None
         self._owns_client = client is None
         self._client = client or build_default_client(
@@ -211,12 +218,19 @@ class OpenAiCompatibleEmbeddingProvider:
         """检索侧（query）语义嵌入；未配置前缀的模型与 ``embed`` 等价。"""
         return self.embed_side(texts, "query")
 
+    def embed_array(self, texts: Sequence[str]) -> np.ndarray:
+        """:meth:`embed` 的 ``(n, dim)`` float32 矩阵形态（索引流水线用，省掉 float 物化）。"""
+        return self.embed_side_array(texts, "passage")
+
     def embed_side(self, texts: Sequence[str], side: Side) -> list[list[float]]:
+        return self.embed_side_array(texts, side).tolist()
+
+    def embed_side_array(self, texts: Sequence[str], side: Side) -> np.ndarray:
         if side not in ("passage", "query"):  # pragma: no cover - 防御性分支
             raise EmbeddingConfigError(f"side 必须是 'passage' / 'query'，收到 {side!r}")
         items = list(texts)
         if not items:
-            return []
+            return np.empty((0, self._spec.dim), dtype=np.float32)
         prefix = self._spec.query_prefix if side == "query" else self._spec.passage_prefix
         # 截断 + 按 token 预算分批（TASK-046 §D）：发请求前就消掉超长输入与批次尖峰。
         prepared = [self._prepare(with_prefix(text, prefix)) for text in items]
@@ -232,12 +246,9 @@ class OpenAiCompatibleEmbeddingProvider:
         # **顺序必须保持**：结果按批次原顺序拼接（_embed_batch 内部已按 index 排序）。
         if self._concurrency > 1 and len(batches) > 1:
             return self._embed_batches_concurrent(batches)
-        vectors: list[list[float]] = []
-        for batch in batches:
-            vectors.extend(self._embed_batch(batch))
-        return vectors
+        return np.concatenate([self._embed_batch(batch) for batch in batches])
 
-    def _embed_batches_concurrent(self, batches: Sequence[Sequence[str]]) -> list[list[float]]:
+    def _embed_batches_concurrent(self, batches: Sequence[Sequence[str]]) -> np.ndarray:
         """并发发送多批（TASK-049 §3.3）。
 
     失败语义与串行一致：**任一批最终失败 → 整次抛 ``EmbeddingError``**（不部分成功）。
@@ -247,10 +258,7 @@ class OpenAiCompatibleEmbeddingProvider:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             # map 保持输入顺序；异常在取值时抛出。
             results = list(pool.map(self._embed_batch, batches))
-        vectors: list[list[float]] = []
-        for rows in results:
-            vectors.extend(rows)
-        return vectors
+        return np.concatenate(results)
 
     # -- 截断与分批 -------------------------------------------------------
 
@@ -288,10 +296,15 @@ class OpenAiCompatibleEmbeddingProvider:
             self._tokenizer_load_failed = True
         return self._tokenizer
 
-    def _embed_batch(self, batch: Sequence[str]) -> list[list[float]]:
+    def _embed_batch(self, batch: Sequence[str]) -> np.ndarray:
         # 请求体里的 model 必须是 **provider 认的名字**：registry 的 key（如 ``bge-m3``）只是
         # nova 侧标识，硅基流动要的是 ``BAAI/bge-m3``（TASK-046 §A 的核心断言）。
-        body = self._post({"model": self._spec.api_model, "input": list(batch)})
+        payload: dict[str, Any] = {"model": self._spec.api_model, "input": list(batch)}
+        if self._base64:
+            # 向量以 base64(float32 小端) 返回：响应体约为 JSON 浮点的一半，且解码是
+            # 一次 frombuffer，而不是逐个解析上千万个十进制浮点数。
+            payload["encoding_format"] = "base64"
+        body = self._post(payload)
         data = body.get("data")
         if not isinstance(data, list) or len(data) != len(batch):
             got = len(data) if isinstance(data, list) else "非列表"
@@ -314,9 +327,9 @@ class OpenAiCompatibleEmbeddingProvider:
             rows.append((index, row["embedding"]))
         rows.sort(key=lambda item: item[0])
 
-        vectors: list[list[float]] = []
+        vectors: list[np.ndarray] = []
         for _, raw in rows:
-            vector = _as_float_list(raw, endpoint=self._endpoint)
+            vector = _as_float_array(raw, endpoint=self._endpoint)
             if len(vector) != self._spec.dim:
                 raise EmbeddingDimMismatchError(
                     f"{self._spec.model_id} 返回维度 {len(vector)} 与注册表 dim={self._spec.dim} "
@@ -325,7 +338,7 @@ class OpenAiCompatibleEmbeddingProvider:
                 )
             vectors.append(vector)
         # 卡内 §A：与本地实现一致，统一返回单位向量（向量库按余弦检索）。
-        return l2_normalize(np.asarray(vectors, dtype=np.float32)).tolist()
+        return l2_normalize(np.stack(vectors))
 
     # -- HTTP -------------------------------------------------------------
 
@@ -504,11 +517,22 @@ def iter_batches_by_token_budget(
         yield current
 
 
-def _as_float_list(raw: Any, *, endpoint: str) -> list[float]:
+def _as_float_array(raw: Any, *, endpoint: str) -> np.ndarray:
+    """一行 embedding → float32 向量：JSON 浮点数组，或 base64 编码的 float32 小端字节。"""
+    if isinstance(raw, str) and raw:
+        try:
+            data = base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise ApiResponseError(f"embedding 向量不是合法 base64（{endpoint}）：{exc!r}") from exc
+        if not data or len(data) % 4:
+            raise ApiResponseError(
+                f"embedding base64 向量字节数 {len(data)} 不是 float32 的整数倍（{endpoint}）"
+            )
+        return np.frombuffer(data, dtype="<f4")
     if not isinstance(raw, (list, tuple)) or not raw:
         raise ApiResponseError(f"embedding 向量非法（endpoint={endpoint}）：{type(raw).__name__}")
     try:
-        return [float(value) for value in raw]
+        return np.asarray([float(value) for value in raw], dtype=np.float32)
     except (TypeError, ValueError) as exc:
         raise ApiResponseError(f"embedding 向量含非数值元素（{endpoint}）：{exc!r}") from exc
 

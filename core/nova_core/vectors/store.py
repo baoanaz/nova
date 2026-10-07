@@ -21,11 +21,13 @@
 from __future__ import annotations
 
 import threading
-from collections.abc import Callable, Sequence
+from collections import Counter
+from collections.abc import Callable, Collection, Sequence
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
+import numpy as np
 import pyarrow as pa
 
 from nova_core.types import VectorHit, VectorRow
@@ -40,7 +42,9 @@ CHUNK_ID_COLUMN = "chunk_id"
 CONTENT_HASH_COLUMN = "content_hash"
 VECTOR_COLUMN = "vector"
 
-_UPSERT_BATCH_SIZE = 1024
+#: 单次 LanceDB 写入（一次提交/一个新版本）的行数上限：覆盖一个完整的 embedding 窗口
+#: （``MAX_EMBED_WINDOW`` = 4000），让每窗口每表只产生一次提交；4096 × 1024 维 ≈ 16 MB。
+_UPSERT_BATCH_SIZE = 4096
 
 _T = TypeVar("_T")
 
@@ -70,6 +74,44 @@ def _vector_schema(dim: int) -> pa.Schema:
             pa.field(VECTOR_COLUMN, pa.list_(pa.float32(), dim)),
         ]
     )
+
+
+def vector_column(matrix: np.ndarray, dim: int) -> pa.FixedSizeListArray:
+    """``(n, dim)`` float32 矩阵 → ``fixed_size_list<float32, dim>`` 列（不经 Python float）。
+
+    与旧路径（``list[float]`` → pyarrow 推断）逐值相同：float32 输入原样保留，float64 输入
+    按 IEEE 就近舍入到 float32——与 pyarrow 从 Python float 构造 float32 列的规则一致。
+    """
+    flat = np.ascontiguousarray(matrix, dtype=np.float32).reshape(-1)
+    return pa.FixedSizeListArray.from_arrays(pa.array(flat, type=pa.float32()), dim)
+
+
+def vector_matrix(column: pa.Array | pa.ChunkedArray, dim: int) -> np.ndarray:
+    """``fixed_size_list<float32, dim>`` 列 → ``(n, dim)`` float32 矩阵（不逐元素转 Python）。
+
+    空向量行（null）在 flatten 时会被跳过、导致行错位，因此有 null 时调用方不得使用本函数。
+    """
+    if isinstance(column, pa.ChunkedArray):
+        column = column.combine_chunks()
+    values = column.flatten().to_numpy(zero_copy_only=False)
+    return values.astype(np.float32, copy=False).reshape(len(column), dim)
+
+
+def as_matrix(vectors: Sequence[Sequence[float]] | np.ndarray, dim: int) -> np.ndarray:
+    """向量序列 → ``(n, dim)`` float32 矩阵；维度不符抛 ``DimensionMismatchError``。
+
+    先逐行检查长度，避免不等长输入被 numpy 当成 object 数组或报出语义不清的错误。
+    """
+    if isinstance(vectors, np.ndarray) and vectors.ndim == 2:
+        if vectors.shape[1] != dim:
+            raise DimensionMismatchError(_dim_mismatch_message(dim, vectors.shape[1]))
+        return np.ascontiguousarray(vectors, dtype=np.float32)
+    for vector in vectors:
+        if len(vector) != dim:
+            raise DimensionMismatchError(_dim_mismatch_message(dim, len(vector)))
+    if not vectors:
+        return np.empty((0, dim), dtype=np.float32)
+    return np.asarray(vectors, dtype=np.float32).reshape(len(vectors), dim)
 
 
 def _schema_vector_dim(schema: pa.Schema) -> int | None:
@@ -183,24 +225,75 @@ class VectorStore:
         self._ensure_open()
         if not rows:
             return 0
-        payload = []
-        for row in rows:
-            if len(row.vector) != self._dim:
-                raise DimensionMismatchError(_dim_mismatch_message(self._dim, len(row.vector)))
-            payload.append(
-                {
-                    CHUNK_ID_COLUMN: row.chunk_id,
-                    CONTENT_HASH_COLUMN: row.content_hash,
-                    VECTOR_COLUMN: [float(value) for value in row.vector],
-                }
-            )
-        with self._lock:
-            for start in range(0, len(payload), _UPSERT_BATCH_SIZE):
-                batch = payload[start : start + _UPSERT_BATCH_SIZE]
-                self._translate_errors(partial(self._merge_batch, batch))
-        return len(payload)
+        matrix = as_matrix([row.vector for row in rows], self._dim)
+        return self.upsert_matrix(
+            [row.chunk_id for row in rows], [row.content_hash for row in rows], matrix
+        )
 
-    def _merge_batch(self, batch: list[dict[str, object]]) -> None:
+    def upsert_matrix(
+        self,
+        chunk_ids: Sequence[str],
+        content_hashes: Sequence[str],
+        matrix: np.ndarray | Sequence[Sequence[float]],
+        *,
+        new_ids: Collection[str] = (),
+    ) -> int:
+        """:meth:`upsert` 的矩阵形态：向量整块以 float32 列写入，不逐元素经过 Python。
+
+        ``new_ids``：调用方**刚查证过表里不存在**的 id（如 ``get_hashes`` 未返回的 id）。
+        它们直接 ``add`` 追加，省掉 ``merge_insert`` 对整表的 join；其余 id 以及本次调用内
+        重复出现的 id 仍走 ``merge_insert``，覆盖语义与原实现一致。调用方必须保证查证与
+        写入之间没有别的写者写入同一 id（索引流水线里 chunk id 在一次 ingest 内唯一）。
+        """
+        self._ensure_open()
+        count = len(chunk_ids)
+        if count != len(content_hashes) or count != len(matrix):
+            raise ValueError(
+                f"upsert_matrix 参数行数不一致：ids={count} hashes={len(content_hashes)} "
+                f"vectors={len(matrix)}"
+            )
+        if not count:
+            return 0
+        matrix = as_matrix(matrix, self._dim)
+        append: list[int] = []
+        merge: list[int] = []
+        if new_ids:
+            occurrences = Counter(chunk_ids)
+            for index, chunk_id in enumerate(chunk_ids):
+                if chunk_id in new_ids and occurrences[chunk_id] == 1:
+                    append.append(index)
+                else:
+                    merge.append(index)
+        else:
+            merge = list(range(count))
+        with self._lock:
+            for indices, operation in ((append, self._add_batch), (merge, self._merge_batch)):
+                for start in range(0, len(indices), _UPSERT_BATCH_SIZE):
+                    part = indices[start : start + _UPSERT_BATCH_SIZE]
+                    batch = self._arrow_rows(
+                        [chunk_ids[i] for i in part],
+                        [content_hashes[i] for i in part],
+                        matrix[part],
+                    )
+                    self._translate_errors(partial(operation, batch))
+        return count
+
+    def _arrow_rows(
+        self, chunk_ids: Sequence[str], content_hashes: Sequence[str], matrix: np.ndarray
+    ) -> pa.Table:
+        return pa.Table.from_arrays(
+            [
+                pa.array(chunk_ids, type=pa.string()),
+                pa.array(content_hashes, type=pa.string()),
+                vector_column(matrix, self._dim),
+            ],
+            schema=_vector_schema(self._dim),
+        )
+
+    def _add_batch(self, batch: pa.Table) -> None:
+        self._table.add(batch)
+
+    def _merge_batch(self, batch: pa.Table) -> None:
         (
             self._table.merge_insert(CHUNK_ID_COLUMN)
             .when_matched_update_all()
@@ -275,24 +368,40 @@ class VectorStore:
         同一 ``content_hash`` 可能有多行（不同 id 同内容）；去重后任取一行即可
         （向量由内容唯一决定，与 id 无关）。
         """
+        return {
+            digest: (chunk_id, vector.tolist())
+            for digest, (chunk_id, vector) in self.get_vector_arrays_by_hash(
+                content_hashes
+            ).items()
+        }
+
+    def get_vector_arrays_by_hash(
+        self, content_hashes: Sequence[str]
+    ) -> dict[str, tuple[str, np.ndarray]]:
+        """:meth:`get_vectors_by_hash` 的 float32 数组形态（向量不逐元素转 Python float）。"""
         self._ensure_open()
         unique_hashes = list(dict.fromkeys(content_hashes))
         if not unique_hashes:
             return {}
         where = _in_clause(CONTENT_HASH_COLUMN, unique_hashes)
         with self._lock:
-            rows = self._translate_errors(
+            table = self._translate_errors(
                 lambda: self._table.search(None)
                 .where(where)
                 .select([CHUNK_ID_COLUMN, CONTENT_HASH_COLUMN, VECTOR_COLUMN])
-                .to_list()
+                .to_arrow()
             )
-        found: dict[str, tuple[str, list[float]]] = {}
-        for row in rows:
-            digest = row[CONTENT_HASH_COLUMN]
-            if digest in found:
-                continue
-            found[digest] = (row[CHUNK_ID_COLUMN], [float(v) for v in row[VECTOR_COLUMN]])
+        if table.num_rows == 0:
+            return {}
+        column = table.column(VECTOR_COLUMN)
+        if column.null_count:
+            raise VectorStoreError(f"表 {TABLE_NAME} 存在空向量行，无法按内容复用")
+        matrix = vector_matrix(column, self._dim)
+        found: dict[str, tuple[str, np.ndarray]] = {}
+        ids = table.column(CHUNK_ID_COLUMN).to_pylist()
+        for index, digest in enumerate(table.column(CONTENT_HASH_COLUMN).to_pylist()):
+            if digest not in found:
+                found[digest] = (ids[index], matrix[index])
         return found
 
     def count(self) -> int:

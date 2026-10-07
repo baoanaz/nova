@@ -28,15 +28,22 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+import numpy as np
 import pyarrow as pa
 
 from nova_core.vectors._lancedb import load as _load_lancedb
+from nova_core.vectors.store import vector_column, vector_matrix
 
 CACHE_DIRNAME = "cache"
 EMBEDDINGS_DIRNAME = "embeddings"
 TABLE_NAME = "embedding_cache"
 CACHE_KEY_COLUMN = "cache_key"
 VECTOR_COLUMN = "vector"
+
+#: 单次查询的 IN 列表长度上限（沿用原值）。
+_LOOKUP_BATCH_SIZE = 512
+#: 单次 ``merge_insert``（一次提交）的行数上限：覆盖一个完整 embedding 窗口（≤ 4000）。
+_PUT_BATCH_SIZE = 4096
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -124,26 +131,41 @@ class EmbeddingCache:
         任何底层异常都转成 :class:`EmbeddingCacheError`——调用方**必须**当作未命中降级，
         缓存坏掉不能让索引失败（它是优化，不是正确性来源）。
         """
+        return {
+            digest: vector.tolist()
+            for digest, vector in self.lookup_arrays(model_id, content_hashes).items()
+        }
+
+    def lookup_arrays(
+        self, model_id: str, content_hashes: Sequence[str]
+    ) -> dict[str, np.ndarray]:
+        """:meth:`lookup` 的 float32 数组形态（向量不逐元素转 Python float）。"""
         if self._table is None:
             raise EmbeddingCacheError("EmbeddingCache 已关闭")
         unique = list(dict.fromkeys(content_hashes))
         if not unique:
             return {}
         keys = [cache_key(model_id, digest) for digest in unique]
-        found: dict[str, list[float]] = {}
+        found: dict[str, np.ndarray] = {}
         try:
-            for start in range(0, len(keys), 512):
-                chunk = keys[start : start + 512]
-                rows = (
+            for start in range(0, len(keys), _LOOKUP_BATCH_SIZE):
+                chunk = keys[start : start + _LOOKUP_BATCH_SIZE]
+                table = (
                     self._table.search(None)
                     .where(f"{CACHE_KEY_COLUMN} IN ({_literals(chunk)})")
                     .select([CACHE_KEY_COLUMN, VECTOR_COLUMN])
-                    .to_list()
+                    .to_arrow()
                 )
-                for row in rows:
-                    key = row[CACHE_KEY_COLUMN]
-                    digest = key.split("\x00", 1)[-1]
-                    found[digest] = [float(value) for value in row[VECTOR_COLUMN]]
+                if table.num_rows == 0:
+                    continue
+                column = table.column(VECTOR_COLUMN)
+                if column.null_count:
+                    raise EmbeddingCacheError("embedding 缓存存在空向量行")
+                matrix = vector_matrix(column, self._dim)
+                for index, key in enumerate(table.column(CACHE_KEY_COLUMN).to_pylist()):
+                    found[key.split("\x00", 1)[-1]] = matrix[index]
+        except EmbeddingCacheError:
+            raise
         except Exception as exc:  # noqa: BLE001 - 缓存失败一律降级
             raise EmbeddingCacheError(f"读取 embedding 缓存失败：{exc}") from exc
         return found
@@ -157,21 +179,47 @@ class EmbeddingCache:
             raise EmbeddingCacheError("EmbeddingCache 已关闭")
         if not vectors:
             return 0
-        payload = []
-        for digest, vector in vectors.items():
+        for vector in vectors.values():
             if len(vector) != self._dim:
                 raise EmbeddingCacheError(
                     f"向量维度不匹配：缓存 dim={self._dim}，收到 {len(vector)}"
                 )
-            payload.append(
-                {
-                    CACHE_KEY_COLUMN: cache_key(model_id, digest),
-                    VECTOR_COLUMN: [float(value) for value in vector],
-                }
-            )
         try:
-            for start in range(0, len(payload), 512):
-                batch = payload[start : start + 512]
+            matrix = np.asarray(list(vectors.values()), dtype=np.float32)
+        except (TypeError, ValueError) as exc:
+            raise EmbeddingCacheError(f"写入 embedding 缓存失败：{exc}") from exc
+        return self.put_matrix(model_id, list(vectors), matrix)
+
+    def put_matrix(
+        self, model_id: str, content_hashes: Sequence[str], matrix: np.ndarray
+    ) -> int:
+        """:meth:`put` 的矩阵形态（``content_hashes`` 不重复，与 ``matrix`` 行一一对应）。
+
+        仍用 ``merge_insert``：缓存跨项目共享，两个消费者可能同时写入同一内容，盲目追加
+        会留下重复键。只是把一个窗口合成一次提交，并让向量整块以 float32 列写入。
+        """
+        if self._table is None:
+            raise EmbeddingCacheError("EmbeddingCache 已关闭")
+        if not len(content_hashes):
+            return 0
+        if matrix.ndim != 2 or matrix.shape != (len(content_hashes), self._dim):
+            raise EmbeddingCacheError(
+                f"向量维度不匹配：缓存 dim={self._dim}，收到形状 {tuple(matrix.shape)}"
+            )
+        schema = _schema(self._dim)
+        try:
+            for start in range(0, len(content_hashes), _PUT_BATCH_SIZE):
+                end = start + _PUT_BATCH_SIZE
+                batch = pa.Table.from_arrays(
+                    [
+                        pa.array(
+                            [cache_key(model_id, d) for d in content_hashes[start:end]],
+                            type=pa.string(),
+                        ),
+                        vector_column(matrix[start:end], self._dim),
+                    ],
+                    schema=schema,
+                )
                 (
                     self._table.merge_insert(CACHE_KEY_COLUMN)
                     .when_matched_update_all()
@@ -180,7 +228,7 @@ class EmbeddingCache:
                 )
         except Exception as exc:  # noqa: BLE001
             raise EmbeddingCacheError(f"写入 embedding 缓存失败：{exc}") from exc
-        return len(payload)
+        return len(content_hashes)
 
     def count(self) -> int:
         if self._table is None:

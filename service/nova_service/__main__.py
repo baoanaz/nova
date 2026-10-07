@@ -32,6 +32,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import uvicorn
+from nova_core.preload import preload_runtime
 
 from nova_service.app import create_app
 from nova_service.cli_hint import format_snippets, mcp_url
@@ -50,6 +51,18 @@ LOG_LEVELS = ("critical", "error", "warning", "info", "debug", "trace")
 #: 子命令（不写子命令时默认 serve：向下兼容 TASK-030/035 的调用形式）。
 #: ``mcp-config``（TASK-040）只输出编辑器配置片段，不起服务。
 SUBCOMMANDS = ("serve", "local", "mcp-config")
+#: 关闭启动预加载的开关（``0`` / ``false`` / ``no`` / ``off``）；默认开启。
+PRELOAD_ENV = "NOVA_PRELOAD"
+
+
+def _preload() -> None:
+    """长驻服务启动时预加载 lancedb / jieba / tree-sitter（见 ``nova_core.preload``）。
+
+    放在监听之前同步执行：启动多花几秒，换来第一次索引不再承担这些一次性成本。
+    """
+    if os.environ.get(PRELOAD_ENV, "").strip().lower() in ("0", "false", "no", "off"):
+        return
+    preload_runtime()
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -147,6 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 0
     print(format_snippets(settings.port, host=settings.host), flush=True)
+    _preload()
     uvicorn.run(
         create_app(settings),
         host=settings.host,
@@ -169,6 +183,7 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
             "去掉 --reload，或显式用 --no-index + POST /api/projects/{id}/rescan",
             file=sys.stderr,
         )
+    _preload()  # attach_local 会立即开始后台索引，须在其之前
     manager = EngineManager.open(settings.data_root)
     # 本地模式也记索引历史（TASK-062）：用户看得到每次索引的耗时与成功/失败，
     # 而账户/API Key 仍不可用（无账户体系，R34）。

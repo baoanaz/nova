@@ -73,3 +73,28 @@ def test_closed_cache_raises_cache_error(tmp_path) -> None:
 def test_cache_key_is_model_scoped() -> None:
     assert cache_key("m1", "h") != cache_key("m2", "h")
     assert cache_key("m1", "h").endswith("\x00h")
+
+
+def test_put_matrix_and_lookup_arrays_round_trip(tmp_path) -> None:
+    import numpy as np
+
+    matrix = np.asarray([[1.0, 0.0, 0.0, 0.0], [0.25, 0.5, 0.0, 0.0]], dtype=np.float32)
+    with EmbeddingCache.open(tmp_path, MODEL, DIM) as cache:
+        assert cache.put_matrix(MODEL, ["h1", "h2"], matrix) == 2
+        assert cache.put_matrix(MODEL, ["h1"], matrix[1:]) == 1  # 同键覆盖，不新增行
+        assert cache.count() == 2
+        found = cache.lookup_arrays(MODEL, ["h1", "h2", "absent"])
+        assert set(found) == {"h1", "h2"}
+        assert found["h1"].dtype == np.float32
+        assert np.array_equal(found["h1"], matrix[1])
+        assert cache.lookup(MODEL, ["h2"]) == {"h2": [0.25, 0.5, 0.0, 0.0]}
+
+
+def test_put_matrix_shape_mismatch_is_cache_error(tmp_path) -> None:
+    import numpy as np
+
+    with EmbeddingCache.open(tmp_path, MODEL, DIM) as cache:
+        with pytest.raises(EmbeddingCacheError):
+            cache.put_matrix(MODEL, ["h1"], np.zeros((1, DIM + 1), dtype=np.float32))
+        with pytest.raises(EmbeddingCacheError):
+            cache.put_matrix(MODEL, ["h1", "h2"], np.zeros((1, DIM), dtype=np.float32))

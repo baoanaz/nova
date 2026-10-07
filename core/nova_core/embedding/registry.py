@@ -52,6 +52,9 @@ class ApiTransportSpec:
     supports_input_type: bool = False
     #: 错误响应里的详情字段名（可读性用）。
     error_detail_field: str = "message"
+    #: 是否请求 ``encoding_format=base64``（float32 小端字节）。只对实测/文档确认的厂商开启：
+    #: 不认识该参数的兼容服务可能报错。
+    supports_base64: bool = False
     notes: str = ""
 
 
@@ -204,6 +207,7 @@ API_TRANSPORTS: dict[str, ApiTransportSpec] = {
             safe_batch_items=500,
             supports_input_type=True,
             error_detail_field="detail",
+            supports_base64=True,
             notes=(
                 "实测：条数上限 1000；总 token 实测 1000×300 成功、×2000 失败；"
                 "**安全批 500**：dim=1024 下 1000 条会得到 12.7 MB 响应，"

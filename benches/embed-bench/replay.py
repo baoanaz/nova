@@ -2,8 +2,11 @@
 """Export/replay existing real vectors without any provider or network fallback.
 
 The fixture is a local SQLite file keyed by SHA-256 of the exact embedding input.
-Replay includes real float32 materialization and indexing, but excludes remote
-inference, transfer and JSON decoding. Never compare it directly with live API time.
+Replay includes fixture lookup, float32 decoding and indexing, but excludes remote
+inference and transfer. ``embed_array`` mirrors the API provider's base64 path
+(float32 bytes -> matrix); older clients without ``embed_array`` paid an extra
+Python-float materialization standing in for JSON decoding. Never compare replay
+directly with live API time.
 """
 from __future__ import annotations
 
@@ -44,6 +47,10 @@ class ReplayEmbedding:
         return sqlite3.connect(self.fixture.as_uri() + '?mode=ro&immutable=1', uri=True)
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        return self.embed_array(texts).tolist()
+
+    def embed_array(self, texts: Sequence[str]) -> np.ndarray:
+        # Mirrors the API provider's base64 path: float32 bytes -> one (n, dim) matrix.
         vectors = []
         db = self._connect()
         try:
@@ -58,10 +65,12 @@ class ReplayEmbedding:
                 vector = np.frombuffer(row[0], dtype='<f4')
                 if len(vector) != self.profile.dim:
                     raise ValueError('Replay vector dimension mismatch')
-                vectors.append(vector.tolist())
+                vectors.append(vector)
         finally:
             db.close()
-        return vectors
+        if not vectors:
+            return np.empty((0, self.profile.dim), dtype=np.float32)
+        return np.stack(vectors)
 
     def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
         # Benchmark query must be an explicitly exported exact input; no fake fallback.

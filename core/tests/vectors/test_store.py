@@ -212,3 +212,67 @@ def test_scale_smoke_10k_rows_dim_384(tmp_path: Path) -> None:
     )
     assert upsert_seconds < 60
     assert search_seconds < 60
+
+
+# ---------------------------------------------------------------------------
+# 矩阵写入 / 数组读取（冷启动：向量不逐元素经过 Python float；新 id 追加不 merge）
+# ---------------------------------------------------------------------------
+
+
+def test_upsert_matrix_appends_new_ids_and_overwrites_existing(store: VectorStore) -> None:
+    store.upsert([VectorRow(chunk_id="a", content_hash="h-old", vector=unit(0))])
+    matrix = np.asarray([unit(1), unit(2)], dtype=np.float32)
+    assert store.upsert_matrix(["a", "c"], ["h-new", "h-c"], matrix, new_ids={"c"}) == 2
+    assert store.count() == 2
+    assert store.get_hashes(["a", "c"]) == {"a": "h-new", "c": "h-c"}
+    found = store.get_vector_arrays_by_hash(["h-new", "h-c"])
+    assert np.array_equal(found["h-new"][1], matrix[0])
+    assert np.array_equal(found["h-c"][1], matrix[1])
+
+
+def test_upsert_matrix_duplicate_new_id_matches_plain_merge(tmp_path: Path) -> None:
+    """同一调用内重复的 id 不走追加，结果与不传 ``new_ids``（全 merge）完全一致。"""
+    ids, hashes = ["x", "x", "y"], ["h1", "h2", "h3"]
+    matrix = np.asarray([unit(0), unit(1), unit(2)], dtype=np.float32)
+    results = []
+    for name, new_ids in (("merge", ()), ("append", {"x", "y"})):
+        with VectorStore.open(tmp_path / name, dim=DIM) as opened:
+            opened.upsert_matrix(ids, hashes, matrix, new_ids=new_ids)
+            results.append((opened.count(), opened.get_hashes(["x", "y"])))
+    assert results[0] == results[1]
+
+
+def test_upsert_matrix_values_match_python_float_path(tmp_path: Path) -> None:
+    """float64 输入按 float32 就近舍入，与旧的 ``list[float]`` 写入路径逐值相同。"""
+    rng = np.random.default_rng(7)
+    raw = rng.standard_normal((5, DIM))  # float64
+    ids = [f"r{i}" for i in range(5)]
+    hashes = [f"h{i}" for i in range(5)]
+    with VectorStore.open(tmp_path / "rows", dim=DIM) as rows_store:
+        rows_store.upsert(
+            [VectorRow(chunk_id=i, content_hash=h, vector=v.tolist())
+             for i, h, v in zip(ids, hashes, raw, strict=True)]
+        )
+        via_rows = rows_store.get_vector_arrays_by_hash(hashes)
+    with VectorStore.open(tmp_path / "matrix", dim=DIM) as matrix_store:
+        matrix_store.upsert_matrix(ids, hashes, raw, new_ids=set(ids))
+        via_matrix = matrix_store.get_vector_arrays_by_hash(hashes)
+    for digest, (_, vector) in via_rows.items():
+        assert vector.dtype == np.float32
+        assert np.array_equal(vector, raw[hashes.index(digest)].astype(np.float32))
+        assert np.array_equal(vector, via_matrix[digest][1])
+
+
+def test_upsert_matrix_rejects_bad_shapes(store: VectorStore) -> None:
+    with pytest.raises(DimensionMismatchError):
+        store.upsert_matrix(["a"], ["h"], np.zeros((1, DIM + 1), dtype=np.float32))
+    with pytest.raises(ValueError, match="行数不一致"):
+        store.upsert_matrix(["a", "b"], ["h"], np.zeros((2, DIM), dtype=np.float32))
+    assert store.count() == 0
+
+
+def test_get_vectors_by_hash_keeps_list_contract(store: VectorStore) -> None:
+    store.upsert([VectorRow(chunk_id="a", content_hash="h", vector=unit(3))])
+    chunk_id, vector = store.get_vectors_by_hash(["h"])["h"]
+    assert chunk_id == "a"
+    assert isinstance(vector, list) and vector == unit(3)

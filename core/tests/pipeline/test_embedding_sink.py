@@ -290,3 +290,39 @@ def test_pipeline_abort_does_not_flush_pending(vectors: VectorStore) -> None:
     pipeline.abort()
 
     assert embedding.calls == 0
+
+
+class _ArrayEmbedding(CountingEmbedding):
+    """提供 ``embed_array`` 的 provider：sink 应优先走矩阵接口，不调用 ``embed``。"""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.array_calls = 0
+
+    def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        raise AssertionError("有 embed_array 时不应调用 embed")
+
+    def embed_array(self, texts: Sequence[str]):
+        import numpy as np
+
+        self.array_calls += 1
+        return np.asarray(CountingEmbedding.embed(self, texts), dtype=np.float32)
+
+
+def test_sink_prefers_embed_array_and_writes_identical_vectors(
+    vectors: VectorStore, tmp_path: Path
+) -> None:
+    import numpy as np
+
+    chunks = [_chunk("a.py:1", "alpha"), _chunk("b.py:1", "beta"), _chunk("c.py:1", "alpha")]
+    provider = _ArrayEmbedding()
+    sink = EmbeddingSink(provider, vectors)
+    sink.feed(chunks)
+    sink.flush()
+    assert provider.array_calls == 1
+    assert sink.stats.embedded == 3 and sink.stats.upserted == 3
+    expected = CountingEmbedding().embed(["alpha", "beta"])
+    found = vectors.get_vector_arrays_by_hash([chunks[0].content_hash, chunks[1].content_hash])
+    assert np.array_equal(found[chunks[0].content_hash][1], np.float32(expected[0]))
+    assert np.array_equal(found[chunks[1].content_hash][1], np.float32(expected[1]))
+    assert vectors.count() == 3
