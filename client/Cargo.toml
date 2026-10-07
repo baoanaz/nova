@@ -37,3 +37,26 @@ opt-level = "z"
 lto = true
 codegen-units = 1
 strip = true
+
+# 二进制整体仍按体积优化；首次同步的热点 crate 单独按速度优化（体积影响很小）：
+# 扫描时每个文件都要 sha256、上传要 base64 + JSON 序列化、遍历要做 gitignore 匹配。
+[profile.release.package.sha2]
+opt-level = 3
+
+[profile.release.package.base64]
+opt-level = 3
+
+[profile.release.package.serde_json]
+opt-level = 3
+
+[profile.release.package.regex-automata]
+opt-level = 3
+
+[profile.release.package.aho-corasick]
+opt-level = 3
+
+[profile.release.package.memchr]
+opt-level = 3
+
+[profile.release.package.globset]
+opt-level = 3

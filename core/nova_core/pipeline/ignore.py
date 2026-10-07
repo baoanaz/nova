@@ -1053,6 +1053,14 @@ class IndexScope:
     def max_bytes(self) -> int:
         return self._max_bytes
 
+    @property
+    def binary_ratio(self) -> float:
+        return self._binary_ratio
+
+    @property
+    def probe_bytes(self) -> int:
+        return self._probe_bytes
+
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> IndexScope:
         """从环境变量构造（``NOVA_MAX_FILE_BYTES`` / ``NOVA_BINARY_RATIO``）。

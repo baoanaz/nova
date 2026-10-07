@@ -326,3 +326,46 @@ def test_sink_prefers_embed_array_and_writes_identical_vectors(
     assert np.array_equal(found[chunks[0].content_hash][1], np.float32(expected[0]))
     assert np.array_equal(found[chunks[1].content_hash][1], np.float32(expected[1]))
     assert vectors.count() == 3
+
+
+def test_known_vectors_view_matches_per_window_queries(tmp_path: Path) -> None:
+    """``KnownVectors``（开始时一次快照 + 本轮写入登记）与逐窗口查表的结果一致：
+    同 id 同内容跳过、换 id 同内容搬移、本轮内重复内容复用刚写入的行。"""
+    import numpy as np
+    from nova_core.pipeline import embedding_sink
+
+    def run(use_known: bool) -> tuple[dict[str, tuple[str, list[float]]], tuple[int, ...]]:
+        with VectorStore.open(tmp_path / f"known-{use_known}", dim=TEST_DIM) as store:
+            seed = [_chunk("old.py:1", "kept"), _chunk("old.py:2", "moved")]
+            sink = EmbeddingSink(CountingEmbedding(), store)
+            sink.feed(seed)
+            sink.flush()
+            original = embedding_sink.EmbeddingSink.__init__
+
+            def init(self, *args, **kwargs):  # noqa: ANN001, ANN202
+                if not use_known:
+                    kwargs["known"] = None
+                original(self, *args, **kwargs)
+
+            embedding_sink.EmbeddingSink.__init__ = init
+            try:
+                provider = _TinyWindow()
+                with EmbeddingPipeline(provider, store, workers=1) as pipeline:
+                    pipeline.submit([
+                        _chunk("old.py:1", "kept"),      # 同 id 同内容 → 跳过
+                        _chunk("new.py:9", "moved"),     # 换 id 同内容 → 搬移
+                        _chunk("new.py:1", "fresh"),
+                        _chunk("new.py:2", "fresh"),     # 本轮重复 → 复用刚写入的行
+                    ])
+                stats = pipeline.stats
+            finally:
+                embedding_sink.EmbeddingSink.__init__ = original
+            rows = {}
+            for chunk_id in ("old.py:1", "old.py:2", "new.py:9", "new.py:1", "new.py:2"):
+                digest = store.get_hashes([chunk_id]).get(chunk_id)
+                vector = store.get_vector_arrays_by_hash([digest])[digest][1] if digest else None
+                rows[chunk_id] = (digest, None if vector is None else np.asarray(vector).tolist())
+            counts = (stats.upserted, stats.deduped, stats.skipped, stats.embedded, provider.calls)
+            return rows, counts
+
+    assert run(True) == run(False)

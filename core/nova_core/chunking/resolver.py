@@ -46,6 +46,7 @@ from nova_core.storage import (
     SymbolRow,
     UnresolvedRefRow,
 )
+from nova_core.timing import StageClock
 from nova_core.types import ParsedFile
 
 __all__ = [
@@ -193,15 +194,26 @@ def link_spec_references(
     return ResolveReport(spec_refs=added)
 
 
-def resolve_graph(store: Store, parsed_files: Sequence[ParsedFile]) -> ResolveReport:
-    """Run the graph passes with one short-lived cache of unchanged symbols."""
-    index = _SymbolIndex(store)
-    pending = resolve_pending(store, _index=index)
+def resolve_graph(
+    store: Store, parsed_files: Sequence[ParsedFile], *, clock: StageClock | None = None
+) -> ResolveReport:
+    """Run the graph passes with one short-lived in-memory symbol index.
+
+    ``clock`` 给定时按 pass 记分段计时（``graph_*``，见 ``nova_core.timing``）。
+    """
+    clock = clock or StageClock()
+    with clock.stage("graph_index"):
+        index = _SymbolIndex(store)
+    with clock.stage("graph_pending"):
+        pending = resolve_pending(store, _index=index)
     names = [symbol.name for parsed in parsed_files for symbol in parsed.symbols]
     names += [symbol.fqn for parsed in parsed_files for symbol in parsed.symbols]
-    retried = retry_failed(store, names, _index=index) if names else ResolveReport()
-    edges = resolve_edges(store, _index=index)
-    specs = link_spec_references(store, parsed_files, _index=index)
+    with clock.stage("graph_retry"):
+        retried = retry_failed(store, names, _index=index) if names else ResolveReport()
+    with clock.stage("graph_edges"):
+        edges = resolve_edges(store, _index=index)
+    with clock.stage("graph_specs"):
+        specs = link_spec_references(store, parsed_files, _index=index)
     return ResolveReport(
         resolved=pending.resolved + retried.resolved,
         failed=pending.failed + retried.failed,
@@ -271,18 +283,43 @@ def _resolve_multi(
 
 
 class _SymbolIndex:
-    """一次解析动作内的符号查询缓存（符号表在同一次动作中不变）。"""
+    """一次解析动作内的内存符号索引（符号表在同一次动作中不变）。
+
+    冷启动图解析要按名字查上万次符号：逐个 ``Store.exact_symbols``（每次一条 SQL + 行对象构造）
+    曾是图阶段的主要成本。这里一次读出全表，按 ``name`` / ``fqn`` 建字典，查询结果的**集合与顺序**
+    逐项复刻 ``exact_symbols(name, limit=None)``：``WHERE name = ? OR fqn = ?``，
+    ``ORDER BY is_exported DESC, (fqn = ?) 优先, file_path, start_line, id``（SQLite 升序 NULL
+    在前；TEXT 按 BINARY 即 UTF-8 字节序，与 Python 字符串的码点序一致）。
+    """
 
     def __init__(self, store: Store) -> None:
-        self._store = store
+        self._by_name: dict[str, list[SymbolRow]] = {}
+        self._by_fqn: dict[str, list[SymbolRow]] = {}
+        for row in store.all_symbols():
+            self._by_name.setdefault(row.name, []).append(row)
+            self._by_fqn.setdefault(row.fqn, []).append(row)
         self._cache: dict[str, list[SymbolRow]] = {}
 
     def by_name(self, name: str) -> list[SymbolRow]:
         cached = self._cache.get(name)
         if cached is None:
-            cached = self._store.exact_symbols(name, limit=None)
+            rows = {row.id: row for row in self._by_name.get(name, ())}
+            for row in self._by_fqn.get(name, ()):
+                rows.setdefault(row.id, row)
+            cached = sorted(rows.values(), key=lambda row: _exact_order(row, name))
             self._cache[name] = cached
         return cached
+
+
+def _exact_order(row: SymbolRow, name: str) -> tuple:
+    """``exact_symbols`` 的 ``ORDER BY`` 键（见 :class:`_SymbolIndex`）。"""
+    return (
+        not row.is_exported,
+        row.fqn != name,
+        (row.file_path is not None, row.file_path or ""),
+        (row.start_line is not None, row.start_line or 0),
+        row.id,
+    )
 
 
 def _match(

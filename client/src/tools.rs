@@ -15,12 +15,13 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use serde_json::{json, Value};
 
 use crate::identity::repo_identity;
 use crate::index::{require_non_empty, IndexManager};
-use crate::remote::{validate_project_root, CallContext, RemoteClient};
+use crate::remote::{validate_project_root, CallContext, RemoteClient, UploadItem};
 
 /// `max_tokens` 的可接受上限（服务端 `MAX_MAX_TOKENS`，运行时兜底）。
 ///
@@ -37,6 +38,8 @@ pub const DEFAULT_MAX_TOKENS: i64 = 10_000;
 /// TASK-MCP-BUDGET：2000→8000（服务端已放宽到 8000）。此前客户端 8000 / 服务端 2000，
 /// 2000～8000 字符的查询会在服务端被 400 拒，而调用方自认为合法。
 const MAX_QUERY_CHARS: usize = 8_000;
+/// 扫描线程 → 上传端的通道容量（文件数）：上传端落后时扫描线程在此等待，内存有界。
+const UPLOAD_QUEUE_FILES: usize = 256;
 
 /// 工具层错误（→ 协议层的三分类，Module 05 §2.2）。
 #[derive(Debug)]
@@ -196,10 +199,13 @@ impl ToolLayer {
         max_tokens: i64,
     ) -> Result<String, ToolError> {
         let (project_id, checkpoint_id) = self.sync_project(remote, project_root).await?;
-        remote
+        let started = Instant::now();
+        let result = remote
             .search(&project_id, query, max_tokens, checkpoint_id.as_deref())
             .await
-            .map_err(|error| ToolError::Failed(format!("检索失败：{error:#}")))
+            .map_err(|error| ToolError::Failed(format!("检索失败：{error:#}")));
+        eprintln!("nova-client: 检索耗时 {}ms", started.elapsed().as_millis());
+        result
     }
 
     async fn ask(
@@ -231,6 +237,7 @@ impl ToolLayer {
         let root = validate_project_root(project_root)
             .map_err(|error| ToolError::invalid(error.to_string()))?;
         let identity = repo_identity(&root);
+        let started = Instant::now();
 
         let project_id = remote
             .resolve_project(&identity.identity_key, &identity.display_name)
@@ -241,6 +248,7 @@ impl ToolLayer {
                     identity.identity_key
                 ))
             })?;
+        let resolved = started.elapsed();
 
         // TASK-100：把服务端端点传给缓存（缓存目录按端点分片，且字段自证）。
         let manager = IndexManager::new(
@@ -249,19 +257,35 @@ impl ToolLayer {
             self.cache_root.clone(),
             remote.base_url(),
         );
-        let mut scan = manager
-            .scan()
-            .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
+        // 扫描（阻塞线程池里并行读取 / hash）与上传（异步、多批在途）同时进行：
+        // 每确定一个待上传文件就经通道交给上传端，不必等全部扫描结束。
+        let (sender, receiver) = tokio::sync::mpsc::channel::<UploadItem>(UPLOAD_QUEUE_FILES);
+        let scanning = tokio::task::spawn_blocking(move || {
+            let scan_started = Instant::now();
+            let result = manager.scan_streaming(|file| {
+                // 上传端已失败退出时发送会失败：继续扫描即可，错误由上传端结果报告。
+                let _ = sender.blocking_send(UploadItem {
+                    path: file.path.clone(),
+                    content: file.content.clone(),
+                    blob_hash: file.blob_hash.clone(),
+                });
+            });
+            (manager, result, scan_started.elapsed())
+        });
+        let uploading = async {
+            let upload_started = Instant::now();
+            let outcome = remote.upload_stream(&project_id, receiver).await;
+            (outcome, upload_started.elapsed())
+        };
+        let (scanned, (uploaded, upload_elapsed)) = tokio::join!(scanning, uploading);
+        let (manager, scan, scan_elapsed) = scanned
+            .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error}")))?;
+        let mut scan = scan.map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
         require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
+        let outcome = uploaded.map_err(|error| ToolError::Failed(format!("上传失败：{error:#}")))?;
 
         let mut deferred_confirmed = false;
-        // 上传变更（有变更才发请求）。
         if !scan.to_upload.is_empty() {
-            let payload = crate::index::upload_payload(&scan.to_upload);
-            let outcome = remote
-                .upload_files(&project_id, &payload)
-                .await
-                .map_err(|error| ToolError::Failed(format!("上传失败：{error:#}")))?;
             deferred_confirmed |= outcome.indexing_deferred;
             let rejected = IndexManager::apply_upload_outcome(
                 &mut scan.index,
@@ -281,6 +305,7 @@ impl ToolLayer {
                 );
             }
         }
+        let uploaded_at = started.elapsed();
 
         // 通知删除（幂等）。
         if !scan.deleted.is_empty() {
@@ -296,8 +321,10 @@ impl ToolLayer {
             .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
 
         // 每次调用都 flush，包括上传已缓存、但上次索引失败/超时的恢复路径。
+        let wait_started = Instant::now();
         let skipped = remote.wait_for_indexing(&project_id, deferred_confirmed).await
             .map_err(|error| ToolError::Failed(format!("索引尚不可用：{error:#}")))?;
+        let wait_elapsed = wait_started.elapsed();
         if !skipped.is_empty() {
             for path in skipped {
                 scan.index.entries.remove(&path);
@@ -325,6 +352,18 @@ impl ToolLayer {
                 checkpoint_id: checkpoint_id.clone(),
                 scope: Some(scope),
             },
+        );
+        // 阶段耗时（stderr，不进 MCP 通道）：扫描与上传并行，两者各自计时，不可相加。
+        eprintln!(
+            "nova-client: 同步耗时 resolve={}ms scan={}ms upload={}ms scan+upload={}ms \
+             wait_index={}ms total={}ms batches={}",
+            resolved.as_millis(),
+            scan_elapsed.as_millis(),
+            upload_elapsed.as_millis(),
+            (uploaded_at - resolved).as_millis(),
+            wait_elapsed.as_millis(),
+            started.elapsed().as_millis(),
+            outcome.batches,
         );
         Ok((project_id, checkpoint_id))
     }

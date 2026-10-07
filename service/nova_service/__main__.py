@@ -152,7 +152,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "local":
         return _run_local(args, base, settings)
     import uvicorn
-    from nova_core.pipeline import prepare
 
     from nova_service.app import create_app
 
@@ -172,23 +171,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_snippets(settings.port, host=settings.host), flush=True)
     app = create_app(settings)  # 先建 app：它配置日志，预加载的耗时日志才可见
     _preload()
-    try:
-        uvicorn.run(
-            app,
-            host=settings.host,
-            port=settings.port,
-            log_level=settings.log_level,
-            access_log=False,
-        )
-    finally:
-        prepare.shutdown()  # 解析预取子进程随服务退出
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level,
+        access_log=False,
+    )
     return 0
 
 
 def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) -> int:
     """``nova-service local --repo``：绑定仓库 + 后台索引 + 立刻监听（TASK-034 §D）。"""
     import uvicorn
-    from nova_core.pipeline import prepare
 
     from nova_service.app import create_app
     from nova_service.indexer import LocalRootError
@@ -218,16 +213,13 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
         print(f"[错误] {exc}", file=sys.stderr)
         return 2
     _print_ready(settings, attached, indexed=not args.no_index)
-    try:
-        uvicorn.run(
-            app,
-            host=settings.host,
-            port=settings.port,
-            log_level=settings.log_level,
-            access_log=False,
-        )
-    finally:
-        prepare.shutdown()  # 解析预取子进程随服务退出
+    uvicorn.run(
+        app,
+        host=settings.host,
+        port=settings.port,
+        log_level=settings.log_level,
+        access_log=False,
+    )
     return 0
 
 

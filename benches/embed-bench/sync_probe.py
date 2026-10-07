@@ -71,6 +71,9 @@ def serve(args, provider):
     app = create_app(Settings(data_root=args.out / 'index', local_mode=True))
     manager = EngineManager(args.out / 'index', Engine.open(args.out / 'index', provider=provider))
     app.state.engine_manager = manager
+    prefetcher = getattr(manager.engine, 'prefetcher', None)
+    if prefetcher is not None:  # Same as a long-running service: start the worker before timing.
+        prefetcher.warm()
     reports = []
     original = manager.ingest
 
@@ -132,7 +135,7 @@ def run_client(args, provider):
                 response = json.loads(result.stdout)
                 after = http.get('/bench/metrics').raise_for_status().json()
                 payload = {'wall_s': wall, 'server_cpu_s': after['cpu_s']-before['cpu_s'],
-                           # Parse workers are separate processes; absent on older servers.
+                           # Child processes (upload prefetch worker) are not in RUSAGE_SELF.
                            'server_children_cpu_s': after.get('children_cpu_s', 0.0)
                            - before.get('children_cpu_s', 0.0),
                            'server': after, 'client_exit': result.returncode,

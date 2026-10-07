@@ -42,7 +42,7 @@ R4（``FileDelta`` 三集合）、R8（imports 边缘）、R10（向量相似度
 from __future__ import annotations
 
 import json
-import sys
+import time
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
@@ -51,23 +51,22 @@ from nova_core.chunking import (
     Invalidation,
     check_fingerprint,
     resolve_graph,
-    split_file,
     stored_fingerprint,
     write_fingerprint,
 )
-from nova_core.hashing import file_content_hash
 from nova_core.interfaces import EmbeddingProvider
-from nova_core.parsing.registry import EXTENSION_LANGUAGE, detect_language, get_parser
+from nova_core.parsing.registry import EXTENSION_LANGUAGE, detect_language
 from nova_core.pipeline.embedding_sink import EmbeddingPipeline
-from nova_core.pipeline.generated import is_generated
-from nova_core.pipeline.ignore import (
-    SKIP_REASON_BINARY,
-    IndexScope,
-    oversize_reason,
+from nova_core.pipeline.ignore import IndexScope, oversize_reason
+from nova_core.pipeline.prepare import (
+    PrefetchView,
+    PrepareResult,
+    PrepareSkip,
+    prepare_file,
 )
-from nova_core.pipeline.prepare import PreparedFile, PrepareStream, stack_depth
 from nova_core.pipeline.source import SourceProvider
 from nova_core.storage import Store
+from nova_core.timing import StageClock, StageTiming
 from nova_core.types import ChangeSet, ChunkDef, ParsedFile
 from nova_core.vectors import VectorStore
 from nova_core.vectors.cache import EmbeddingCache
@@ -118,6 +117,11 @@ class IngestReport:
     orphan_files: tuple[str, ...] = ()      # 删除时无法枚举 chunk id（向量可能残留）的文件
     languages: tuple[str, ...] = ()         # 本次处理后仓库已见语言集合（R1 抬升输入）
     warnings: tuple[str, ...] = ()          # 非致命的可操作告警（如索引位移，TASK-114 / P2-7）
+    #: 阶段计时 ``(阶段, 墙钟秒, 主线程 CPU 秒)``（见 ``nova_core.timing``）；
+    #: 观测用，不参与相等比较。
+    timings: tuple[StageTiming, ...] = field(default=(), compare=False)
+    #: 命中上传期预取的文件数（观测用，不参与相等比较）。
+    prefetched: int = field(default=0, compare=False)
 
 
 @dataclass
@@ -146,6 +150,8 @@ class _Accumulator:
     _skipped_seen: set[str] = field(default_factory=set)
     languages: tuple[str, ...] = ()
     warnings: list[str] = field(default_factory=list)
+    timings: tuple[StageTiming, ...] = ()
+    prefetched: int = 0
 
     def skip(self, path: str, reason: str) -> None:
         """记录一个被跳过（未索引）的文件与原因（TASK-037 §B / R43）。
@@ -186,6 +192,8 @@ class _Accumulator:
             orphan_files=tuple(self.orphan_files),
             languages=self.languages,
             warnings=tuple(self.warnings),
+            timings=self.timings,
+            prefetched=self.prefetched,
         )
 
 
@@ -196,6 +204,8 @@ class _Input:
     path: str
     data: bytes
     kind: str  # "added" / "modified"
+    #: 变更集带来的 ``blob_hash``（预取结果的匹配键）；全量重扫读出的文件没有。
+    blob_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -221,6 +231,7 @@ class Indexer:
         scope: IndexScope | None = None,
         embedding_cache: EmbeddingCache | None = None,
         workers: int | None = None,
+        prefetch: PrefetchView | None = None,
     ) -> None:
         self._store = store
         self._embedding = embedding
@@ -238,6 +249,8 @@ class Indexer:
         #: 向量阶段消费者线程数（TASK-115）：``None`` → ``NOVA_EMBED_WORKERS``（默认 2）。
         #: 显式传入是给测试与对照实验用的接缝（不想让用例依赖环境变量）。
         self._workers = workers
+        #: 上传期预取结果（``pipeline.prepare``）；命中则跳过本文件的内联预处理。
+        self._prefetch = prefetch
 
     # ------------------------------------------------------------------ 对外
 
@@ -274,61 +287,69 @@ class Indexer:
     # ------------------------------------------------------------------ 主流程
 
     def _run(self, changes: ChangeSet, invalidation: Invalidation) -> IngestReport:
+        """一次 ingest 的阶段编排：删除 → 收集 → 预处理/落库/投递 → 图 → 向量收尾 → 收尾。
+
+        每个阶段计入 ``StageClock``（随报告返回，见 ``nova_core.timing``）。
+        """
+        clock = StageClock()
+        cpu_started = time.process_time()
         acc = _Accumulator(invalidation=invalidation)
         rebuild_vectors = invalidation is not Invalidation.NONE
         deleted = set(changes.deleted)
 
         if deleted:
-            self._delete_files(sorted(deleted), acc)
+            with clock.stage("delete"):
+                self._delete_files(sorted(deleted), acc)
 
-        inputs = self._collect_inputs(changes, invalidation, deleted, acc)
-        repo_languages = self._languages | {
-            language
-            for language in (detect_language(item.path) for item in inputs)
-            if language is not None
-        }
-        repo_is_cpp = "cpp" in repo_languages
-
-        # 指纹二级失效：先原子重建（清空）向量表，之后的写入都落在新表上。
-        if rebuild_vectors:
-            self._vectors.rebuild(self._embedding.profile.dim)
+        with clock.stage("collect"):
+            inputs = self._collect_inputs(changes, invalidation, deleted, acc)
+            repo_languages = self._languages | {
+                language
+                for language in (detect_language(item.path) for item in inputs)
+                if language is not None
+            }
+            repo_is_cpp = "cpp" in repo_languages
+            # 指纹二级失效：先原子重建（清空）向量表，之后的写入都落在新表上。
+            if rebuild_vectors:
+                self._vectors.rebuild(self._embedding.profile.dim)
 
         indexed: list[_Indexed] = []
         removed_ids: list[str] = []
-        # 解析/切分/分词在子进程里按处理顺序领先预取；主线程只消费结果并写 SQLite
-        # （见 pipeline.prepare：结果与内联逐字节相同，任何失败都回退内联）。
-        prepared = PrepareStream(self._prefetch_tasks(inputs, repo_is_cpp))
         with EmbeddingPipeline(
             self._embedding, self._vectors, cache=self._cache, workers=self._workers
         ) as pipeline:
             # 一轮文件共用一个写事务；每文件的失败隔离由内层 SAVEPOINT 保证（Store.write_batch）。
-            with self._store.write_batch():
-                try:
-                    for item in inputs:
-                        result = self._index_file(
-                            item, repo_is_cpp, acc, prepared.take(item.path)
-                        )
-                        if result is None:
-                            continue
-                        indexed.append(result)
-                        acc.chunks_reused += len(result.chunks) - len(result.new_ids)
-                        # 重建后的新表也按文件立即投递；补嵌阶段只处理尚未投递的存量文件。
+            # write_batch 含逐文件的 prepare / persist / submit 与最终 COMMIT。
+            with clock.stage("write_batch"), self._store.write_batch():
+                for item in inputs:
+                    result = self._index_file(item, repo_is_cpp, acc, clock)
+                    if result is None:
+                        continue
+                    indexed.append(result)
+                    acc.chunks_reused += len(result.chunks) - len(result.new_ids)
+                    # 重建后的新表也按文件立即投递；补嵌阶段只处理尚未投递的存量文件。
+                    with clock.stage("submit"):
                         pipeline.submit(result.chunks)
-                        if not rebuild_vectors:
-                            removed_ids.extend(result.removed_ids)
-                finally:
-                    prepared.close()
+                    if not rebuild_vectors:
+                        removed_ids.extend(result.removed_ids)
                 if rebuild_vectors:
-                    self._rebuild_vectors(
-                        acc, pipeline, {result.parsed.path for result in indexed}
-                    )
+                    with clock.stage("rebuild_vectors"):
+                        self._rebuild_vectors(
+                            acc, pipeline, {result.parsed.path for result in indexed}
+                        )
             pipeline.flush_pending()
             # 图解析只依赖已提交的 SQLite 数据，可和向量尾窗的网络/落库重叠。
-            self._resolve(acc, [result.parsed for result in indexed])
+            with clock.stage("graph"):
+                self._resolve(acc, [result.parsed for result in indexed], clock)
+            with clock.stage("vector_drain"):
+                pipeline.close()
+        for name, wall_s, cpu_s in pipeline.timings():
+            clock.add(name, wall_s, cpu_s)
         # 删除必须等向量阶段排空：行漂移后的**按内容复用**要读旧行（旧 id 同内容），
         # 先删就会把复用来源删掉、整文件重嵌（实测踩过）。
         if removed_ids:
-            acc.vectors_deleted += self._vectors.delete(removed_ids)
+            with clock.stage("vector_delete"):
+                acc.vectors_deleted += self._vectors.delete(removed_ids)
 
         stats = pipeline.stats
         acc.vectors_upserted += stats.upserted
@@ -336,13 +357,16 @@ class Indexer:
         # 两者的口径互斥，且满足 ``chunks_new + chunks_reused == embedded + deduped``。
         acc.chunks_deduped += stats.deduped
 
-        self._languages = repo_languages | {
-            result.parsed.language for result in indexed if result.parsed.language
-        }
-        self._store.set_config(LANGUAGES_KEY, json.dumps(sorted(self._languages)))
-        acc.languages = tuple(sorted(self._languages))
-        if rebuild_vectors or stored_fingerprint(self._store) is None:
-            write_fingerprint(self._store, self.fingerprint())
+        with clock.stage("finalize"):
+            self._languages = repo_languages | {
+                result.parsed.language for result in indexed if result.parsed.language
+            }
+            self._store.set_config(LANGUAGES_KEY, json.dumps(sorted(self._languages)))
+            acc.languages = tuple(sorted(self._languages))
+            if rebuild_vectors or stored_fingerprint(self._store) is None:
+                write_fingerprint(self._store, self.fingerprint())
+        clock.add("process_cpu", 0.0, time.process_time() - cpu_started)
+        acc.timings = clock.snapshot()
         return acc.report()
 
     # ------------------------------------------------------------------ 输入
@@ -369,31 +393,14 @@ class Indexer:
                     continue
                 items[path] = _Input(path=path, data=data, kind="modified")
         for blob in changes.added:
-            items[blob.path] = _Input(path=blob.path, data=blob.content, kind="added")
-        for blob in changes.modified:
-            items[blob.path] = _Input(path=blob.path, data=blob.content, kind="modified")
-        return [items[path] for path in sorted(items)]
-
-    def _prefetch_tasks(
-        self, inputs: Sequence[_Input], repo_is_cpp: bool
-    ) -> list[tuple[str, bytes, str | None, int, int]]:
-        """值得预取的文件（会被 :meth:`_index_file` 真正解析的那些），保持处理顺序。
-
-        **必须由** :meth:`_run` **直接调用**：本帧与 :meth:`_index_file` 同深，内联路径里调用
-        ``parser.parse`` 的是再深一层的 :meth:`_parse`——子进程据此对齐递归深度。
-        """
-        parse_depth = stack_depth() + 1
-        limit = sys.getrecursionlimit()
-        tasks: list[tuple[str, bytes, str | None, int, int]] = []
-        for item in inputs:
-            # 只用廉价的大小判定过滤（超限文件不浪费子进程时间）；二进制判定留给主线程，
-            # 子进程遇到 NUL 直接返回未命中。
-            if not self._scope.should_read(item.path, len(item.data))[0]:
-                continue
-            tasks.append(
-                (item.path, item.data, _language_for(item.path, repo_is_cpp), parse_depth, limit)
+            items[blob.path] = _Input(
+                path=blob.path, data=blob.content, kind="added", blob_hash=blob.blob_hash
             )
-        return tasks
+        for blob in changes.modified:
+            items[blob.path] = _Input(
+                path=blob.path, data=blob.content, kind="modified", blob_hash=blob.blob_hash
+            )
+        return [items[path] for path in sorted(items)]
 
     def _source_size(self, path: str) -> int | None:
         """``source.file_size(path)``（可选协议）；不支持时返回 ``None``（安全降级）。"""
@@ -406,58 +413,40 @@ class Indexer:
             return None
 
     def _index_file(
-        self,
-        item: _Input,
-        repo_is_cpp: bool,
-        acc: _Accumulator,
-        prepared: PreparedFile | None = None,
+        self, item: _Input, repo_is_cpp: bool, acc: _Accumulator, clock: StageClock
     ) -> _Indexed | None:
-        # §B 阈值（R43）：大小在读取**之前**可判（``_collect_inputs`` 已按 ``_safe_read`` 拿到字节，
-        # 这里用真实长度即可），二进制需要内容——两者都必须在"入库"之前拦掉，否则噪声文件既吃
-        # 解析时间又进检索池。
-        readable, size_reason = self._scope.should_read(item.path, len(item.data))
-        if not readable:
-            acc.skip(item.path, size_reason or oversize_reason(len(item.data)))
-            return None
-        decodable, binary_reason_value = self._scope.check_bytes(item.data)
-        if not decodable:
-            acc.skip(item.path, binary_reason_value or SKIP_REASON_BINARY)
-            return None
+        """预处理（预取命中或内联 :func:`prepare_file`）→ 单文件落库 → 计数。
+
+        范围阈值（R43）、二进制判定、解析错误记录、切分失败隔离的口径都在 ``prepare_file``
+        里，预取与内联用的是同一个函数，结果按构造一致。
+        """
         language = _language_for(item.path, repo_is_cpp)
-        if prepared is not None and prepared.language == language:
-            # 子进程预取命中：与下方内联分支计算同样的产物（含 parse_errors 的记录口径）。
-            parsed = prepared.parsed
-            if parsed.parse_errors:
-                acc.errors.append(f"{item.path}: " + "; ".join(parsed.parse_errors))
-            chunks = prepared.chunks
-            try:
+        prepared: PrepareResult | None = None
+        if self._prefetch is not None:
+            with clock.stage("prefetch_take"):
+                prepared = self._prefetch.take(item.path, item.blob_hash, language)
+            if prepared is not None:
+                acc.prefetched += 1
+        if prepared is None:
+            with clock.stage("prepare"):
+                prepared = prepare_file(item.path, item.data, language, self._scope)
+        acc.errors.extend(prepared.errors)
+        if isinstance(prepared, PrepareSkip):
+            if prepared.skip_reason is not None:
+                acc.skip(item.path, prepared.skip_reason)
+            return None
+        try:
+            with clock.stage("persist"):
                 delta = self._store.apply_file_change(
-                    parsed,
-                    chunks,
+                    prepared.parsed,
+                    prepared.chunks,
                     prepared.content_hash,
                     generated=prepared.generated,
                     fts_segments=prepared.segments,
                 )
-            except Exception as exc:  # 同内联分支：单文件落库失败 → 如实记录并跳过
-                acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
-                return None
-        else:
-            text = _decode(item.data)
-            if text is None:
-                acc.skip(item.path, SKIP_REASON_BINARY)
-                return None
-            parsed = self._parse(item.path, text, language, acc)
-            try:
-                chunks = tuple(split_file(parsed, text))
-                delta = self._store.apply_file_change(
-                    parsed,
-                    chunks,
-                    file_content_hash(item.data),
-                    generated=is_generated(item.path, text),
-                )
-            except Exception as exc:  # 单文件切分/落库失败 → 如实记录并跳过（TASK-018 §C）
-                acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
-                return None
+        except Exception as exc:  # 单文件落库失败 → 如实记录并跳过（TASK-018 §C）
+            acc.errors.append(f"{item.path}: {type(exc).__name__}: {exc}")
+            return None
         if item.kind == "added":
             acc.added += 1
         else:
@@ -465,34 +454,13 @@ class Indexer:
         acc.files_parsed += 1
         acc.chunks_new += len(delta.new_chunk_ids)
         acc.chunks_removed += len(delta.removed_chunk_ids)
-        self._known_chunks[item.path] = tuple(chunk.id for chunk in chunks)
+        self._known_chunks[item.path] = tuple(chunk.id for chunk in prepared.chunks)
         return _Indexed(
-            parsed=parsed,
-            chunks=chunks,
+            parsed=prepared.parsed,
+            chunks=prepared.chunks,
             new_ids=tuple(delta.new_chunk_ids),
             removed_ids=tuple(delta.removed_chunk_ids),
         )
-
-    def _parse(
-        self, path: str, text: str, language: str | None, acc: _Accumulator
-    ) -> ParsedFile:
-        """解析单文件：未知语言或抽取器不可用 → 兜底 ``ParsedFile``（不中断 ingest）。"""
-        if language is None:
-            return ParsedFile(path=path, language="fallback", fallback=True)
-        try:
-            parser = get_parser(language)
-            parsed = parser.parse(path, text)
-        except Exception as exc:  # ParserUnavailableError / 抽取器缺陷
-            acc.errors.append(f"{path}: {type(exc).__name__}: {exc}")
-            return ParsedFile(
-                path=path,
-                language=language,
-                parse_errors=(f"{type(exc).__name__}: {exc}",),
-                fallback=True,
-            )
-        if parsed.parse_errors:
-            acc.errors.append(f"{path}: " + "; ".join(parsed.parse_errors))
-        return parsed
 
     # ------------------------------------------------------------------ 删除
 
@@ -542,33 +510,25 @@ class Indexer:
             data = _safe_read(self._source, path, acc)
             if data is None:
                 continue
-            # §B 阈值同样适用于重建路径：被跳过的文件不会进向量表（否则同一文件的
-            # "该不该索引"在增量/全量两条路径下结论不一致）。
-            readable, size_reason = self._scope.should_read(path, len(data))
-            if not readable:
-                acc.skip(path, size_reason or oversize_reason(len(data)))
+            # §B 阈值、解析与切分口径同样适用于重建路径（同一个 prepare_file）：被跳过的文件
+            # 不会进向量表（否则同一文件的"该不该索引"在增量/全量两条路径下结论不一致）。
+            prepared = prepare_file(
+                path, data, _language_for(path, "cpp" in self._languages), self._scope
+            )
+            acc.errors.extend(prepared.errors)
+            if isinstance(prepared, PrepareSkip):
+                if prepared.skip_reason is not None:
+                    acc.skip(path, prepared.skip_reason)
                 continue
-            decodable, binary_reason_value = self._scope.check_bytes(data)
-            if not decodable:
-                acc.skip(path, binary_reason_value or SKIP_REASON_BINARY)
-                continue
-            text = _decode(data)
-            if text is None:
-                acc.skip(path, SKIP_REASON_BINARY)
-                continue
-            language = _language_for(path, "cpp" in self._languages)
-            parsed = self._parse(path, text, language, acc)
-            try:
-                ids.extend(chunk.id for chunk in split_file(parsed, text))
-            except Exception as exc:  # 同上：单文件切分失败不拖垮重建（TASK-018 §C 同一口径）
-                acc.errors.append(f"{path}: {type(exc).__name__}: {exc}")
-                continue
+            ids.extend(chunk.id for chunk in prepared.chunks)
         pipeline.submit(self._store.chunks_by_ids(ids))
 
     # ------------------------------------------------------------------ 二阶段解析
 
-    def _resolve(self, acc: _Accumulator, parsed_files: Sequence[ParsedFile]) -> None:
-        report = resolve_graph(self._store, parsed_files)
+    def _resolve(
+        self, acc: _Accumulator, parsed_files: Sequence[ParsedFile], clock: StageClock
+    ) -> None:
+        report = resolve_graph(self._store, parsed_files, clock=clock)
         acc.unresolved_resolved += report.resolved
         acc.edges_retargeted += report.edges_retargeted
         acc.spec_refs += report.spec_refs
@@ -599,13 +559,6 @@ def _safe_read(source: SourceProvider, path: str, acc: _Accumulator) -> bytes | 
     except Exception as exc:  # noqa: BLE001 - 见 docstring：隔离是设计行为
         acc.errors.append(f"{path}: {type(exc).__name__}: {exc}")
         return None
-
-
-def _decode(data: bytes) -> str | None:
-    """字节 → 文本；二进制（含 NUL）返回 None（跳过，不产兜底块）。"""
-    if b"\x00" in data:
-        return None
-    return data.decode("utf-8", errors="replace")
 
 
 def _language_for(path: str, repo_is_cpp: bool) -> str | None:

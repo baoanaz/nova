@@ -294,5 +294,9 @@ class SyncState:
 
 
 def _dumps(payload: Mapping[str, Any]) -> str:
-    """序列化入口（单独抽出：测试用它模拟"写到一半失败"）。"""
-    return json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
+    """序列化入口（单独抽出：测试用它模拟"写到一半失败"）。
+
+    紧凑格式：首次同步每上传一批就整份重写一次账本，带 ``indent`` 时 CPython 退回纯 Python
+    编码器，几千条目每批要多花数十毫秒；紧凑格式走 C 编码器，内容与解析结果不变。
+    """
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n"

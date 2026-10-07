@@ -690,6 +690,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "nova-client"
+version = "0.0.8"
+dependencies = [
+ "anyhow",
+ "base64",
+ "clap",
+ "hex",
+ "ignore",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "tokio",
+ "walkdir",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1571,24 +1589,6 @@ dependencies = [
  "quote",
  "syn 2.0.119",
  "synstructure",
-]
-
-[[package]]
-name = "nova-client"
-version = "0.0.8"
-dependencies = [
- "anyhow",
- "base64",
- "clap",
- "hex",
- "ignore",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
- "tokio",
- "walkdir",
 ]
 
 [[package]]

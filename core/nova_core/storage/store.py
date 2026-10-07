@@ -767,6 +767,16 @@ class Store:
 
     # ------------------------------------------------------------------ 读路径
 
+    def all_symbols(self) -> list[SymbolRow]:
+        """全部符号行（无序；图解析的内存符号索引用，见 ``chunking.resolver._SymbolIndex``）。"""
+        return [
+            _symbol_from_row(r)
+            for r in self._conn.execute(
+                "SELECT id, name, fqn, kind, chunk_id, file_path, start_line, end_line,"
+                " is_exported FROM symbols"
+            ).fetchall()
+        ]
+
     def exact_symbols(self, name: str, limit: int | None = 20) -> list[SymbolRow]:
         """按 name 或 fqn 精确匹配符号（Exact 通道，D-15）；``limit=None`` 表示不限量。
 

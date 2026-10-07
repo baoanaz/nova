@@ -322,3 +322,71 @@ first). Suggested cohorts, interleaved where possible: control `46edccc`,
 candidate default (2 workers), candidate `NOVA_PARSE_WORKERS=1`, and candidate
 `NOVA_PARSE_WORKERS=0` (equals Round 4 code path). Please record peak RSS of the
 whole cgroup (workers are separate processes) and `server_children_cpu_s`.
+
+## Round 6 candidate: structure + measured cold-start optimizations (NOT yet measured on VPS)
+
+Driven by Round 5 data (process pool: +3.5 core-s CPU, +117 MiB cgroup, swap, no
+wall gain). All changes keep index content identical; local evidence below is from a
+dev box pinned to 2 cores (`taskset -c 0,1`) and is NOT a VPS result.
+
+**Structure (Phase 0)**
+- One pure `prepare_file` (scope → decode → parse → split → hash/generated/FTS
+  segments) used by inline ingest, upload prefetch and vector rebuild (previously
+  three implementations).
+- Canonical parse stack depth (`CANONICAL_PARSE_DEPTH = 200`): extractors swallow
+  `RecursionError`, so output used to depend on the caller's stack depth (CLI vs
+  service could differ). Now every entry parses at the same depth. Pathological
+  nesting near the recursion limit has ~100 fewer frames of budget than before;
+  normal code is unaffected. Test straddles the threshold and fails without it.
+- `ts.Parser` is per thread (concurrent ingests of different projects in one process
+  previously shared one parser instance).
+- Built-in stage timings: `IngestReport.timings` (`compare=False`) with
+  `prepare / persist / submit / write_batch / graph_* / vector_drain / vec_* /
+  engine_open / engine_ready / process_cpu`; service logs `flush 完成` (blob load,
+  ingest, ledger) and `search 阶段耗时`; the client prints `同步耗时` and `检索耗时`
+  to stderr (`client.log`).
+- Round 5 process pool removed.
+
+**Optimizations (Phases 1–2)**
+1. Upload-time prefetch: deferred upload batches are handed to ONE `nice 10` worker
+   process that runs `prepare_file`; flush ingest takes only finished results (zlib +
+   pickle; unpacking costs ~5% of computing) and computes the rest inline. A thread
+   was rejected: GIL convoy made 500 blob writes 0.02s → 6.3s; with the worker
+   process they stay 0.025s. Cap `NOVA_PREFETCH_MAX_MB` (default 24 MB of source,
+   ~8x in objects); `NOVA_UPLOAD_PREFETCH=0` disables. The worker is closed in the app
+   lifespan (Round 5 leftover-PID issue). Local: ingest 8.4s → 4.5s when prefetch
+   finished during upload.
+2. Vector stage `KnownVectors`: one id→hash snapshot per ingest replaces two LanceDB
+   `IN`-list scans per window (ids are unique per ingest; deletions happen after the
+   drain). Local consumer lookup 2.5s → 0.4s; cache lookup batches 512 → 4096.
+3. Graph: in-memory symbol index (one SELECT) replaces per-name SQL; order/set equal
+   to `exact_symbols(limit=None)` for every name (test). Local graph ~1.15s → ~1.0s.
+   Batched `retarget_edges` and per-pass memoization were tried, measured slower /
+   no gain, and reverted (AI3-3 stays an xfail).
+4. Ledger `sync-state.json` written compact (C encoder; 30 saves 0.14s → 0.03s).
+5. Client: ordered parallel scan (chunks of 128, up to 4 threads), streaming upload
+   while scanning with 2 batches in flight, blob hash computed once, poll 100ms,
+   `opt-level = 3` for sha2/base64/serde_json/regex-automata/aho-corasick/memchr/
+   globset (binary 3.69 → 3.86 MB). Batch boundaries are identical to before.
+
+Rejected after measurement: quota usage caching (directory walk is ~10–30 ms).
+
+Validation: 1434 core+service tests / 4 documented xfails; Rust 64 tests; ruff and
+dependency-direction checks pass. The real Rust client end-to-end path could not be
+exercised locally (environment proxy policy); the VPS run is its first end-to-end
+check.
+
+**Requested VPS verification**
+- REBUILD the client binary from this commit (`cargo build --release`); the client
+  changed. Keep the control on its original binary.
+- Content comparison first, as before.
+- Cohorts, interleaved where possible: control `d1196bc` (+ its binary), candidate
+  default, candidate `NOVA_UPLOAD_PREFETCH=0`.
+- Report per run: `result.json` ingest `timings` + `prefetched`, the `flush 完成` and
+  `search 阶段耗时` lines from `service.log`, the client `同步耗时` line from
+  `client.log`, `server_cpu_s + server_children_cpu_s`, whole-cgroup peak memory,
+  and whether any PID remains after the service stops.
+
+Review status: an independent read-only review of Round 6 was started but had not
+returned when this was committed (user asked to commit and hand over to the VPS).
+No review approval is claimed.

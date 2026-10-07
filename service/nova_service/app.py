@@ -24,7 +24,9 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -168,7 +170,28 @@ def _install_mcp(app: FastAPI, settings: Settings) -> None:
     """
     server = build_mcp(lambda: manager_for_app(app), settings=settings, app=app)
     mount(app, server)
-    app.router.lifespan_context = session_lifespan(server)
+    app.router.lifespan_context = _with_runtime_shutdown(app, session_lifespan(server))
+
+
+def _with_runtime_shutdown(
+    app: FastAPI, inner: Callable[[Any], AbstractAsyncContextManager[None]]
+) -> Callable[[Any], AbstractAsyncContextManager[None]]:
+    """在 MCP lifespan 外再包一层：应用退出时关停上传期预取子进程。
+
+    放在 lifespan 而不是 ``main`` 的 finally：uvicorn 收到 SIGTERM 时，优雅关闭跑完 lifespan
+    后会重新抛出该信号，``uvicorn.run`` 之后的代码不一定执行——子进程会残留到进程组被回收。
+    """
+
+    @asynccontextmanager
+    async def lifespan(target: Any) -> AsyncIterator[None]:
+        async with inner(target):
+            yield
+        manager = getattr(app.state, "engine_manager", None)
+        prefetcher = getattr(getattr(manager, "engine", None), "prefetcher", None)
+        if prefetcher is not None:
+            prefetcher.close()
+
+    return lifespan
 
 
 def _install_request_context(app: FastAPI, settings: Settings) -> None:

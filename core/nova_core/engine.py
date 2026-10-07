@@ -60,6 +60,7 @@ from nova_core.embedding import EmbeddingConfig, create_provider
 from nova_core.hashing import blob_hash, file_content_hash
 from nova_core.interfaces import ContextEngine, EmbeddingProvider
 from nova_core.pipeline import DirectorySource, Indexer, IngestReport
+from nova_core.pipeline.ignore import IndexScope
 from nova_core.pipeline.index_state import (
     IndexState,
     IndexStatus,
@@ -69,6 +70,7 @@ from nova_core.pipeline.index_state import (
     ready_state,
     write_index_state,
 )
+from nova_core.pipeline.prepare import UploadPrefetcher
 from nova_core.pipeline.source import SourceProvider
 from nova_core.retrieval import RecallLimits, recall
 from nova_core.retrieval.exact import extract_inferred
@@ -439,6 +441,8 @@ class Engine:
         #: 注释里写的 60s 跨查询复用压根不存在。
         self._query_cache = query_cache
         self._repo_roots: dict[str, Path] = {}
+        #: 上传期预取（``pipeline.prepare``）：长驻服务注入；``None`` 时 ingest 全部内联预处理。
+        self._prefetcher: UploadPrefetcher | None = None
 
     # ------------------------------------------------------------------ 生命周期
 
@@ -561,6 +565,14 @@ class Engine:
         if "dim" in inspect.signature(bind).parameters:
             return
         bind(provider.profile.model_id)
+
+    def set_prefetcher(self, prefetcher: UploadPrefetcher | None) -> None:
+        """注入上传期预取器（服务启动时；结果按项目 id 分区，见 ``pipeline.prepare``）。"""
+        self._prefetcher = prefetcher
+
+    @property
+    def prefetcher(self) -> UploadPrefetcher | None:
+        return self._prefetcher
 
     def set_provider(self, provider: EmbeddingProvider) -> None:
         """替换 embedding provider（TASK-101 §F：``--replay`` 用它切到离线 provider）。
@@ -704,7 +716,9 @@ class Engine:
             raise EngineError(f"max_tokens 必须为正整数，收到 {max_tokens}")
         limits = DEEP_GAP_LIMITS if deep else GapLimits()
         mode = MODE_DEEP if deep else MODE_FAST
+        marks = [("start", time.perf_counter())]
         with self._open_project(project_id) as (store, vectors, provider):
+            marks.append(("open", time.perf_counter()))
             recalled = recall(
                 store,
                 query,
@@ -717,9 +731,12 @@ class Engine:
             # P1-1 / P1-5：索引状态（building/failed/对账不一致）同样要体现在降级上。
             # 与 _vector_index_gap 合并为同一个 degraded_reason；两者独立，都可能单独出现。
             state_gap = self._index_state_gap(project_id, store, vectors)
+            marks.append(("recall", time.perf_counter()))
             expansion = expand(store, recalled.candidates, limits=self._expansion_limits)
             pool = [*recalled.candidates, *expansion.candidates]
+            marks.append(("expand", time.perf_counter()))
             ranked = rerank(pool, collect_signals(store, query, pool))
+            marks.append(("rerank", time.perf_counter()))
             pack = assemble(
                 store,
                 query,
@@ -730,6 +747,7 @@ class Engine:
                 config=self._budget(max_tokens, mode),
                 signals=collect_index_signals(store, ranked),
             )
+            marks.append(("assemble", time.perf_counter()))
             # ---- 第二轮：Evidence-Gap 定向补检（≤ 1 次，确定性） ----
             gaps, backfill, ranked = self._backfill_gaps(
                 store, query, ranked, pack, limits=limits
@@ -750,6 +768,16 @@ class Engine:
                     # 实测 LC-21：首轮留的余量被本轮贪心吃掉，19 个补检候选全部落空。
                     reserve_backfill=True,
                 )
+        marks.append(("backfill", time.perf_counter()))
+        # 分段耗时（观测用；冷启动计时包含最后一次检索）。
+        logger.info(
+            "search 阶段耗时：%s",
+            json.dumps(
+                {name: round(at - marks[index][1], 4)
+                 for index, (name, at) in enumerate(marks[1:])},
+                ensure_ascii=False,
+            ),
+        )
         degraded_reason = recalled.degraded_reason
         for gap in (vector_gap, state_gap):
             if gap is not None:
@@ -1099,27 +1127,40 @@ class Engine:
         full: bool,
         source: SourceProvider | None = None,
     ) -> IngestReport:
+        started = time.perf_counter()
         with self._open_project(project_id) as (store, vectors, provider):
-            indexer = Indexer(
-                store,
-                provider,
-                vectors,
-                source or self._source_for(project_id),
-                embedding_cache=self._embedding_cache(),
+            scope = IndexScope.from_env()
+            prefetch = (
+                self._prefetcher.view(project_id, scope) if self._prefetcher is not None else None
             )
-            # P1-1：先标 building（让并发查询能看出“索引未就绪”），
-            # 成功后再标 ready 并记下期望计数（下次查询据此对账中间态）。
-            self._mark_index_state(project_id, "building")
             try:
-                report = indexer.full_reparse(changes) if full else indexer.ingest(changes)
-            except BaseException as exc:
-                self._mark_index_state(
-                    project_id,
-                    "failed",
-                    stage="reparse" if full else "ingest",
-                    reason=f"{type(exc).__name__}: {exc}",
+                indexer = Indexer(
+                    store,
+                    provider,
+                    vectors,
+                    source or self._source_for(project_id),
+                    scope=scope,
+                    embedding_cache=self._embedding_cache(),
+                    prefetch=prefetch,
                 )
-                raise
+                opened = time.perf_counter()
+                # P1-1：先标 building（让并发查询能看出“索引未就绪”），
+                # 成功后再标 ready 并记下期望计数（下次查询据此对账中间态）。
+                self._mark_index_state(project_id, "building")
+                try:
+                    report = indexer.full_reparse(changes) if full else indexer.ingest(changes)
+                except BaseException as exc:
+                    self._mark_index_state(
+                        project_id,
+                        "failed",
+                        stage="reparse" if full else "ingest",
+                        reason=f"{type(exc).__name__}: {exc}",
+                    )
+                    raise
+            finally:
+                if prefetch is not None:
+                    prefetch.close()
+            finished = time.perf_counter()
             counts = store.counts()
             self._mark_index_state(
                 project_id,
@@ -1127,7 +1168,15 @@ class Engine:
                 expected_chunks=counts["chunks"],
                 expected_vectors=vectors.count(),
             )
-            return report
+        # 引擎层两段：打开项目（库 / 向量表 / 缓存）与就绪收尾（计数 + 状态标记）。
+        return replace(
+            report,
+            timings=(
+                ("engine_open", round(opened - started, 4), 0.0),
+                *report.timings,
+                ("engine_ready", round(time.perf_counter() - finished, 4), 0.0),
+            ),
+        )
 
     def _index_state(self, project_id: str) -> IndexState | None:
         """读本项目的索引状态标记（P1-1/P1-5）；无标记 → ``None``。"""

@@ -169,92 +169,75 @@ impl IndexManager {
     ///
     /// 判定顺序与 core/service 一致：目录剪枝（忽略规则）→ 大小阈值 → 二进制阈值 → 内容。
     pub fn scan(&self) -> Result<ScanResult> {
+        self.scan_streaming(|_| {})
+    }
+
+    /// [`Self::scan`] 的流式版本：每确定一个待上传文件就回调 `on_upload`，让上传与扫描重叠。
+    ///
+    /// 三步走：① 单线程遍历目录（忽略规则、去重、元数据层面的跳过），定下文件顺序；
+    /// ② 按 [`SCAN_CHUNK`] 分块，块内多线程读取 / 判二进制 / 清理 / 计算 hash（冷盘读取与
+    /// sha256 是首次同步客户端侧的主要耗时）；③ 按遍历顺序汇总。结果（`skipped` / `to_upload`
+    /// 的顺序、缓存条目）与逐个串行处理完全一致，因此上传分批也与之前相同。
+    pub fn scan_streaming(&self, mut on_upload: impl FnMut(&UploadFile)) -> Result<ScanResult> {
         let previous = self.load()?;
         let previous_entries = previous.entries;
+        let walked = self.walk();
+        let workers = std::thread::available_parallelism()
+            .map(|count| count.get())
+            .unwrap_or(1)
+            .clamp(1, MAX_SCAN_WORKERS);
+
         let mut entries = BTreeMap::new();
         let mut to_upload = Vec::new();
         let mut cached_files = 0usize;
         let mut skipped = Vec::new();
-
-        // 忽略语义（D-28 / TASK-097）：第 0 层白名单（强制包含）> `.novaignore` > `.gitignore`
-        // > 内置目录剪枝。前两层的遍历由 `walker()` 完成；第 0 层由 `allowlist_walk()` 追加，
-        // 因此这里迭代两者的**并集**，并用 `seen` 按路径去重（既未被忽略又命中白名单的文件
-        // 会同时出现在两个 walker 里）。
-        let mut seen: HashSet<String> = HashSet::new();
-        for entry in self.rules.walk_union() {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(_) => continue,
-            };
-            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
-                continue;
-            }
-            let path = entry.path();
-            let Some(relative) = relative_path(&self.root, path) else {
-                continue;
-            };
-            if !seen.insert(relative.clone()) {
-                continue;
-            }
-            let metadata = match entry.metadata() {
-                Ok(metadata) => metadata,
-                Err(_) => {
-                    skipped.push(SkippedPath {
-                        path: relative,
-                        reason: "unreadable_metadata".to_string(),
-                    });
-                    continue;
+        for chunk in walked.chunks(SCAN_CHUNK) {
+            let contents = parallel_map(chunk, workers, |item| match item {
+                Walked::File { relative, path, .. } => Some(read_content(relative, path)),
+                Walked::Skip(_) => None,
+            });
+            for (item, content) in chunk.iter().zip(contents) {
+                let (relative, size, mtime) = match item {
+                    Walked::Skip(path) => {
+                        skipped.push(path.clone());
+                        continue;
+                    }
+                    Walked::File { relative, size, mtime, .. } => (relative, *size, *mtime),
+                };
+                let (content, hash) = match content {
+                    Some(Content::Text { content, hash }) => (content, hash),
+                    Some(Content::Skip(reason)) => {
+                        skipped.push(SkippedPath {
+                            path: relative.clone(),
+                            reason: reason.to_string(),
+                        });
+                        continue;
+                    }
+                    None => unreachable!("文件条目必有内容结果"),
+                };
+                let file_entry = FileEntry {
+                    mtime_secs: mtime.0,
+                    mtime_nanos: mtime.1,
+                    size,
+                    blob_hash: hash.clone(),
+                };
+                // 已验证缓存命中：mtime+size 快路径 ≈ 且 **内容 hash 一致**才算命中。
+                let verified_hit = previous_entries
+                    .get(relative)
+                    .is_some_and(|cached| cached.blob_hash == hash);
+                if verified_hit {
+                    cached_files += 1;
+                } else {
+                    let file = UploadFile {
+                        path: relative.clone(),
+                        content,
+                        blob_hash: hash,
+                    };
+                    on_upload(&file);
+                    to_upload.push(file);
                 }
-            };
-            let size = metadata.len();
-            if size > MAX_FILE_BYTES as u64 {
-                skipped.push(SkippedPath {
-                    path: relative,
-                    reason: format!("oversize:{size}"),
-                });
-                continue;
+                entries.insert(relative.clone(), file_entry);
             }
-            let raw = match std::fs::read(path) {
-                Ok(raw) => raw,
-                Err(_) => {
-                    skipped.push(SkippedPath {
-                        path: relative,
-                        reason: "unreadable".to_string(),
-                    });
-                    continue;
-                }
-            };
-            if is_binary(&raw, BINARY_PROBE_BYTES, BINARY_RATIO) {
-                skipped.push(SkippedPath {
-                    path: relative,
-                    reason: "binary".to_string(),
-                });
-                continue;
-            }
-            let (mtime_secs, mtime_nanos) = mtime_of(&metadata);
-            let content = sanitize_content(&String::from_utf8_lossy(&raw));
-            let hash = blob_hash(&relative, content.as_bytes());
-            let file_entry = FileEntry {
-                mtime_secs,
-                mtime_nanos,
-                size,
-                blob_hash: hash.clone(),
-            };
-
-            // 已验证缓存命中：mtime+size 快路径 ≈ 且 **内容 hash 一致**才算命中。
-            let verified_hit = previous_entries
-                .get(&relative)
-                .is_some_and(|cached| cached.blob_hash == hash);
-            if verified_hit {
-                cached_files += 1;
-            } else {
-                to_upload.push(UploadFile {
-                    path: relative.clone(),
-                    content,
-                    blob_hash: hash,
-                });
-            }
-            entries.insert(relative, file_entry);
         }
 
         let deleted: Vec<String> = previous_entries
@@ -290,6 +273,57 @@ impl IndexManager {
             skipped,
             deleted,
         })
+    }
+
+    /// 第一步：遍历（忽略语义 D-28 / TASK-097 + 元数据层面的跳过），定下处理顺序。
+    ///
+    /// 第 0 层白名单（强制包含）> `.novaignore` > `.gitignore` > 内置目录剪枝。前两层的遍历由
+    /// `walker()` 完成；第 0 层由 `allowlist_walk()` 追加，因此这里迭代两者的**并集**，并用
+    /// `seen` 按路径去重（既未被忽略又命中白名单的文件会同时出现在两个 walker 里）。
+    fn walk(&self) -> Vec<Walked> {
+        let mut walked = Vec::new();
+        let mut seen: HashSet<String> = HashSet::new();
+        for entry in self.rules.walk_union() {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => continue,
+            };
+            if !entry.file_type().is_some_and(|kind| kind.is_file()) {
+                continue;
+            }
+            let path = entry.path();
+            let Some(relative) = relative_path(&self.root, path) else {
+                continue;
+            };
+            if !seen.insert(relative.clone()) {
+                continue;
+            }
+            let metadata = match entry.metadata() {
+                Ok(metadata) => metadata,
+                Err(_) => {
+                    walked.push(Walked::Skip(SkippedPath {
+                        path: relative,
+                        reason: "unreadable_metadata".to_string(),
+                    }));
+                    continue;
+                }
+            };
+            let size = metadata.len();
+            if size > MAX_FILE_BYTES as u64 {
+                walked.push(Walked::Skip(SkippedPath {
+                    path: relative,
+                    reason: format!("oversize:{size}"),
+                }));
+                continue;
+            }
+            walked.push(Walked::File {
+                relative,
+                path: path.to_path_buf(),
+                size,
+                mtime: mtime_of(&metadata),
+            });
+        }
+        walked
     }
 
     /// 应用服务端裁决：**只有全部 blob 被接受且未被跳过**的文件才保留在索引里。
@@ -392,6 +426,63 @@ impl IndexManager {
     fn cache_file(&self) -> PathBuf {
         self.cache_dir.join("index.json")
     }
+}
+
+/// 并行扫描的块大小：块内多线程读取 / hash，块与块之间按遍历顺序汇总并流式交出待上传文件。
+const SCAN_CHUNK: usize = 128;
+/// 扫描线程上限（冷盘读取 + sha256；2 vCPU 机器上即 2）。
+const MAX_SCAN_WORKERS: usize = 4;
+
+/// 遍历产物：元数据层面已判定跳过的路径，或待读取内容的文件。
+enum Walked {
+    Skip(SkippedPath),
+    File {
+        relative: String,
+        path: PathBuf,
+        size: u64,
+        mtime: (u64, u32),
+    },
+}
+
+/// 内容判定结果：不可读 / 二进制跳过，或清理后的文本与其 blob hash。
+enum Content {
+    Skip(&'static str),
+    Text { content: String, hash: String },
+}
+
+fn read_content(relative: &str, path: &Path) -> Content {
+    let Ok(raw) = std::fs::read(path) else {
+        return Content::Skip("unreadable");
+    };
+    if is_binary(&raw, BINARY_PROBE_BYTES, BINARY_RATIO) {
+        return Content::Skip("binary");
+    }
+    let content = sanitize_content(&String::from_utf8_lossy(&raw));
+    let hash = blob_hash(relative, content.as_bytes());
+    Content::Text { content, hash }
+}
+
+/// 有序并行 map：把 `items` 均分给最多 `workers` 个线程，结果按输入顺序拼回。
+fn parallel_map<T: Sync, R: Send>(
+    items: &[T],
+    workers: usize,
+    map: impl Fn(&T) -> R + Sync,
+) -> Vec<R> {
+    if workers <= 1 || items.len() <= 1 {
+        return items.iter().map(map).collect();
+    }
+    let size = items.len().div_ceil(workers);
+    let map = &map;
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = items
+            .chunks(size)
+            .map(|part| scope.spawn(move || part.iter().map(map).collect::<Vec<R>>()))
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|handle| handle.join().expect("扫描线程异常退出"))
+            .collect()
+    })
 }
 
 /// 扫描配置指纹：阈值 + 忽略规则内容。任一变化 → 缓存作废（避免脏索引）。

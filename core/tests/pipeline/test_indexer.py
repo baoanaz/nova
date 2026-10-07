@@ -338,10 +338,15 @@ def test_apply_failure_is_isolated_per_file(
     """TASK-018 §C：单文件落库失败不中断 ingest，只写 report.errors 并跳过该文件。"""
     original = store.apply_file_change
 
-    def failing(parsed, chunks, file_content_hash, commit=None, *, generated=False):
+    def failing(
+        parsed, chunks, file_content_hash, commit=None, *, generated=False, fts_segments=None
+    ):
         if parsed.path == "pkg/bad.py":
             raise ValueError("模拟落库失败")
-        return original(parsed, chunks, file_content_hash, commit, generated=generated)
+        return original(
+            parsed, chunks, file_content_hash, commit,
+            generated=generated, fts_segments=fts_segments,
+        )
 
     monkeypatch.setattr(store, "apply_file_change", failing)
 
@@ -359,7 +364,7 @@ def test_split_failure_from_duplicate_ids_is_isolated(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TASK-018 §B+§C 组合：切分抛出的重复 id ValueError 被单文件隔离，不进 sqlite。"""
-    from nova_core.pipeline import indexer as indexer_module
+    from nova_core.pipeline import prepare as indexer_module  # split_file 现由 prepare 调用
 
     real_split = indexer_module.split_file
 
@@ -386,7 +391,7 @@ def test_full_reparse_isolates_split_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """TASK-018 §C：``--full`` 的存量枚举（``_rebuild_vectors``）同样按单文件隔离。"""
-    from nova_core.pipeline import indexer as indexer_module
+    from nova_core.pipeline import prepare as indexer_module  # split_file 现由 prepare 调用
 
     files = {"pkg/bad.py": PY_MODULE, "pkg/mod.py": PY_MODULE}
     write_repo(repo, files)

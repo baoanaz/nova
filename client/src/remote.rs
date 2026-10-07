@@ -31,6 +31,10 @@ pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 pub const INDEX_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
+/// 等待索引就绪时的轮询间隔：轻量 progressOnly 状态请求，间隔越短，"索引完成 → 开始检索"的空等越少。
+const INDEX_POLL_INTERVAL: Duration = Duration::from_millis(100);
+/// 流式上传时同时在途的批次数（客户端编码/传输与服务端落盘重叠；服务端按项目串行记账）。
+const UPLOADS_IN_FLIGHT: usize = 2;
 /// 对外错误文本里的响应体截断（Module 05 §2.2：512 字节）。
 const MAX_ERROR_SNIPPET_BYTES: usize = 512;
 /// callId（= 服务端的 ``X-Request-Id``）的请求头名（TASK-099 §B-2）。
@@ -109,6 +113,38 @@ pub struct UploadOutcome {
     pub skipped_paths: HashSet<String>,
     pub batches: usize,
     pub indexing_deferred: bool,
+}
+
+impl UploadOutcome {
+    fn merge(&mut self, body: UploadResponse) {
+        self.indexing_deferred |= body.indexing_deferred;
+        self.accepted.extend(body.accepted);
+        self.skipped_paths.extend(body.skipped);
+        self.batches += 1;
+    }
+}
+
+/// 一个待上传文件（`blob_hash` = CF-02 `blob_hash(path, content)`，扫描时已算出）。
+#[derive(Debug, Clone)]
+pub struct UploadItem {
+    pub path: String,
+    pub content: String,
+    pub blob_hash: String,
+}
+
+/// 批字节估算：base64 膨胀 4/3，另加 path 与 JSON 包装余量。
+fn upload_item_bytes(item: &UploadItem) -> usize {
+    item.path.len() + item.content.len() * 4 / 3 + 128
+}
+
+fn joined(
+    result: Option<std::result::Result<Result<UploadResponse>, tokio::task::JoinError>>,
+) -> Result<UploadResponse> {
+    match result {
+        Some(Ok(response)) => response,
+        Some(Err(error)) => Err(anyhow!("上传任务异常结束：{error}")),
+        None => Err(anyhow!("上传任务队列意外为空")),
+    }
 }
 
 /// 远端客户端（一个服务端地址一个实例）。
@@ -195,58 +231,115 @@ impl RemoteClient {
         project_id: &str,
         files: &[(String, String)],
     ) -> Result<UploadOutcome> {
+        let items: Vec<UploadItem> = files
+            .iter()
+            .map(|(path, content)| UploadItem {
+                path: path.clone(),
+                blob_hash: blob_hash(path, content.as_bytes()),
+                content: content.clone(),
+            })
+            .collect();
         let mut outcome = UploadOutcome::default();
-        let mut start = 0usize;
-        while start < files.len() {
-            let mut end = start;
-            let mut bytes = 0usize;
-            while end < files.len() {
-                let (path, content) = &files[end];
-                // 批字节估算：base64 膨胀 4/3，另加 path 与 JSON 包装余量。
-                let item_bytes = path.len() + content.len() * 4 / 3 + 128;
-                if end > start && bytes + item_bytes > MAX_BATCH_BYTES {
-                    break;
-                }
-                bytes += item_bytes;
-                end += 1;
+        let mut batch: Vec<UploadItem> = Vec::new();
+        let mut bytes = 0usize;
+        for item in items {
+            let item_bytes = upload_item_bytes(&item);
+            if !batch.is_empty() && bytes + item_bytes > MAX_BATCH_BYTES {
+                outcome.merge(self.send_upload_batch(project_id, &batch).await?);
+                batch.clear();
+                bytes = 0;
             }
-            let batch = &files[start..end];
-            let blobs: Vec<UploadBlob> = batch
-                .iter()
-                .map(|(path, content)| UploadBlob {
-                    path: path.clone(),
-                    blob_hash: blob_hash(path, content.as_bytes()),
-                    content_b64: base64::engine::general_purpose::STANDARD
-                        .encode(content.as_bytes()),
-                })
-                .collect();
-            let payload = serde_json::json!({
-                "projectId": project_id,
-                "blobs": blobs,
-                "deferIndexing": true,
-            });
-            let response = self
-                .request(
-                    self.upload.post(self.url("/api/sync/batch-upload")),
-                    &payload,
-                )
-                .await?;
-            let body: UploadResponse = response
-                .json()
-                .await
-                .context("batch-upload 响应不是合法 JSON")?;
-            if let Some(report) = body.report {
-                if !report.errors.is_empty() {
-                    bail!("索引失败：{}", report.errors.join("; "));
-                }
-            }
-            outcome.indexing_deferred |= body.indexing_deferred;
-            outcome.accepted.extend(body.accepted);
-            outcome.skipped_paths.extend(body.skipped);
-            outcome.batches += 1;
-            start = end;
+            bytes += item_bytes;
+            batch.push(item);
+        }
+        if !batch.is_empty() {
+            outcome.merge(self.send_upload_batch(project_id, &batch).await?);
         }
         Ok(outcome)
+    }
+
+    /// 流式上传：边收（扫描线程送来的待上传文件）边按同样的 ≤1MB 规则分批发送，
+    /// 最多 [`UPLOADS_IN_FLIGHT`] 个请求在途——客户端编码/传输与服务端落盘重叠，
+    /// 上传也不必等扫描全部结束。服务端按路径记账、按内容寻址存 blob，批次乱序到达无影响。
+    ///
+    /// 任一批失败 → 取消其余在途请求并返回错误（与串行上传一样：调用方不提交本地缓存）。
+    pub async fn upload_stream(
+        &self,
+        project_id: &str,
+        mut items: tokio::sync::mpsc::Receiver<UploadItem>,
+    ) -> Result<UploadOutcome> {
+        let mut outcome = UploadOutcome::default();
+        let mut inflight: tokio::task::JoinSet<Result<UploadResponse>> =
+            tokio::task::JoinSet::new();
+        let mut batch: Vec<UploadItem> = Vec::new();
+        let mut bytes = 0usize;
+        loop {
+            let next = items.recv().await;
+            let item_bytes = next.as_ref().map(upload_item_bytes).unwrap_or(0);
+            let ready = match &next {
+                Some(_) => !batch.is_empty() && bytes + item_bytes > MAX_BATCH_BYTES,
+                None => !batch.is_empty(),
+            };
+            if ready {
+                while inflight.len() >= UPLOADS_IN_FLIGHT {
+                    outcome.merge(joined(inflight.join_next().await)?);
+                }
+                let client = self.for_call(self.call.clone());
+                let project = project_id.to_string();
+                let sending = std::mem::take(&mut batch);
+                inflight.spawn(async move { client.send_upload_batch(&project, &sending).await });
+                bytes = 0;
+            }
+            match next {
+                Some(item) => {
+                    bytes += item_bytes;
+                    batch.push(item);
+                }
+                None => break,
+            }
+        }
+        while let Some(result) = inflight.join_next().await {
+            outcome.merge(joined(Some(result))?);
+        }
+        Ok(outcome)
+    }
+
+    /// 发送一批（blobHash 由调用方给出：扫描时已算过，不重复计算）。
+    async fn send_upload_batch(
+        &self,
+        project_id: &str,
+        batch: &[UploadItem],
+    ) -> Result<UploadResponse> {
+        let blobs: Vec<UploadBlob> = batch
+            .iter()
+            .map(|item| UploadBlob {
+                path: item.path.clone(),
+                blob_hash: item.blob_hash.clone(),
+                content_b64: base64::engine::general_purpose::STANDARD
+                    .encode(item.content.as_bytes()),
+            })
+            .collect();
+        let payload = serde_json::json!({
+            "projectId": project_id,
+            "blobs": blobs,
+            "deferIndexing": true,
+        });
+        let response = self
+            .request(
+                self.upload.post(self.url("/api/sync/batch-upload")),
+                &payload,
+            )
+            .await?;
+        let body: UploadResponse = response
+            .json()
+            .await
+            .context("batch-upload 响应不是合法 JSON")?;
+        if let Some(report) = &body.report {
+            if !report.errors.is_empty() {
+                bail!("索引失败：{}", report.errors.join("; "));
+            }
+        }
+        Ok(body)
     }
 
     /// `POST /api/sync/deletions`：通知服务端删除路径（幂等）。
@@ -303,7 +396,7 @@ impl RemoteClient {
             if matches!(status.index_progress.state.as_str(), "done" | "idle") {
                 self.request(self.general.post(self.url("/api/sync/flush")), &payload).await?;
             }
-            tokio::time::sleep(Duration::from_millis(500)).await;
+            tokio::time::sleep(INDEX_POLL_INTERVAL).await;
         }
     }
 

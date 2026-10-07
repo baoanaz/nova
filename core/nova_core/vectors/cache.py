@@ -40,8 +40,9 @@ TABLE_NAME = "embedding_cache"
 CACHE_KEY_COLUMN = "cache_key"
 VECTOR_COLUMN = "vector"
 
-#: 单次查询的 IN 列表长度上限（沿用原值）。
-_LOOKUP_BATCH_SIZE = 512
+#: 单次查询的 IN 列表长度上限：每次查询都要扫一遍缓存表（无标量索引），批越大扫描次数越少；
+#: 覆盖一个完整 embedding 窗口（≤ 4000）。
+_LOOKUP_BATCH_SIZE = 4096
 #: 单次 ``merge_insert``（一次提交）的行数上限：覆盖一个完整 embedding 窗口（≤ 4000）。
 _PUT_BATCH_SIZE = 4096
 

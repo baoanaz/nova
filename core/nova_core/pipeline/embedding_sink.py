@@ -56,6 +56,7 @@ import numpy as np
 
 from nova_core.chunking import embedding_text
 from nova_core.interfaces import EmbeddingProvider
+from nova_core.timing import StageClock, StageTiming
 from nova_core.types import ChunkDef
 from nova_core.vectors import VectorStore
 from nova_core.vectors.cache import EmbeddingCache, EmbeddingCacheError
@@ -139,6 +140,40 @@ class EmbeddingStats:
     embedded: int = 0
 
 
+class KnownVectors:
+    """一次 ingest 内"向量表里有什么"的权威视图，替代逐窗口的 LanceDB 扫描。
+
+    为什么成立：
+
+    - **同 id 判定**：只可能命中 ingest 开始前就在表里的行——一次 ingest 内 chunk id 唯一
+      （``chunks.id`` 是主键、``split_file`` 出口查重），本轮写入的行永远不会被本轮别的窗口按
+      id 查到；而旧向量的删除发生在向量阶段排空之后。因此开始时取一次快照即可。
+    - **按内容复用**：可复用的 hash = 快照里已有的 ∪ 本轮已写入的（写入成功后登记）。
+      只对其中出现的 hash 回表取向量；与逐窗口查询的唯一差别是"并发窗口刚提交、尚未登记"
+      的瞬间——旧实现同样存在这个竞态（表现为多嵌一次相同内容，见模块 docstring）。
+
+    冷启动时表为空，快照免扫描，每窗口省掉两次带数千字面量 ``IN`` 列表的全表扫描。
+    """
+
+    def __init__(self, snapshot: dict[str, str]) -> None:
+        self._ids = snapshot
+        self._hashes = set(snapshot.values())
+        self._lock = threading.Lock()
+
+    def stored(self, chunk_ids: Sequence[str]) -> dict[str, str]:
+        ids = self._ids
+        return {chunk_id: ids[chunk_id] for chunk_id in chunk_ids if chunk_id in ids}
+
+    def present(self, digests: Sequence[str]) -> list[str]:
+        with self._lock:
+            hashes = self._hashes
+            return [digest for digest in dict.fromkeys(digests) if digest in hashes]
+
+    def written(self, digests: Sequence[str]) -> None:
+        with self._lock:
+            self._hashes.update(digests)
+
+
 class EmbeddingSink:
     """把 chunk 流写进向量表的同步消费者（单线程使用；线程化见 :class:`EmbeddingPipeline`）。"""
 
@@ -149,10 +184,15 @@ class EmbeddingSink:
         *,
         cache: EmbeddingCache | None = None,
         window: int | None = None,
+        known: KnownVectors | None = None,
     ) -> None:
         self._embedding = embedding
         self._vectors = vectors
         self._cache = cache
+        #: 共享的表内容视图（pipeline 传入）；``None`` 时逐窗口查表（独立使用的旧行为）。
+        self._known = known
+        #: 本 sink 所在线程的分段计时（lookup / embed / upsert / cache_put）。
+        self.clock = StageClock()
         self._model_id = embedding.profile.model_id
         #: 单个 sink 的窗口。并行时由 pipeline 传 ``总窗口 ÷ K``（内存总量守恒，见其 docstring）；
         #: 独立使用时取 provider 的完整窗口。
@@ -186,29 +226,34 @@ class EmbeddingSink:
     def _process_window(self, window: Sequence[ChunkDef]) -> None:
         """处理一个窗口。向量全程是 float32 矩阵（不逐元素转 Python float，见
         :meth:`VectorStore.upsert_matrix`）；表里查不到的 id 直接追加，不走整表 merge。"""
-        stored = self._vectors.get_hashes([chunk.id for chunk in window])
-        pending = [chunk for chunk in window if stored.get(chunk.id) != chunk.content_hash]
-        self.stats.skipped += len(window) - len(pending)
-        if not pending:
-            return
-        new_ids = {chunk.id for chunk in pending if chunk.id not in stored}
+        with self.clock.stage("vec_lookup"):
+            ids = [chunk.id for chunk in window]
+            known = self._known
+            stored = known.stored(ids) if known is not None else self._vectors.get_hashes(ids)
+            pending = [chunk for chunk in window if stored.get(chunk.id) != chunk.content_hash]
+            self.stats.skipped += len(window) - len(pending)
+            if not pending:
+                return
+            new_ids = {chunk.id for chunk in pending if chunk.id not in stored}
 
-        # 一层：向量表里已有的同内容行（含本 run 更早窗口刚写入的行——落库即可见）。
-        reuse = self._vectors.get_vector_arrays_by_hash(
-            [chunk.content_hash for chunk in pending]
-        )
-        # 二层：跨项目缓存（TASK-111）。缓存是优化，任何异常都降级为未命中。
-        if self._cache is not None:
-            missing = [
-                digest
-                for digest in dict.fromkeys(chunk.content_hash for chunk in pending)
-                if digest not in reuse
-            ]
-            try:
-                for digest, vector in self._cache.lookup_arrays(self._model_id, missing).items():
-                    reuse.setdefault(digest, ("", vector))
-            except EmbeddingCacheError as exc:
-                logger.warning("embedding 缓存读取失败，按未命中处理：%s", exc)
+            # 一层：向量表里已有的同内容行（含本 run 更早窗口刚写入的行——落库即可见）。
+            digests = [chunk.content_hash for chunk in pending]
+            if known is not None:
+                digests = known.present(digests)
+            reuse = self._vectors.get_vector_arrays_by_hash(digests) if digests else {}
+            # 二层：跨项目缓存（TASK-111）。缓存是优化，任何异常都降级为未命中。
+            if self._cache is not None:
+                missing = [
+                    digest
+                    for digest in dict.fromkeys(chunk.content_hash for chunk in pending)
+                    if digest not in reuse
+                ]
+                try:
+                    found = self._cache.lookup_arrays(self._model_id, missing)
+                    for digest, vector in found.items():
+                        reuse.setdefault(digest, ("", vector))
+                except EmbeddingCacheError as exc:
+                    logger.warning("embedding 缓存读取失败，按未命中处理：%s", exc)
 
         moves: list[ChunkDef] = []
         to_embed: list[ChunkDef] = []
@@ -219,12 +264,15 @@ class EmbeddingSink:
                 to_embed.append(chunk)
         if moves:
             self.stats.deduped += len(moves)
-            self.stats.upserted += self._vectors.upsert_matrix(
-                [chunk.id for chunk in moves],
-                [chunk.content_hash for chunk in moves],
-                np.stack([reuse[chunk.content_hash][1] for chunk in moves]),
-                new_ids=new_ids,
-            )
+            with self.clock.stage("vec_upsert"):
+                self.stats.upserted += self._vectors.upsert_matrix(
+                    [chunk.id for chunk in moves],
+                    [chunk.content_hash for chunk in moves],
+                    np.stack([reuse[chunk.content_hash][1] for chunk in moves]),
+                    new_ids=new_ids,
+                )
+            if self._known is not None:
+                self._known.written([chunk.content_hash for chunk in moves])
         if to_embed:
             self._embed_unique(to_embed, new_ids)
 
@@ -234,7 +282,8 @@ class EmbeddingSink:
         for chunk in chunks:
             groups.setdefault(chunk.content_hash, []).append(chunk)
         digests = list(groups)
-        matrix = self._embed_matrix([embedding_text(groups[d][0]) for d in digests])
+        with self.clock.stage("vec_embed"):
+            matrix = self._embed_matrix([embedding_text(groups[d][0]) for d in digests])
         if len(matrix) != len(digests):
             raise RuntimeError(
                 f"embedding 返回行数不匹配：期望 {len(digests)}，实际 {len(matrix)}"
@@ -248,13 +297,17 @@ class EmbeddingSink:
                 ids.append(chunk.id)
                 hashes.append(digest)
                 rows.append(position)
-        self.stats.upserted += self._vectors.upsert_matrix(
-            ids, hashes, matrix[rows], new_ids=new_ids
-        )
+        with self.clock.stage("vec_upsert"):
+            self.stats.upserted += self._vectors.upsert_matrix(
+                ids, hashes, matrix[rows], new_ids=new_ids
+            )
+        if self._known is not None:
+            self._known.written(digests)
         self.stats.embedded += len(rows)
         if self._cache is not None:
             try:
-                self._cache.put_matrix(self._model_id, digests, matrix)
+                with self.clock.stage("vec_cache_put"):
+                    self._cache.put_matrix(self._model_id, digests, matrix)
             except EmbeddingCacheError as exc:  # 缓存写失败不影响索引
                 logger.warning("embedding 缓存写入失败：%s", exc)
 
@@ -304,8 +357,10 @@ class EmbeddingPipeline:
     ) -> None:
         self._workers = max(1, workers) if workers is not None else embed_workers()
         self._window = embed_window_size(embedding)
+        #: 开始时取一次表内容快照（同一次 ingest 共享，见 KnownVectors）。
+        known = KnownVectors(vectors.id_hash_snapshot())
         self._sinks = [
-            EmbeddingSink(embedding, vectors, cache=cache, window=self._window)
+            EmbeddingSink(embedding, vectors, cache=cache, window=self._window, known=known)
             for _ in range(self._workers)
         ]
         #: 主线程攒窗缓冲（< 1 窗）；攒满即派发，关停时把余量作为"尾窗"派发一次。
@@ -335,6 +390,14 @@ class EmbeddingPipeline:
     def window(self) -> int:
         """**每个消费者**的窗口（chunk 数）= ``批大小 × 并发 ÷ K``。"""
         return self._window
+
+    def timings(self) -> tuple[StageTiming, ...]:
+        """各消费者线程分段计时的合计（墙钟与 CPU 都是各线程之和，不是向量阶段的墙钟）。"""
+        total = StageClock()
+        for sink in self._sinks:
+            for name, wall_s, cpu_s in sink.clock.snapshot():
+                total.add(name, wall_s, cpu_s)
+        return total.snapshot()
 
     @property
     def stats(self) -> EmbeddingStats:

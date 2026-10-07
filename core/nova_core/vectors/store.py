@@ -355,6 +355,30 @@ class VectorStore:
             )
         return {row[CHUNK_ID_COLUMN]: row[CONTENT_HASH_COLUMN] for row in rows}
 
+    def id_hash_snapshot(self) -> dict[str, str]:
+        """全表 ``chunk_id -> content_hash``（不读向量列）；空表免扫描。
+
+        供一次 ingest 开始时建立"表里有什么"的视图（见 ``pipeline.embedding_sink.KnownVectors``）。
+        """
+        self._ensure_open()
+        with self._lock:
+            rows = int(self._table.count_rows())
+            if rows == 0:
+                return {}
+            table = self._translate_errors(
+                lambda: self._table.search(None)
+                .select([CHUNK_ID_COLUMN, CONTENT_HASH_COLUMN])
+                .limit(rows)
+                .to_arrow()
+            )
+        return dict(
+            zip(
+                table.column(CHUNK_ID_COLUMN).to_pylist(),
+                table.column(CONTENT_HASH_COLUMN).to_pylist(),
+                strict=True,
+            )
+        )
+
     def get_vectors_by_hash(
         self, content_hashes: Sequence[str]
     ) -> dict[str, tuple[str, list[float]]]:

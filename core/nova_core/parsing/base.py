@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import importlib
+import threading
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
@@ -168,7 +169,9 @@ class TreeSitterParser:
     _grammar_cache: ClassVar[dict[str, ts.Language]] = {}
 
     def __init__(self) -> None:
-        self._parser: ts.Parser | None = None
+        # ``ts.Parser`` 不是线程安全的：上传期预取线程与 ingest 主线程可能同时解析，
+        # 因此每个线程各持一个（grammar 仍进程内共享）。
+        self._local = threading.local()
 
     @classmethod
     def grammar(cls) -> ts.Language:
@@ -181,9 +184,11 @@ class TreeSitterParser:
         return cached
 
     def parser(self) -> ts.Parser:
-        if self._parser is None:
-            self._parser = ts.Parser(self.grammar())
-        return self._parser
+        parser = getattr(self._local, "parser", None)
+        if parser is None:
+            parser = ts.Parser(self.grammar())
+            self._local.parser = parser
+        return parser
 
     # -- Parser 协议 ---------------------------------------------------------
 

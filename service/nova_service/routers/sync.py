@@ -113,6 +113,9 @@ def batch_upload(payload: BatchUploadRequest, request: Request) -> dict[str, Any
         state.set_head(payload.branch, payload.commit)
         state.save()
         report = None if payload.deferIndexing else manager.flush_sync(project_id)
+    if payload.deferIndexing:
+        # 已持久化：趁客户端继续上传的空档，后台线程提前做纯计算（flush 时直接取用）。
+        manager.prefetch_uploaded(project_id, decoded)
     return {
         "accepted": accepted,
         "skipped": list(report.skipped_files) if report is not None else [],

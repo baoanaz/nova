@@ -39,6 +39,8 @@ from typing import Any, TypeVar
 
 from nova_core.engine import PROJECT_META_FILENAME, Engine, EngineError, RepoIdentity, SearchTrace
 from nova_core.pipeline import IngestReport
+from nova_core.pipeline.ignore import IndexScope
+from nova_core.pipeline.prepare import UploadPrefetcher
 from nova_core.storage.db import DB_FILENAME
 from nova_core.types import BlobInput, ChangeSet, ProjectHandle
 
@@ -126,6 +128,10 @@ class EngineManager:
         self._last_rescan: dict[str, float] = {}
         #: 元数据库（TASK-062/064：索引历史与查询审计）；未注入时历史/统计退化为空而不报错。
         self._meta_db: MetaDB | None = None
+        #: 上传期预取（``nova_core.pipeline.prepare``）：上传落盘后用后台线程提前做纯计算，
+        #: flush 时 ingest 直接取用。``NOVA_UPLOAD_PREFETCH=0`` 关闭；引擎已注入的不覆盖。
+        if engine.prefetcher is None:
+            engine.set_prefetcher(UploadPrefetcher.from_env())
 
     @classmethod
     def open(
@@ -247,6 +253,8 @@ class EngineManager:
                 if not self.project_exists(project_id):
                     return False
                 self._engine.delete_project(project_id)
+                if self._engine.prefetcher is not None:
+                    self._engine.prefetcher.discard(project_id)
                 # Keep the lock identity: requests already waiting on it must not race
                 # a newly resolved project using a different lock for the same id.
             return True
@@ -274,6 +282,20 @@ class EngineManager:
 
     # ------------------------------------------------------------------ 数据面
 
+    def prefetch_uploaded(self, project_id: str, items: list[BlobInput]) -> None:
+        """上传落盘后登记预取（纯优化：任何失败只记日志，不影响上传结果）。"""
+        prefetcher = self._engine.prefetcher
+        if prefetcher is None or not items:
+            return
+        try:
+            prefetcher.submit(
+                project_id,
+                [(item.path, item.blob_hash, item.content) for item in items],
+                IndexScope.from_env(),
+            )
+        except Exception:  # noqa: BLE001 - 预取失败不得影响上传
+            logger.warning("上传期预取登记失败：project=%s", project_id, exc_info=True)
+
     def project_lock(self, project_id: str) -> threading.RLock:
         """Serialize blob/ledger/index mutations with the same project lock."""
         return self._lock_for(project_id)
@@ -281,6 +303,7 @@ class EngineManager:
     def flush_sync(self, project_id: str) -> IngestReport:
         """Ingest one durable pending set; exceptions leave it available for retry."""
         with self._lock_for(project_id):
+            started = time.perf_counter()
             state = self.sync_state(project_id)
             if not state.pending:
                 return IngestReport()
@@ -292,10 +315,12 @@ class EngineManager:
                 item = BlobInput(path=path, content=source.read(path),
                                  blob_hash=files[path].blob_hash)
                 (added if kind == "added" else modified).append(item)
+            loaded = time.perf_counter()
             report = self.ingest(project_id, ChangeSet(
                 added=tuple(added), modified=tuple(modified), deleted=state.pending_deleted,
                 branch=state.branch, commit_id=state.commit,
             ))
+            ingested = time.perf_counter()
             if not report.errors:
                 state.complete_pending(report.skipped_files)
                 state.save()
@@ -303,6 +328,21 @@ class EngineManager:
                     previous = self._indexers.get(project_id)
                     if previous is not None and not previous.running and previous.progress().error:
                         self._indexers.pop(project_id, None)
+            logger.info(
+                "flush 完成：%s",
+                json.dumps(
+                    {
+                        "projectId": project_id,
+                        "files": len(added) + len(modified),
+                        "prefetched": report.prefetched,
+                        "loadBlobsS": round(loaded - started, 4),
+                        "ingestS": round(ingested - loaded, 4),
+                        "ledgerS": round(time.perf_counter() - ingested, 4),
+                        "stages": [list(stage) for stage in report.timings],
+                    },
+                    ensure_ascii=False,
+                ),
+            )
             return report
 
     def start_sync(self, project_id: str) -> IndexProgress:
@@ -542,6 +582,8 @@ class EngineManager:
             indexer.cancel()
             indexer.join()
         self._indexers.clear()
+        if self._engine.prefetcher is not None:
+            self._engine.prefetcher.close()
         self._engine.close()
 
     # ------------------------------------------------------------------ 内部（本地模式）
