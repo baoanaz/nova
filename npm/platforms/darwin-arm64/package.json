@@ -2,7 +2,7 @@
   "name": "zace-client-darwin-arm64",
   "version": "0.0.8",
   "description": "Platform binary for zace-client (darwin/arm64). Installed automatically by zace-client; do not install directly.",
-  "license": "MIT OR Apache-2.0",
+  "license": "Unlicense",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/baoanaz/zace.git"

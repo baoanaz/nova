@@ -1,112 +1,53 @@
-# 快速开始（本地把 zace 跑起来）
+# core 快速开始
 
-> **读者**：第一次接触本仓库，想在本地跑通 core 的人。
-> **产出**：能对一个仓库建索引并检索。
->
-> 要**部署服务**（有 WebUI / MCP 接入）→ 看完本页后去
-> [`../deployment/wsl-live.md`](../deployment/wsl-live.md)。
+[文档中心](../../README.md) · [完整服务与 UI 部署](../deployment/local.md)
 
-## 1. 环境要求
+本篇直接使用 `zace-core` CLI 对仓库建索引和检索，不启动 Web 或账户服务。想配置 UI、API Key 和 MCP，请阅读完整部署指南。
 
-| 依赖 | 版本 | 说明 |
-|---|---|---|
-| Python | **3.12+** | core 与 service |
-| [uv](https://docs.astral.sh/uv/) | 最新 | 包管理与运行（不要用裸 pip） |
-| Node.js | 20+ | 仅前端 `web/` 与 MCP 客户端 `client/` |
-| Rust | 1.75+ | 仅从源码构建 `client/`（用 `npx` 则不需要） |
+## 1. 准备环境
 
-```bash
-# 检查
-python3 --version   # 需 >= 3.12
-uv --version
-node --version
-```
-
-WSL 上安装 uv：
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-## 2. 获取代码与依赖
+需要 Python 3.12+、uv 和 Git。只有运行 Web 或 npm 客户端时才需要 Node.js；从源码编译客户端时才需要 Rust。
 
 ```bash
 git clone https://github.com/baoanaz/zace.git
 cd zace
-uv sync          # 装全部 workspace 依赖
+bash scripts/setup-dev.sh
 ```
 
-## 3. 仓库结构（要知道的三个目录）
+安装脚本使用锁定依赖，并创建不含实际密钥的本机配置。详细环境清单见 [ENVIRONMENT.txt](../../../ENVIRONMENT.txt)。
 
-```text
-zace/
-├── core/        zace_core：索引、检索、组装（纯逻辑，不依赖网络框架）
-├── service/     zace_service：FastAPI 服务（HTTP + MCP 端点）
-├── client/      Rust MCP stdio 客户端（本地扫描 + 上传代理）
-├── web/         React 控制台
-├── benches/     golden 用例与基准脚本
-└── docs/        本手册 + 设计 + 任务卡
-```
+## 2. 配置模型
 
-依赖方向是单向的：`service → core`，`client` 独立。
-（有静态检查保护：`uv run python scripts/check_dependency_direction.py`）
+在仓库外的 `$HOME/.key/zace/secrets.env` 中填写真实 `EMBED_API_KEY`。当前 `.env.example` 默认使用 Voyage API、`voyage-4-lite`、1024 维；真实向量索引需要有效的模型配置。
 
-## 4. 配置（最少一步）
-
-**没有 key 也能用**吗？——检索需要 embedding，Mock embedding 仅供测试。
-要用真实模型，需要配一个 key：
+从仓库根目录加载环境：
 
 ```bash
-cp .env.example .env
-chmod 600 .env       # 含密钥必须 600
-# 编辑 .env，填 EMBED_API_KEY
-set -a; source .env; set +a
+set -a
+source .env
+set +a
 ```
 
-主路径是 **Voyage `voyage-4-lite`**；备选硅基流动 `bge-m3`（免费但 TPM 低）。
-细节与坑见 [`cloud-embedding.md`](cloud-embedding.md)，
-密钥管理见 [`../privacy/资产清单.md`](../privacy/资产清单.md)。
+API 模式会把相应代码或文档文本发送给配置的 embedding 服务。Mock embedding 只用于测试，不能把它当作实际检索质量的依据。切换模型和数据指纹的约定见 [配置切换手册](../operations/embedding-provider切换.md)。
 
-## 5. 建索引并检索
+## 3. 建索引与查询
 
 ```bash
-# 建索引（--data 指定数据根；换机器时它要跟着走）
-uv run zace-core ingest --repo /path/to/some/repo --data ~/.zace/demo
-
-# 检索
-uv run zace-core search --data ~/.zace/demo "你的问题"
+uv run zace-core ingest --repo /绝对路径/你的仓库 --data .local/core-demo
+uv run zace-core search --data .local/core-demo "你的代码问题"
 ```
 
-> **数据根是你的数据资产**：索引与项目元数据都在这里，换代码不影响。
-> 未指定 `--data` 时用默认位置。
+第一条命令完成仓库解析与索引，第二条命令对同一数据根查询。`--data` 决定这组索引的位置，后续操作应使用对应目录；检索选项可通过 `uv run zace-core search --help` 查看。
 
-## 6. 跑测试
+core CLI 适合直接验证索引与检索，完整 Agent 场景使用 `zace-service` 与 npm 客户端。
 
-```bash
-uv run pytest -o addopts="" -q      # 全仓
-uv run ruff check .                 # 风格
-uv run python scripts/check_dependency_direction.py   # 依赖方向
-```
+## 4. 下一步
 
-> 根 `pyproject.toml` 设了 `addopts = "-q"`，直接 `uv run pytest` **不打印**汇总行；
-> 要看数字加 `-o addopts=""`。
-
-## 7. 下一步
-
-| 目标 | 去哪 |
+| 目标 | 文档 |
 |---|---|
-| 起服务 + WebUI + MCP 接入 | [`../deployment/wsl-live.md`](../deployment/wsl-live.md) |
-| 编辑器里接 MCP（`npx zace-client`） | [`agent接入与API-Key.md`](agent接入与API-Key.md) |
-| 改检索代码后跑回归 | [`../benchmark/README.md`](../benchmark/README.md) |
-| 查请求问题 | [`../operations/请求日志与trace-id报错手册.md`](../operations/请求日志与trace-id报错手册.md) |
-| 理解设计与决策 | [`../../design/INDEX.md`](../../design/INDEX.md) |
+| 启动服务、UI 和 MCP | [本地部署](../deployment/local.md) |
+| 理解索引与检索链路 | [架构介绍](../../architecture/README.md) |
+| 跑固定靶场与质量回归 | [Benchmark 方案](../benchmark/README.md) |
+| 提交 core 改动 | [贡献指南](../../../CONTRIBUTING.md) |
 
-## 8. 常见问题
-
-| 现象 | 原因 |
-|---|---|
-| `uv sync` 慢或失败 | 首次要下载依赖；检查网络/代理 |
-| 索引报 embedding 错误 | `EMBED_API_KEY` 未加载（需 `set -a; source .env; set +a`） |
-| 连不上 `127.0.0.1` | WSL 设了 `http_proxy`：`export no_proxy='*'` |
-| `pytest` 没打印通过数 | 加 `-o addopts=""`（见 §6） |
-| 检索结果很差 | 先用 golden 基准确认不是环境问题 → [`../benchmark/README.md`](../benchmark/README.md) |
+若索引失败，先检查加载的凭据、模型地址和供应商返回的错误；切勿将真实 Key 放入 Issue 或评测报告。

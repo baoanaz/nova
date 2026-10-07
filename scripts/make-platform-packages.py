@@ -97,7 +97,7 @@ def _payload(spec: dict, version: str) -> dict:
             f"({spec['os']}/{spec['cpu']}). Installed automatically by {MAIN_PACKAGE_NAME}; "
             "do not install directly."
         ),
-        "license": "MIT OR Apache-2.0",
+        "license": "Unlicense",
         "repository": {
             "type": "git",
             "url": "git+https://github.com/baoanaz/zace.git",

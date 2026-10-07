@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">zace</title>
+  <desc id="desc">暖白底与珊瑚橙代码括号，方形边框和偏移阴影；中央折线代表从代码到上下文的连接。</desc>
+  <rect x="17" y="17" width="100" height="100" fill="#dbcac0"/>
+  <rect x="9" y="9" width="100" height="100" fill="#fff8f2" stroke="#ce684b" stroke-width="2"/>
+  <rect x="19" y="19" width="80" height="80" fill="#fbe7db"/>
+  <g fill="none" stroke="#c85635" stroke-width="4" stroke-linecap="square" stroke-linejoin="miter">
+    <path d="M40 44 25 59l15 15M78 44l15 15-15 15"/>
+    <path d="M53 44h15L50 74h15"/>
+  </g>
+  <g fill="#c85635">
+    <rect x="50" y="41" width="6" height="6"/>
+    <rect x="62" y="71" width="6" height="6"/>
+  </g>
+</svg>

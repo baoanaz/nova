@@ -2,7 +2,7 @@
   "name": "zace-client",
   "version": "0.0.8",
   "description": "MCP stdio client for zace: local codebase sync proxy backed by a remote zace-service",
-  "license": "MIT OR Apache-2.0",
+  "license": "Unlicense",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/baoanaz/zace.git"

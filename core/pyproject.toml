@@ -3,6 +3,7 @@ name = "zace-core"
 version = "0.0.1"
 description = "zace 核心引擎纯库（Module/01-04）：切片存储 / 检索 / 上下文组装 / AI 总结"
 requires-python = ">=3.12"
+license = "Unlicense"
 # 纯库纪律（D-34）：本清单禁止出现 HTTP 服务框架 / 用户体系 / 租户依赖，
 # 由 scripts/check_dependency_direction.py 在 CI 强制。
 # 具体版本由各任务（TASK-001..014）落地时锁定到 uv.lock。

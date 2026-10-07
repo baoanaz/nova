@@ -3,6 +3,7 @@ name = "zace-service"
 version = "0.0.1"
 description = "zace 服务化外壳（Module/06）：HTTP API / 鉴权 / 租户映射 / 索引 job / 审计"
 requires-python = ">=3.12"
+license = "Unlicense"
 dependencies = [
     "zace-core",
     "fastapi>=0.115",
