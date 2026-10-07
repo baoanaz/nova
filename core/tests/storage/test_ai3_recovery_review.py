@@ -5,21 +5,22 @@ Known defects assert the desired behavior under strict xfail. Run with
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
 import sys
 from dataclasses import asdict
-import json
 
 import pytest
-
 from nova_core.chunking import resolve_graph
 from nova_core.storage import EdgeTargetUpdate, RefResolution, Store
 from nova_core.types import EdgeDef, ParsedFile, UnresolvedRef
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="AI3-1: edge ownership omits source file")
+@pytest.mark.xfail(
+    strict=True, raises=AssertionError, reason="AI3-1: edge ownership omits source file",
+)
 @pytest.mark.parametrize("operation", ["replace", "delete"])
 def test_namesake_file_keeps_other_files_edges(store, make_symbol, operation):
     symbol = make_symbol(name="run", fqn="Worker.run")
@@ -44,7 +45,9 @@ def test_namesake_file_keeps_other_files_edges(store, make_symbol, operation):
     assert "a.target" in targets
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="AI3-2: unresolved deduplication omits file_path")
+@pytest.mark.xfail(
+    strict=True, raises=AssertionError, reason="AI3-2: unresolved deduplication omits file_path",
+)
 def test_namesake_refs_resolve_to_each_files_local_symbol(store, make_symbol):
     for path, target in (("a.py", "A.helper"), ("b.py", "B.helper")):
         store.apply_file_change(
@@ -60,7 +63,9 @@ def test_namesake_refs_resolve_to_each_files_local_symbol(store, make_symbol):
     assert targets == {"A.helper", "B.helper"}
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="AI3-3: retarget swallows non-unique IntegrityError")
+@pytest.mark.xfail(
+    strict=True, raises=AssertionError, reason="AI3-3: retarget swallows non-unique IntegrityError",
+)
 def test_retarget_abort_preserves_edge_for_retry(store):
     store._conn.execute("INSERT INTO edges VALUES ('caller','helper','calls',2,'parsed')")
     store._conn.execute(
@@ -79,8 +84,6 @@ def test_retarget_abort_preserves_edge_for_retry(store):
     assert store.retarget_edges([update]) == 1
 
 
-@pytest.mark.xfail(strict=True, raises=sqlite3.OperationalError,
-                   reason="AI3-4: graph query batches hardcode 500 parameters")
 @pytest.mark.parametrize("operation", ["targets", "specs"])
 def test_graph_batches_respect_actual_variable_limit(store, operation):
     store._conn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 80)
@@ -165,9 +168,15 @@ os._exit(73)
             ).fetchall()
             assert {r["id"] for r in rows} == {c.id for c in expected}
             assert all(r["content"] == r["content_seg"] for r in rows)
-            assert store._conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0] == len(expected)
+            assert (
+                store._conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0]
+                == len(expected)
+            )
             expected_hash = "newhash" if phase == "committed" else "oldhash"
-            assert store._conn.execute("SELECT content_hash FROM files").fetchone()[0] == expected_hash
+            assert (
+                store._conn.execute("SELECT content_hash FROM files").fetchone()[0]
+                == expected_hash
+            )
             store.apply_file_change(parsed, new, "newhash")
             assert store.counts()["chunks"] == 130
             assert store._conn.execute("SELECT count(*) FROM chunks_fts").fetchone()[0] == 130
