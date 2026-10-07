@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 import sqlite3
 
@@ -115,7 +116,7 @@ def test_ascii_fast_path_does_not_load_jieba(monkeypatch: pytest.MonkeyPatch) ->
 
 @pytest.mark.parametrize("text", _NON_ASCII_SAMPLES)
 def test_non_ascii_input_still_uses_jieba(text: str) -> None:
-    """分派条件必须只放行纯 ASCII——含变音字母/其它文字时逐字节等于 jieba 输出。"""
+    """含变音字母/其它文字时仍逐字节等于 jieba 输出。"""
     assert segment(text) == _jieba_segment(text)
 
 
@@ -127,3 +128,119 @@ def test_mixed_text_keeps_jieba_for_the_whole_string() -> None:
     # 文档侧若是不含 CJK 的纯 ASCII，快速路径给出的 token 必须能与上面的查询对上。
     ascii_terms = {term for term, _ in _fts_terms(segment("return refresh_token"))}
     assert {"refresh", "token"} <= ascii_terms
+
+
+_PUNCTUATED_ASCII_SAMPLES = (
+    "TokenService.refresh_token — returns ‘token’…",
+    "def f(x):  # → refresh_token\n    return 3.14\n",
+    "3.14 42% 0x1F v1.2.3-rc.1 ± 2.0%",
+    "a-b_c.d e++f &g#h %i — -- __ .. %% ++ ## &&",
+    "hello\u00a0world\u2003again\u2028end\u0085next",
+    "© 2026 • price €42 ™ ✓ ★ 😀",
+    "（hello），world！「refresh_token」",
+    "\u00a0\u2003\u2028\u0085",
+    "—…±😀",
+)
+
+
+def _fts_token_stream(text: str) -> list[tuple[str, int]]:
+    """instance 视图保留顺序、重复项和位置，避免词频相同掩盖 token 重排。"""
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE doc USING fts5(body, tokenize='unicode61')")
+        conn.execute("INSERT INTO doc(body) VALUES (?)", (text,))
+        conn.execute("CREATE VIRTUAL TABLE vocab USING fts5vocab(doc, 'instance')")
+        return list(conn.execute("SELECT term, offset FROM vocab ORDER BY offset"))
+    finally:
+        conn.close()
+
+
+@pytest.mark.parametrize("text", _PUNCTUATED_ASCII_SAMPLES)
+def test_punctuated_ascii_preserves_shape_and_fts_stream(text: str) -> None:
+    reference = _jieba_segment(text)
+    assert segment(text) == reference
+    assert _fts_token_stream(segment(text)) == _fts_token_stream(reference)
+
+
+@pytest.mark.parametrize("text", _PUNCTUATED_ASCII_SAMPLES)
+def test_punctuated_ascii_does_not_load_jieba(
+    text: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nova_core.text import segmenter
+
+    reference = _jieba_segment(text)
+
+    def forbidden_load() -> None:
+        pytest.fail("eligible punctuation-only text must bypass jieba")
+
+    monkeypatch.setattr(segmenter, "_jieba", None)
+    monkeypatch.setattr(segmenter, "_load_jieba", forbidden_load)
+    assert segment(text) == reference
+    assert segmenter._jieba is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    _NON_ASCII_SAMPLES
+    + (
+        "hello — 中文",
+        "cafe\u0301 — resume",
+        "hello — 日本語 カタカナ 한글 العربية",
+        "value — １２３ ١٢٣ ² Ⅳ",
+        "emoji 👩\u200d💻 variant ✓\ufe0f",
+        "hidden\u200btext — value",
+        "surrogate \ud800 — value",
+    )
+    + tuple(
+        f"{prefix}{word}{suffix} — language"
+        for word in ("AT&T", "C#", "c#", "C++", "c++")
+        for prefix, suffix in (("", ""), ("prefix", "suffix"))
+    ),
+)
+def test_new_fast_path_falls_back_for_language_and_dictionary_words(
+    text: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from nova_core.text import segmenter
+
+    calls = []
+
+    def reference(value: str) -> str:
+        calls.append(value)
+        return _jieba_segment(value)
+
+    monkeypatch.setattr(segmenter, "_jieba_segment", reference)
+    assert segment(text) == _jieba_segment(text)
+    assert calls == [text]
+
+
+def test_punctuated_ascii_generated_differential() -> None:
+    """固定种子的边界组合：字面量、ASCII 控制符和 Unicode 分隔符。"""
+    rng = random.Random(114)
+    alphabet = "abcXYZ019.+#&_%-/=() \t\n\r\x00\x1c—…±😀\u00a0\u2003\u0085"
+    for _ in range(300):
+        text = "—" + "".join(rng.choices(alphabet, k=rng.randrange(1, 150)))
+        reference = _jieba_segment(text)
+        actual = segment(text)
+        assert actual == reference, repr(text)
+        assert _fts_token_stream(actual) == _fts_token_stream(reference), repr(text)
+
+
+@pytest.mark.parametrize("text", _PUNCTUATED_ASCII_SAMPLES)
+def test_punctuated_ascii_fts_phrase_matches_reference(text: str) -> None:
+    """旧索引/新查询和新索引/旧查询的 phrase 命中保持一致。"""
+    old = _jieba_segment(text)
+    new = segment(text)
+    conn = sqlite3.connect(":memory:")
+    try:
+        conn.execute("CREATE VIRTUAL TABLE doc USING fts5(body, tokenize='unicode61')")
+        conn.executemany("INSERT INTO doc(body) VALUES (?)", [(old,), (new,)])
+        for query_text in (old, new):
+            terms = [term for term, _ in _fts_token_stream(query_text)]
+            if not terms:
+                assert _fts_token_stream(old) == _fts_token_stream(new) == []
+                continue
+            query = '"' + " ".join(terms).replace('"', '""') + '"'
+            rows = conn.execute("SELECT rowid FROM doc WHERE doc MATCH ?", (query,))
+            assert list(rows) == [(1,), (2,)]
+    finally:
+        conn.close()
