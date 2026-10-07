@@ -116,6 +116,22 @@ def remove_run_data(out):
         shutil.rmtree(directory)
 
 
+def resource_snapshot():
+    """Untimed boundary counters, not per-operation tracing."""
+    result = {}
+    try:
+        result['meminfo'] = Path('/proc/meminfo').read_text()
+        group = next(line[3:] for line in Path('/proc/self/cgroup').read_text().splitlines()
+                     if line.startswith('0::'))
+        root = Path('/sys/fs/cgroup')/group.lstrip('/')
+        for name in ('memory.events', 'memory.stat', 'memory.pressure',
+                     'io.pressure', 'cpu.stat'):
+            result[name] = (root/name).read_text()
+    except (OSError, StopIteration) as error:
+        result['unavailable'] = str(error)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, required=True)
@@ -158,7 +174,11 @@ def main():
             command = [sys.executable, str(Path(__file__).with_name('sync_probe.py')),
                        '--kind', 'client', '--fixture', str(args.fixture),
                        '--repo', str(args.repo), '--out', str(out), '--client', str(binary)]
+            resources_before = resource_snapshot()
             subprocess.run(command, env=env, check=True)
+            resources_after = resource_snapshot()
+            (out/'resource-boundaries.json').write_text(json.dumps(
+                dict(before=resources_before, after=resources_after), indent=2))
             result = json.loads((out/'result.json').read_text())
             assert not result['server']['phases_s'], 'Acceptance run must disable phase patches'
             assert str(args.source) in result['server']['engine_source']
