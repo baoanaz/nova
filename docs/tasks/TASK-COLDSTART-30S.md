@@ -70,7 +70,34 @@ all individual samples visible rather than subtracting build modes.
 Validation before performance run: 66 core resolver/storage/pipeline tests and
 13 service deferred-sync recovery tests passed. Independent advisor was called
 with the patch only (no repository indexing), but returned HTTP 502; no independent
-review approval is claimed. End-to-end graph-batch measurements are pending.
+review approval is claimed.
+
+Graph commit `ecbb582`, all content equality checks passed:
+
+| Mode | Run 1 | Run 2 | Run 3 | Median | Saved vs original |
+|---|---:|---:|---:|---:|---:|
+| debug | 46.370635 | 50.978797 | 64.333217 | 50.978797 | 0.435226 |
+| release | 64.776540 | 55.073626 | 48.992020 | 55.073626 | 0.933182 |
+
+These small differences are not reliable gains given the observed variation.
+The change remains experimental; later acceptance must confirm its end-to-end
+contribution or remove it. The remaining median gaps are 20.98s/25.07s.
+
+## SQL batch candidate
+
+File writes now use bounded multi-row statements for chunks, symbols, spec
+blocks, edges and multi-chunk FTS payloads. Existing deletion/overwrite and
+SAVEPOINT/outer-transaction boundaries remain unchanged. FTS row IDs are mapped
+by chunk identity, independent of RETURNING ordering. SQLite before 3.35 uses a
+post-insert indexed lookup instead of requiring RETURNING. The connection's real
+parameter limit bounds each statement.
+
+105 existing storage/resolver/pipeline tests passed. Three additional cases
+cover lowered parameter limits, reordered RETURNING rows, older SQLite fallback,
+and a late-statement constraint failure that restores the old file and permits
+retry. Performance acceptance is pending. Untimed resource boundary snapshots
+are added to distinguish memory/I/O pressure from code changes; no phase probes
+are enabled.
 
 ## Reproduction
 
