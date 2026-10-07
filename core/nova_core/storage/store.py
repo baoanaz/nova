@@ -320,30 +320,8 @@ class Store:
         代价：写锁持有到整批结束、失败时整批回滚（比"留半成品"更符合 ingest 的原子语义）、
         WAL 在提交前持续增长。调用方负责把批的大小控制在合理范围。
         """
-        # Empty-build cache is scoped to this outer transaction. It reduces dirty
-        # page churn without changing synchronization, WAL or commit boundaries.
-        outer = not self._conn.in_transaction
-        previous_cache = None
-        try:
-            with transaction(self._conn):
-                tables = (
-                    "files", "chunks", "symbols", "edges", "unresolved_refs",
-                    "spec_blocks", "spec_references", "chunks_fts",
-                )
-                if outer and all(
-                    self._conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is None
-                    for table in tables
-                ):
-                    cache = int(self._conn.execute("PRAGMA cache_size").fetchone()[0])
-                    page_size = int(self._conn.execute("PRAGMA page_size").fetchone()[0])
-                    cache_kib = -cache if cache < 0 else cache * page_size // 1024
-                    if cache_kib < 32768:
-                        previous_cache = cache
-                        self._conn.execute("PRAGMA cache_size = -32768")
-                yield
-        finally:
-            if previous_cache is not None:
-                self._conn.execute(f"PRAGMA cache_size = {previous_cache}")
+        with transaction(self._conn):
+            yield
 
     # ------------------------------------------------------------------ 写路径
 
