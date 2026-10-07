@@ -639,8 +639,10 @@ class Store:
         ids = list(dict.fromkeys(item.ref_id for item in resolutions))
         with transaction(self._conn) as conn:
             found: dict[int, sqlite3.Row] = {}
-            for start in range(0, len(ids), _SQLITE_PARAM_BATCH):
-                batch = ids[start:start + _SQLITE_PARAM_BATCH]
+            size = max(1, min(_SQLITE_PARAM_BATCH,
+                              conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)))
+            for start in range(0, len(ids), size):
+                batch = ids[start:start + size]
                 placeholders = ",".join("?" for _ in batch)
                 for row in conn.execute(
                     "SELECT id, from_symbol, reference_kind, line FROM unresolved_refs "
@@ -726,7 +728,9 @@ class Store:
         symbols = list(dict.fromkeys(symbol_id for _, symbol_id in unique))
         with transaction(self._conn) as conn:
             existing: set[tuple[str, str]] = set()
-            for batch in _batches(symbols):
+            size = max(1, min(_SQLITE_PARAM_BATCH,
+                              conn.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)))
+            for batch in _batches(symbols, size):
                 placeholders = ",".join("?" for _ in batch)
                 existing.update(
                     (row["spec_block_id"], row["symbol_id"])

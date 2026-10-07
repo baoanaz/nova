@@ -95,9 +95,41 @@ parameter limit bounds each statement.
 105 existing storage/resolver/pipeline tests passed. Three additional cases
 cover lowered parameter limits, reordered RETURNING rows, older SQLite fallback,
 and a late-statement constraint failure that restores the old file and permits
-retry. Performance acceptance is pending. Untimed resource boundary snapshots
-are added to distinguish memory/I/O pressure from code changes; no phase probes
-are enabled.
+retry. Commit `2ce75ab` passed all six complete-Tool content checks:
+
+| Mode | Run 1 | Run 2 | Run 3 | Median | Saved vs original |
+|---|---:|---:|---:|---:|---:|
+| debug | 46.172572 | 45.310423 | 45.865514 | 45.865514 | 5.548509 |
+| release | 41.582043 | 41.049195 | 41.286079 | 41.286079 | 14.720730 |
+
+This combines graph+SQL. The original release baseline's variation means the
+entire 14.72s difference cannot confidently be attributed to code alone. Final
+acceptance will use interleaved controls. Remaining gaps: 15.87s/debug and
+11.29s/release. Untimed cgroup counters showed zero memory.high/max/OOM events;
+whole-probe full I/O pressure was 3.99–5.30s (includes setup, not an additive Tool
+stage). No phase probes were enabled.
+
+## Rejected page-cache experiment
+
+Commit `4536e07` temporarily raised SQLite cache to 32 MiB only for an empty
+initial write batch and restored it after commit/rollback. 116 tests passed,
+including abrupt process exit and replay, and all six Tool content checks passed.
+
+| Mode | Run 1 | Run 2 | Run 3 | Median | Change vs SQL version |
+|---|---:|---:|---:|---:|---:|
+| debug | 54.899745 | 54.309725 | 51.737064 | 54.309725 | 8.444211 slower |
+| release | 43.338594 | 44.781601 | 50.083057 | 44.781601 | 3.495523 slower |
+
+No end-to-end benefit was demonstrated, so `56d897c` reverted the candidate.
+The frozen worktree/results remain for audit; production code retains the
+original cache policy. Do not claim the cache experiment as an optimization.
+
+## Independent review
+
+AI3's `2db64fe` review was received as `c7e72b8`. Its new graph parameter-limit
+regression is fixed, with 17 passed/4 xfailed in targeted review/batch tests.
+The four xfails document three pre-existing graph ownership/error-handling
+issues; they are not claimed fixed. See `AI3-RECOVERY-REVIEW-2ce75ab.md`.
 
 ## Reproduction
 
