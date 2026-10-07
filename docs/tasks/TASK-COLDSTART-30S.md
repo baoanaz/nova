@@ -95,9 +95,34 @@ parameter limit bounds each statement.
 105 existing storage/resolver/pipeline tests passed. Three additional cases
 cover lowered parameter limits, reordered RETURNING rows, older SQLite fallback,
 and a late-statement constraint failure that restores the old file and permits
-retry. Performance acceptance is pending. Untimed resource boundary snapshots
-are added to distinguish memory/I/O pressure from code changes; no phase probes
-are enabled.
+retry. Commit `2ce75ab` passed all six complete-Tool content checks:
+
+| Mode | Run 1 | Run 2 | Run 3 | Median | Saved vs original |
+|---|---:|---:|---:|---:|---:|
+| debug | 46.172572 | 45.310423 | 45.865514 | 45.865514 | 5.548509 |
+| release | 41.582043 | 41.049195 | 41.286079 | 41.286079 | 14.720730 |
+
+This is the combined graph+SQL version. The original release baseline's larger
+variation means the full 14.72s difference cannot confidently be attributed to
+code alone; final acceptance will use interleaved controls. The remaining gaps
+are 15.87s/debug and 11.29s/release.
+
+Untimed resource boundary snapshots distinguish memory/I/O pressure from code
+changes; no phase probes are enabled. SQL samples had zero memory.high/max/OOM
+events. Whole-probe cgroup full I/O pressure was 3.99–5.30s; those counters also
+include process setup and are not an exclusive Tool stage or a savings forecast.
+
+## Scoped first-build page cache candidate
+
+Only an outer write batch with all content tables empty raises a smaller SQLite
+page cache to 32 MiB. Existing larger settings remain intact. The original value
+is restored after COMMIT or ROLLBACK. Nested batches and partially populated
+indexes do not start a new cache scope. Synchronous mode, WAL/checkpoint policy,
+transaction boundaries and per-file SAVEPOINT behavior remain unchanged.
+
+116 storage/resolver/pipeline tests pass, including cache restoration, nested
+transactions, nonempty/orphan-content guards, larger configured caches and a
+process exiting before commit followed by reopen/replay. Performance pending.
 
 ## Reproduction
 
