@@ -30,6 +30,7 @@ const MAX_BATCH_BYTES: usize = 1024 * 1024;
 pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(30);
 pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
+pub const INDEX_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// 对外错误文本里的响应体截断（Module 05 §2.2：512 字节）。
 const MAX_ERROR_SNIPPET_BYTES: usize = 512;
 /// callId（= 服务端的 ``X-Request-Id``）的请求头名（TASK-099 §B-2）。
@@ -107,6 +108,7 @@ pub struct UploadOutcome {
     pub accepted: HashSet<String>,
     pub skipped_paths: HashSet<String>,
     pub batches: usize,
+    pub indexing_deferred: bool,
 }
 
 /// 远端客户端（一个服务端地址一个实例）。
@@ -221,6 +223,7 @@ impl RemoteClient {
             let payload = serde_json::json!({
                 "projectId": project_id,
                 "blobs": blobs,
+                "deferIndexing": true,
             });
             let response = self
                 .request(
@@ -232,6 +235,12 @@ impl RemoteClient {
                 .json()
                 .await
                 .context("batch-upload 响应不是合法 JSON")?;
+            if let Some(report) = body.report {
+                if !report.errors.is_empty() {
+                    bail!("索引失败：{}", report.errors.join("; "));
+                }
+            }
+            outcome.indexing_deferred |= body.indexing_deferred;
             outcome.accepted.extend(body.accepted);
             outcome.skipped_paths.extend(body.skipped);
             outcome.batches += 1;
@@ -241,14 +250,61 @@ impl RemoteClient {
     }
 
     /// `POST /api/sync/deletions`：通知服务端删除路径（幂等）。
-    pub async fn notify_deletions(&self, project_id: &str, paths: &[String]) -> Result<()> {
+    pub async fn notify_deletions(&self, project_id: &str, paths: &[String]) -> Result<bool> {
         if paths.is_empty() {
-            return Ok(());
+            return Ok(false);
         }
-        let payload = serde_json::json!({"projectId": project_id, "paths": paths});
-        self.request(self.general.post(self.url("/api/sync/deletions")), &payload)
+        let payload = serde_json::json!({
+            "projectId": project_id, "paths": paths, "deferIndexing": true,
+        });
+        let response = self.request(self.general.post(self.url("/api/sync/deletions")), &payload)
             .await?;
-        Ok(())
+        let body: serde_json::Value = response.json().await?;
+        Ok(body["indexingDeferred"].as_bool().unwrap_or(false))
+    }
+
+    /// 上传完成只代表持久化成功；明确等到后台索引就绪后才能检索。
+    pub async fn wait_for_indexing(
+        &self, project_id: &str, deferred_confirmed: bool,
+    ) -> Result<Vec<String>> {
+        tokio::time::timeout(
+            INDEX_WAIT_TIMEOUT, self.flush_and_poll(project_id, deferred_confirmed),
+        ).await.map_err(|_| anyhow!(
+            "索引等待超过 120 秒，服务端任务继续在后台执行；请稍后再次调用。"
+        ))?
+    }
+
+    async fn flush_and_poll(
+        &self, project_id: &str, deferred_confirmed: bool,
+    ) -> Result<Vec<String>> {
+        let payload = serde_json::json!({"projectId": project_id});
+        let response = self.send(
+            self.general.post(self.url("/api/sync/flush")), Some(&payload),
+        ).await?;
+        if !deferred_confirmed && matches!(response.status().as_u16(), 404 | 405) {
+            return Ok(Vec::new()); // 旧服务仍在每次上传请求内完成索引。
+        }
+        self.checked_response(response).await?;
+        loop {
+            let response = self.send(
+                self.general.get(self.url(&format!("/api/sync/status/{project_id}?progressOnly=true"))), None,
+            ).await?;
+            let status: SyncIndexStatus = self.checked_response(response).await?.json().await
+                .context("sync/status 响应不完整，不能确认索引就绪")?;
+            if let Some(error) = status.index_progress.error {
+                bail!("后台索引失败，可重试：{error}");
+            }
+            if status.index_progress.state == "failed" {
+                bail!("后台索引失败，可重试");
+            }
+            if status.pending_jobs == 0 && status.index_progress.state != "running" {
+                return Ok(status.skipped_files);
+            }
+            if matches!(status.index_progress.state.as_str(), "done" | "idle") {
+                self.request(self.general.post(self.url("/api/sync/flush")), &payload).await?;
+            }
+            tokio::time::sleep(Duration::from_millis(500)).await;
+        }
     }
 
     /// `POST /api/sync/checkpoint`：提交 scope blob 集合换取 `checkpointId`。
@@ -323,14 +379,25 @@ impl RemoteClient {
         builder: reqwest::RequestBuilder,
         payload: &serde_json::Value,
     ) -> Result<reqwest::Response> {
-        let mut builder = builder.header(CALL_ID_HEADER, self.call.id()).json(payload);
+        let response = self.send(builder, Some(payload)).await?;
+        self.checked_response(response).await
+    }
+
+    async fn send(
+        &self, builder: reqwest::RequestBuilder, payload: Option<&serde_json::Value>,
+    ) -> Result<reqwest::Response> {
+        let mut builder = builder.header(CALL_ID_HEADER, self.call.id());
+        if let Some(payload) = payload {
+            builder = builder.json(payload);
+        }
         if let Some(token) = &self.token {
             builder = builder.bearer_auth(token);
         }
-        let response = builder
-            .send()
-            .await
-            .map_err(|error| anyhow!("请求 {} 失败：{error}", self.base_url))?;
+        builder.send().await
+            .map_err(|error| anyhow!("请求 {} 失败：{error}", self.base_url))
+    }
+
+    async fn checked_response(&self, response: reqwest::Response) -> Result<reqwest::Response> {
         let status = response.status();
         if status.is_success() {
             return Ok(response);
@@ -394,6 +461,31 @@ struct UploadResponse {
     accepted: Vec<String>,
     #[serde(default)]
     skipped: Vec<String>,
+    #[serde(default, rename = "indexingDeferred")]
+    indexing_deferred: bool,
+    report: Option<UploadReport>,
+}
+
+#[derive(Deserialize)]
+struct UploadReport {
+    #[serde(default)]
+    errors: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SyncIndexStatus {
+    #[serde(rename = "pendingJobs")]
+    pending_jobs: usize,
+    #[serde(rename = "indexProgress")]
+    index_progress: SyncProgress,
+    #[serde(default, rename = "skippedFiles")]
+    skipped_files: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct SyncProgress {
+    state: String,
+    error: Option<String>,
 }
 
 #[derive(Deserialize)]

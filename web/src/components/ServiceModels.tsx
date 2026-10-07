@@ -19,6 +19,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { type DeploymentMeta, getMeta } from "../api/client";
+import { Icon } from "./Icon";
 
 export function ServiceModels() {
   const [meta, setMeta] = useState<DeploymentMeta | null>(null);
@@ -36,16 +37,16 @@ export function ServiceModels() {
 
   return (
     <section
-      className="rounded-lg border border-ink-line bg-paper-card p-4 shadow-sm"
+      className="min-w-0 border-2 border-ink-line bg-paper-card p-5 shadow-sm md:p-6"
       data-testid="service-models"
     >
-      <h2 className="mb-3 text-sm font-semibold text-ink-primary">服务模型</h2>
+      <h2 className="panel-heading mb-5 text-base font-semibold text-ink-primary"><Icon name="cpu" />服务模型</h2>
 
       {failed && <p className="text-xs text-ink-muted">读不到配置（服务不可达）。</p>}
       {!failed && meta === null && <p className="text-xs text-ink-muted">读取中…</p>}
 
       {meta !== null && (
-        <div className="space-y-3">
+        <div className="space-y-5">
           <ModelGroup
             heading="LLM"
             configured={meta.config.llm.configured}
@@ -82,18 +83,18 @@ function ModelGroup({
   items: [string, ReactNode][];
 }) {
   return (
-    <div>
-      <div className="mb-1 flex items-baseline gap-2">
+    <div className="border border-ink-line/70 bg-paper-raised p-3">
+      <div className="mb-2 flex items-baseline gap-2">
         <span className="text-xs font-medium text-ink-muted">{heading}</span>
         {configured === false && (
           <span className="text-xs text-amber-700">未配置</span>
         )}
       </div>
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+      <dl className="space-y-1">
         {items.map(([key, value]) => (
-          <div key={key} className="flex items-baseline justify-between gap-2 border-b border-dashed border-ink-line/60 py-0.5">
-            <dt className="text-xs text-ink-muted">{key}</dt>
-            <dd className="text-xs text-ink-primary">{value}</dd>
+          <div key={key} className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/60 py-1.5 last:border-b-0">
+            <dt className="shrink-0 text-xs text-ink-muted">{key}</dt>
+            <dd className="min-w-0 break-all text-right text-xs text-ink-primary">{value}</dd>
           </div>
         ))}
       </dl>

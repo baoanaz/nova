@@ -340,14 +340,20 @@ class EmbeddingPipeline:
             del self._pending[: self._window]
             self._queue.put(window)  # 队列满 → 阻塞，即背压
 
+    def flush_pending(self) -> None:
+        """派发未满的尾窗，不等待消费者；用于和只依赖 SQLite 的图解析重叠。"""
+        if self._closed:
+            raise RuntimeError("EmbeddingPipeline 已关闭")
+        if self._pending:
+            self._queue.put(self._pending)
+            self._pending = []
+
     def close(self) -> None:
         """等队列排空并返回；任一消费者失败则在此重抛。幂等。"""
         if self._closed:
             return
+        self.flush_pending()
         self._closed = True
-        if self._pending:
-            self._queue.put(self._pending)  # 尾窗（不满一窗）也要派发出去
-            self._pending = []
         for _ in self._threads:
             self._queue.put(_SENTINEL)
         for thread in self._threads:
@@ -399,6 +405,7 @@ class EmbeddingPipeline:
                 if self._error is None:
                     try:
                         sink.feed(item)  # type: ignore[arg-type]
+                        sink.flush()  # 队列项就是一个完整窗口，尾窗也立即执行。
                     except BaseException as exc:  # noqa: BLE001 - 记录后回抛主线程
                         self._set_error(exc)
             finally:

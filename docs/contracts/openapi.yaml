@@ -36,6 +36,8 @@ components:
         edges: { type: integer }
         pendingJobs: { type: integer }
         indexingFiles: { type: array, items: { type: string } }
+        indexProgress: { type: object, description: '后台状态：idle/running/done/failed，含 error；未完成不得检索' }
+        skippedFiles: { type: array, items: { type: string } }
         lastIndexedAt: { type: integer, nullable: true }
     SearchResponse:
       type: object
@@ -218,6 +220,7 @@ paths:
                 projectId: { type: string }
                 branch: { type: string }
                 commit: { type: string }
+                deferIndexing: { type: boolean, default: false, description: '只持久化上传及待索引账本；客户端随后必须 flush 并等待完成' }
                 blobs:
                   type: array
                   items:
@@ -227,7 +230,14 @@ paths:
                       path: { type: string }
                       blobHash: { type: string }
                       contentB64: { type: string, description: base64(文件原始字节)；JSON 传输二进制安全编码，冻结）
-      responses: { '200': { description: '{ accepted: [blobHash], skipped: [path] }（skipped=服务端裁决忽略，客户端尊重）' } }
+      responses: { '200': { description: '{ accepted: [blobHash], skipped: [path], report, indexingDeferred }；延迟模式 report=null，accepted 不表示已索引' } }
+  /api/sync/flush:
+    post:
+      tags: [sync]
+      summary: 合并持久待处理账本并启动单项目后台索引；重复触发不排队，失败/重启后可重试
+      requestBody:
+        content: { application/json: { schema: { type: object, required: [projectId], properties: { projectId: { type: string } } } } }
+      responses: { '200': { description: '{ indexProgress }；通过 sync/status 等待 pendingJobs=0 且无错误；120 秒未完成客户端返回后台处理中提示' } }
   /api/sync/checkpoint:
     post:
       tags: [sync]
@@ -240,13 +250,15 @@ paths:
       tags: [sync]
       summary: 通知删除路径（按 (projectId,path) 幂等；级联删索引 + spec_references.stale=1）
       requestBody:
-        content: { application/json: { schema: { type: object, required: [projectId, paths], properties: { projectId: { type: string }, paths: { type: array, items: { type: string } } } } } }
-      responses: { '200': { description: OK } }
+        content: { application/json: { schema: { type: object, required: [projectId, paths], properties: { projectId: { type: string }, paths: { type: array, items: { type: string } }, deferIndexing: { type: boolean, default: false } } } } }
+      responses: { '200': { description: 'deleted/unknown；延迟模式追加 indexingDeferred=true，随后必须 flush' } }
   /api/sync/status/{projectId}:
     get:
       tags: [sync]
-      parameters: [{ name: projectId, in: path, required: true, schema: { type: string } }]
-      responses: { '200': { description: SyncStatus } }
+      parameters:
+        - { name: projectId, in: path, required: true, schema: { type: string } }
+        - { name: progressOnly, in: query, schema: { type: boolean, default: false }, description: '仅就绪度快照，不开索引库、不统计 blob 大小' }
+      responses: { '200': { description: '默认 SyncStatus；progressOnly=true 仅 projectId/pendingJobs/indexProgress/skippedFiles' } }
 
   /api/query/search:
     post:

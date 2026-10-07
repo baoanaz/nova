@@ -30,6 +30,7 @@ import { useCallback, useEffect, useState } from "react";
 import { type AccountOverview, getAccountOverview, getMe, type Account } from "../api/client";
 import { ErrorBlock, LoadingBlock, Page } from "../components/ui";
 import { ServiceModels } from "../components/ServiceModels";
+import { Icon, type IconName } from "../components/Icon";
 
 const WINDOW_DAYS = 30;
 
@@ -48,17 +49,14 @@ const RANGE_OPTIONS: [number, string][] = [
 
 function RangePicker({ days, onChange }: { days: number; onChange: (days: number) => void }) {
   return (
-    <div className="flex overflow-hidden rounded border border-ink-line text-xs">
+    <div className="range-picker" aria-label="统计时间范围">
       {RANGE_OPTIONS.map(([value, label]) => (
         <button
           key={value}
           type="button"
           onClick={() => onChange(value)}
-          className={`px-2.5 py-1 ${
-            days === value
-              ? "bg-accent-seal text-white"
-              : "bg-paper-card text-ink-muted hover:bg-paper-base"
-          }`}
+          aria-pressed={days === value}
+          className={days === value ? "bg-accent-seal text-white" : "text-ink-muted hover:bg-paper-base"}
         >
           {label}
         </button>
@@ -107,8 +105,8 @@ export function DashboardPage() {
         <RangePicker days={days} onChange={setDays} />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="账户资料">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <Panel title="账户资料" icon="user">
           <Row label="账户" value={profile.name} />
           <Row
             label="ID"
@@ -141,20 +139,8 @@ export function DashboardPage() {
         <ServiceModels />
       </div>
 
-      <Panel title={`工具调用（近 ${data.days} 天）`}>
-        {/**
-         * 用户 2026-09-14 定稿的 7 个数据（三行，虚线分隔，与「账户资料」同一种行样式）：
-         *
-         * | 行 | 数据 |
-         * |---|---|
-         * | 仓库初始化 | 次数 · 平均耗时 · 最快/最慢 |
-         * | 检索 | 次数 · 平均耗时 |
-         * | Tool 调用 | 成功 · 失败 |
-         *
-         * 用"仓库初始化"而不是"索引"：用户不知道索引/检索的内部概念，
-         * 他只知道"我调了一次 Tool，成功还是失败，花了多久"。
-         * 不加 hint 解释文字（用户："不要写解释了……这些字样，整体很乱"）。
-         */}
+      <Panel title={`工具调用（近 ${data.days} 天）`} icon="activity">
+        {/* 保留三类统计与原有口径，每个指标用独立数据框展示。 */}
         <StatRow
           label="仓库初始化"
           items={[
@@ -196,22 +182,16 @@ export function DashboardPage() {
   );
 }
 
-function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+function Panel({ title, icon, children }: { title: string; icon: IconName; children: React.ReactNode }) {
   return (
-    <section className="rounded-lg border border-ink-line bg-paper-card p-4 shadow-sm">
-      <h2 className="mb-3 text-sm font-semibold text-ink-primary">{title}</h2>
+    <section className="min-w-0 border-2 border-ink-line bg-paper-card p-5 shadow-sm md:p-6">
+      <h2 className="panel-heading mb-5 text-base font-semibold text-ink-primary"><Icon name={icon} />{title}</h2>
       {children}
     </section>
   );
 }
 
-/**
- * 工具调用卡的一行：左侧分类名 + 右侧若干「指标 值」对，行间虚线分隔。
- *
- * 与「账户资料」的 `Row` 同一视觉语言（`border-dashed border-ink-line/70`）——
- * 用户 2026-09-14：“每行用虚线分开，类似账户资料里面那种虚线”。
- * 最后一行的虚线由调用方（`last:border-b-0`）控制：这里用 `space-y-0` + 末行去线。
- */
+/** 工具调用按类别分组，每项指标独立成框，保留未测量值和成功／失败语义。 */
 function StatRow({
   label,
   items,
@@ -220,25 +200,36 @@ function StatRow({
   items: [string, string, ("ok" | "bad")?][];
 }) {
   return (
-    <div className="flex flex-wrap items-baseline gap-x-8 gap-y-1 border-b border-dashed border-ink-line/70 py-2 last:border-b-0">
-      <span className="w-20 shrink-0 text-xs text-ink-muted">{label}</span>
-      {items.map(([key, value, tone]) => (
-        <span key={key} className="flex items-baseline gap-2">
-          <span className="text-xs text-ink-muted">{key}</span>
-          <span
-            className={`text-sm ${
+    <section className="mb-5 border-b border-dashed border-ink-line pb-5 last:mb-0 last:border-b-0 last:pb-0">
+      <h3 className="mb-3 text-sm font-semibold text-ink-primary">{label}</h3>
+      <dl className={`grid gap-3 ${items.length === 3 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+        {items.map(([key, value, tone]) => (
+          <div
+            key={key}
+            className={`min-w-0 border p-4 ${
               tone === "ok"
-                ? "text-emerald-700"
+                ? "border-emerald-200 bg-emerald-50/60"
                 : tone === "bad"
-                  ? "text-rose-700"
-                  : "text-ink-primary"
+                  ? "border-rose-200 bg-rose-50/60"
+                  : "border-ink-line bg-paper-raised"
             }`}
           >
-            {value}
-          </span>
-        </span>
-      ))}
-    </div>
+            <dt className="text-xs text-ink-muted">{key}</dt>
+            <dd
+              className={`mt-2 break-words font-mono text-xl font-semibold leading-snug tabular-nums ${
+                tone === "ok"
+                  ? "text-emerald-700"
+                  : tone === "bad"
+                    ? "text-rose-700"
+                    : "text-ink-primary"
+              }`}
+            >
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </section>
   );
 }
 
@@ -287,9 +278,9 @@ export function formatQuota(size: number): string {
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/70 py-1.5">
-      <span className="text-xs text-ink-muted">{label}</span>
-      <span className="text-sm text-ink-primary">{value}</span>
+    <div className="flex items-baseline justify-between gap-3 border-b border-dashed border-ink-line/70 py-2.5 last:border-b-0">
+      <span className="shrink-0 text-xs text-ink-muted">{label}</span>
+      <span className="min-w-0 break-words text-right text-sm text-ink-primary">{value}</span>
     </div>
   );
 }

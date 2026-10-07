@@ -2,16 +2,37 @@
 
 > 用途：把"索引为什么慢、慢在哪、能优化多少"变成**可复现的数字**。
 > 结论与留档见 `../results/index-cost-model-vps.md`（VPS）与 `../results/index-cost-model-company-wsl.md`（WSL）。
-> 所有脚本**只读**靶场、只写 `--out` 指定的 JSON；唯一会建索引的是 `build_indexes.sh` 与 `ingest_probe.py`。
+> 脚本只读靶场；coldstart/ingest/local-only/build_indexes 会写指定的数据根。
+> 新 VPS 入口见 `scripts/benchmark-vps.sh`，本机产物统一落 `.local/bench/`。
+
+## 默认离线回放
+
+日常开发、CPU/存储与架构测试默认使用 `sync_probe.py`，不加载 API 凭据。只有明确测试远端 embedding/API 性能时，才使用下面标为联网的探针。
+
+`replay.py` 从**已有真实索引**导出本地 SQLite 向量文件，按完整 embedding 输入的 SHA-256 查找 float32 向量。缺失输入、损坏维度直接报错，**没有网络回退**。文件记录模型、维度、输入上限和语料版本，放在忽略目录 `.local/fixtures/`，不提交到 Git。
+
+```bash
+.venv/bin/python benches/embed-bench/replay.py \
+  --project .local/bench/tpm-16m/full-c4/index/projects/4c0617fc2fac1add \
+  --out .local/fixtures/langchain-voyage-4-lite.sqlite \
+  --corpus-commit e75dae1f53c99c2b5ddb0c7bb36022c6aea25569
+```
+
+以上本机 fixture 已导出，可直接复用，不必重复导出。更改语料或模型时需要匹配的新 fixture，不能自动调用 API 补齐。
+
+回放保留解析、SQLite/FTS、真实向量物化、LanceDB 和图解析；**不包含远端推理、网络下载、HTTP JSON 解码**，不能直接当成线上全程时间。`--kind client` 通过真实 Rust MCP 客户端连接隔离的本机服务，包含上传、后台等待及查询；其查询复用 passage 向量只用于走通链路，**不用于检索质量评估**。
 
 ## 脚本清单
 
 | 脚本 | 回答什么问题 | 联网 | 写索引 | 成本 |
 |---|---|---|---|---|
+| `replay.py` | 从已有索引导出真实向量 fixture；不调用 provider | ❌ | 只写 fixture | 免费 |
+| `sync_probe.py` | `core` 整仓索引或 `client` 真实用户路径的离线回放 | 仅 client 的本机回环 | ✅（新目录） | 免费 |
 | `build_indexes.sh` | 三靶场的**持久索引**建/复用（未来测试的唯一入口，缺哪个建哪个） | ✅ | ✅ | 烧 token（首次） |
 | `ingest_probe.py` | 真实 ingest 路径 + 进程内计量：响应 MB / API token / 网络在飞 / 嵌入窗口 / upsert / 峰值 RSS | ✅ | ✅ | 烧 token |
 | `local_only_probe.py` | **零网络地板**：解析+切分+SQLite/FTS+建图+入库要多久（判定"瓶颈是不是网速"） | ❌ | ✅（临时根） | **免费** |
-| `coldstart_probe.py` | **阶段级分解**：本地段/网络段逐阶段墙钟（jieba、SQLite、JSON 解码、LanceDB、背压等待）、RSS 曲线、HTTP TTFB/下载细分 | ❌ | ✅（临时根） | local-only 免费 / full 烧 token |
+| `coldstart_probe.py` | **阶段级分解**：本地段/网络段逐阶段墙钟（jieba、SQLite、JSON 解码、LanceDB、背压等待）、RSS 曲线、HTTP TTFB/下载细分 | full 联网，local-only 离线 | ✅（临时根） | local-only 免费 / full 烧 token |
+| `hardware_probe.py` | sysbench 单/双线程与直连 OVH 下载、Cloudflare 上传（不发送源码） | 仅测速 | ❌ | 约 540 MB 流量，无 API 配额 |
 | `ttfb_probe.py` | 只调 `/v1/embeddings`、不落盘：并发下的 TTFB 与聚合吞吐分解 | ✅ | ❌ | 少量 token |
 | `throughput_probe.py` | 固定样本的批量吞吐扫描（并发 / 批大小 / 预算） | ✅ | ❌ | 少量 token |
 | `profile_repo.py` | 仓库画像：文件 / chunk / token 分布（免 API，出题与估算用） | ❌ | ❌ | 免费 |
@@ -31,17 +52,20 @@
 | `upsert_total_s` | `VectorStore.upsert` 打桩累计 | 与解析/建图重叠，不能直接从墙钟里减 |
 
 **TPM 折算**：`1 MB 响应体 ≈ 14,446 token`（实测 `12.46 KB/chunk` 与 `175.8 token/chunk`）。
-跑满 16M TPM 需要 **18.5 MB/s 持续下行**——比这台 VPS 的链路上限还高，故配额永远用不满。
+按历史响应大小和 16M TPM 平均速率换算，持续下行约 18.5 MiB/s。
+这是旧设备、旧响应格式下的预算估计；账号突发额度、服务端处理与路径吞吐都会改变结果，不能作为新 VPS 的硬性耗时下限。
 
 ## 运行纪律（2 GiB 小机器必读）
 
 ```bash
-set -a; source /etc/zace/zace.env; set +a
-systemd-run --scope --quiet -p MemoryHigh=1200M -p MemoryMax=1500M -p MemorySwapMax=512M -- \
-  timeout 7200 uv run python benches/embed-bench/ingest_probe.py \
-    --repo /root/xuwenzheng/ACE/benchmark/langchain \
-    --data /root/.zace/bench/voyage-4-lite-d1024 \
-    --out benches/results/raw/ingest-vps/langchain.json
+systemd-run --unit=zace-offline-core --collect --uid=root --working-directory="$PWD" \
+  -p MemoryHigh=1200M -p MemoryMax=1500M -p MemorySwapMax=256M \
+  -p IPAddressDeny=any -p IPAddressAllow=localhost -- \
+  .venv/bin/python benches/embed-bench/sync_probe.py \
+    --kind core --repo ../benchmark/langchain \
+    --fixture .local/fixtures/langchain-voyage-4-lite.sqlite \
+    --out .local/bench/offline-core-new
+# --kind client 测用户路径；输出目录必须不存在。日志通过 journalctl -u zace-offline-core 查看。
 ```
 
 - `MemoryMax` 是保命线：2026-09-15 04:06 有一次全量向量 ingest 把机器拖到失联（见 VPS 报告 §4.1）；

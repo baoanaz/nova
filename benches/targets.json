@@ -1,6 +1,5 @@
 {
   "schema": 1,
-  "note": "靶场清单：把「用例集 + 预建索引」绑成一个靶场名，供 benches/run.py --target 使用。只放元信息，不放索引本体——index.db 存切片正文，属靶场源码副本（见 benches/README.md 合规一节）。默认流程只用 role=primary/dogfood 的靶场：公共仓库、本地建索引、索引落持久目录。",
   "targets": {
     "hello-agents": {
       "role": "primary",
@@ -33,28 +32,16 @@
         "hint": "本仓自举：索引建在持久目录（约定 ~/.zace/bench，别放 /tmp——重启即失），之后任意 checkout 都用 --project-id 复用；只有 core 的切片/嵌入指纹变了才需要重建"
       }
     },
-    "cockpit-agents-py": {
-      "role": "internal",
-      "golden": "benches/golden/cockpit-agents-py",
-      "repo_hint": "cockpit-agents-py",
-      "commit": "febac6d2273bbd8828e34b81bd9c1b50753255ab",
-      "project_id": "8e69da62f37e5783",
-      "embedding": {
-        "model": "api:voyage-4-lite",
-        "dim": 1024
-      },
-      "index": {
-        "how": "internal-bundle",
-        "hint": "内部靶场，**不在默认流程**：索引含公司内部源码，只能经内网获得（scripts/bench-bundle.sh pack/unpack）；公开服务器一律不参与"
-      }
-    },
     "leveldb-v1": {
       "role": "primary",
       "golden": "benches/golden/leveldb",
       "repo_hint": "leveldb",
       "commit": "7ee830d02b623e8ffe0b95d59a74db1e58da04c5",
       "project_id": "3ed886ce58bc0e47",
-      "embedding": {"model": "api:voyage-4-lite", "dim": 1024},
+      "embedding": {
+        "model": "api:voyage-4-lite",
+        "dim": 1024
+      },
       "index": {
         "how": "vps-persistent",
         "hint": "VPS 持久索引：--data /root/.zace/bench/voyage-4-lite-d1024；直接 eval，不要 ingest"
@@ -66,7 +53,10 @@
       "repo_hint": "HelloAgents",
       "commit": "93e77ea60c13436636c9b39b6761ff8dfe940ba2",
       "project_id": "06078cc80c7ce7d7",
-      "embedding": {"model": "api:voyage-4-lite", "dim": 1024},
+      "embedding": {
+        "model": "api:voyage-4-lite",
+        "dim": 1024
+      },
       "index": {
         "how": "vps-persistent",
         "hint": "VPS 持久索引：--data /root/.zace/bench/voyage-4-lite-d1024；直接 eval，不要 ingest"
@@ -78,7 +68,10 @@
       "repo_hint": "langchain",
       "commit": "41d357287c0470f70e45e232c711013258c0ac1a",
       "project_id": "ca2050db0db5b1e2",
-      "embedding": {"model": "api:voyage-4-lite", "dim": 1024},
+      "embedding": {
+        "model": "api:voyage-4-lite",
+        "dim": 1024
+      },
       "index": {
         "how": "vps-persistent",
         "hint": "VPS 持久索引：--data /root/.zace/bench/voyage-4-lite-d1024；直接 eval，不要 ingest"

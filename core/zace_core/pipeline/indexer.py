@@ -295,7 +295,6 @@ class Indexer:
             self._vectors.rebuild(self._embedding.profile.dim)
 
         indexed: list[_Indexed] = []
-        written: dict[str, ChunkDef] = {}
         removed_ids: list[str] = []
         with EmbeddingPipeline(
             self._embedding, self._vectors, cache=self._cache, workers=self._workers
@@ -307,32 +306,29 @@ class Indexer:
                     if result is None:
                         continue
                     indexed.append(result)
-                    for chunk in result.chunks:
-                        written.setdefault(chunk.id, chunk)
                     acc.chunks_reused += len(result.chunks) - len(result.new_ids)
-                    if rebuild_vectors:
-                        # 重建档位由 ``_rebuild_vectors`` 统一投递（它还要覆盖未处理的存量文件）；
-                        # 这里再投一次就会把整仓向量写两遍（实测 vectors.count 翻倍）。
-                        continue
+                    # 重建后的新表也按文件立即投递；补嵌阶段只处理尚未投递的存量文件。
                     pipeline.submit(result.chunks)
-                    removed_ids.extend(result.removed_ids)
+                    if not rebuild_vectors:
+                        removed_ids.extend(result.removed_ids)
                 if rebuild_vectors:
                     self._rebuild_vectors(
-                        acc, pipeline, written, {result.parsed.path for result in indexed}
+                        acc, pipeline, {result.parsed.path for result in indexed}
                     )
+            pipeline.flush_pending()
+            # 图解析只依赖已提交的 SQLite 数据，可和向量尾窗的网络/落库重叠。
+            self._resolve(acc, [result.parsed for result in indexed])
         # 删除必须等向量阶段排空：行漂移后的**按内容复用**要读旧行（旧 id 同内容），
         # 先删就会把复用来源删掉、整文件重嵌（实测踩过）。
         if removed_ids:
             acc.vectors_deleted += self._vectors.delete(removed_ids)
 
-        parsed_files = [result.parsed for result in indexed]
         stats = pipeline.stats
         acc.vectors_upserted += stats.upserted
         # ``chunks_reused`` 只统计文件级对账（FileDelta）的 hash 未变；sink 的内容复用单独计数，
         # 两者的口径互斥，且满足 ``chunks_new + chunks_reused == embedded + deduped``。
         acc.chunks_deduped += stats.deduped
 
-        self._resolve(acc, parsed_files)
         self._languages = repo_languages | {
             result.parsed.language for result in indexed if result.parsed.language
         }
@@ -473,18 +469,14 @@ class Indexer:
         self,
         acc: _Accumulator,
         pipeline: EmbeddingPipeline,
-        written: dict[str, ChunkDef],
         processed: set[str],
     ) -> None:
-        """重嵌全部存量 chunk（reembed / full_reparse）。
+        """补嵌尚未处理的存量文件（reembed / full_reparse）。
 
-        向量表已由 :meth:`_run` 原子重建为空，因此这里投递的 chunk 都会真正嵌入。
-        已写入的 chunk 直接从内存投递（对象刚写完，与库内一致）；其余按 provider 清单
-        重新解析切分拿到 chunk id（**不写 SQLite**），再用 ``Store.chunks_by_ids``
-        取回库内权威内容——解析口径未变是 ``reembed`` 档位的前提（指纹保证），
-        因此 id 与库内一致。
+        向量表已由 :meth:`_run` 重建，已处理文件在解析循环中投递过，不重复投递。
+        其余按 provider 清单重新解析切分拿到 chunk id（**不写 SQLite**），
+        再用 ``Store.chunks_by_ids`` 取回库内权威内容。解析口径由指纹保证。
         """
-        pipeline.submit(list(written.values()))
         ids: list[str] = []
         for path in self._source.list_files():
             if path in processed:

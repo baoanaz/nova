@@ -16,9 +16,9 @@
 - **校验顺序固定**（每种错误都能单独复现）：空批 → 逐条 base64 解码（累计超限立即 413）→
   路径安全 → ``blobHash`` 与 CF-02 的 ``blob_hash(path, content)`` 一致（宁可拒绝，
   也不让账本被污染）；
-- **同步索引**（M2a）：每个上传请求内跑完索引并由 ``report`` 如实回报；后台 job/进度上报是
-  TASK-062；
-- ``indexingFiles`` / ``pendingJobs`` 恒为空/0 是**正确的**（不伪造，D-30）。
+- 默认保留请求内索引；``deferIndexing`` 只持久化上传和待处理项，之后显式 ``flush``。
+- flush 复用单项目后台 worker；``pendingJobs`` / ``indexProgress`` 如实报告待处理及运行状态。
+- 待处理项持久化在同步账本，失败/服务重启后通过 flush 重试。
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ from pydantic import BaseModel
 from zace_core.hashing import blob_hash
 from zace_core.pipeline import IngestReport
 from zace_core.pipeline.source import SourcePathError
-from zace_core.types import BlobInput, ChangeSet
+from zace_core.types import BlobInput
 
 from zace_service.auth import quota_identity
 from zace_service.blobstore import validate_repo_path
@@ -63,6 +63,7 @@ class BatchUploadRequest(BaseModel):
     branch: str | None = None
     commit: str | None = None
     blobs: list[BlobPayload] = []
+    deferIndexing: bool = False
 
 
 class CheckpointRequest(BaseModel):
@@ -77,6 +78,11 @@ class DeletionsRequest(BaseModel):
 
     projectId: str | None = None
     paths: list[str] = []
+    deferIndexing: bool = False
+
+
+class FlushRequest(BaseModel):
+    projectId: str | None = None
 
 
 @router.post("/api/sync/batch-upload")
@@ -93,37 +99,33 @@ def batch_upload(payload: BatchUploadRequest, request: Request) -> dict[str, Any
         raise ApiError("empty_batch", "blobs 不能为空（空批不发请求）", 400)
 
     decoded = _decode_blobs(payload.blobs)
-    _enforce_quota(request, manager, project_id, decoded)
-    _blobs, state = manager.project_paths(project_id)
-    known = set(state.files)
-
-    accepted: list[str] = []
-    added: list[BlobInput] = []
-    modified: list[BlobInput] = []
-    for item in decoded:
-        # 幂等：同 (path, blobHash) 已落盘则不再写字节，但仍计入 accepted（CF-05 明确）。
-        _blobs.put(item.path, item.blob_hash, item.content)
-        state.record_file(item.path, item.blob_hash, len(item.content))
-        accepted.append(item.blob_hash)
-        (modified if item.path in known else added).append(item)
-
-    state.set_head(payload.branch, payload.commit)
-    state.save()
-
-    report = manager.ingest(
-        project_id,
-        ChangeSet(
-            added=tuple(added),
-            modified=tuple(modified),
-            branch=payload.branch,
-            commit_id=payload.commit,
-        ),
-    )
+    with manager.project_lock(project_id):
+        require_project_id(request, project_id)
+        _enforce_quota(request, manager, project_id, decoded)
+        blobs, state = manager.project_paths(project_id)
+        known = set(state.files)
+        accepted: list[str] = []
+        for item in decoded:
+            blobs.put(item.path, item.blob_hash, item.content)
+            state.record_file(item.path, item.blob_hash, len(item.content))
+            state.queue_file(item.path, added=item.path not in known)
+            accepted.append(item.blob_hash)
+        state.set_head(payload.branch, payload.commit)
+        state.save()
+        report = None if payload.deferIndexing else manager.flush_sync(project_id)
     return {
         "accepted": accepted,
-        "skipped": list(report.skipped_files),
-        "report": report_json(report),
+        "skipped": list(report.skipped_files) if report is not None else [],
+        "report": report_json(report) if report is not None else None,
+        "indexingDeferred": payload.deferIndexing,
     }
+
+
+@router.post("/api/sync/flush")
+def flush_index(payload: FlushRequest, request: Request) -> dict[str, Any]:
+    manager = get_engine_manager(request)
+    project_id = require_project_id(request, payload.projectId)
+    return {"indexProgress": manager.start_sync(project_id).to_json()}
 
 
 @router.post("/api/sync/checkpoint")
@@ -132,14 +134,16 @@ def create_checkpoint(payload: CheckpointRequest, request: Request) -> dict[str,
     manager = get_engine_manager(request)
     project_id = require_project_id(request, payload.projectId)
     checkpoint_id = checkpoint_id_for(payload.blobHashes)
-    state = manager.sync_state(project_id)
-    state.record_checkpoint(checkpoint_id, sorted(set(payload.blobHashes)))
-    state.save()
+    with manager.project_lock(project_id):
+        require_project_id(request, project_id)
+        state = manager.sync_state(project_id)
+        state.record_checkpoint(checkpoint_id, sorted(set(payload.blobHashes)))
+        state.save()
     return {"checkpointId": checkpoint_id}
 
 
 @router.post("/api/sync/deletions")
-def report_deletions(payload: DeletionsRequest, request: Request) -> dict[str, list[str]]:
+def report_deletions(payload: DeletionsRequest, request: Request) -> dict[str, Any]:
     """删除通知（固定顺序）：账本移除 → 无引用的 blob 镜像删除 → 一次 ``ingest(deleted=...)``。
 
     幂等：重复删除的路径进 ``unknown`` 且不报错（Module/05 §9-3 口径）；账本里没有的路径
@@ -147,29 +151,36 @@ def report_deletions(payload: DeletionsRequest, request: Request) -> dict[str, l
     """
     manager = get_engine_manager(request)
     project_id = require_project_id(request, payload.projectId)
-    blobs, state = manager.project_paths(project_id)
-
-    before = state.files  # 快照（remove_paths 之后就查不到 hash 了）
-    deleted, unknown = state.remove_paths(payload.paths)
-    still_referenced = set(state.blob_hashes())
-    for path in deleted:
-        digest = before[path].blob_hash
-        if digest not in still_referenced:  # 内容寻址：多个 path 可能共享同一 blob
-            blobs.delete(digest)
-    state.save()
-
-    if deleted:
-        manager.ingest(project_id, ChangeSet(deleted=deleted))
-    return {"deleted": list(deleted), "unknown": list(unknown)}
+    with manager.project_lock(project_id):
+        require_project_id(request, project_id)
+        blobs, state = manager.project_paths(project_id)
+        before = state.files
+        deleted, unknown = state.remove_paths(payload.paths)
+        state.queue_deletions(deleted)
+        # Save the durable deletion before removing its now-unreferenced content.
+        state.save()
+        still_referenced = set(state.blob_hashes())
+        for path in deleted:
+            digest = before[path].blob_hash
+            if digest not in still_referenced:
+                blobs.delete(digest)
+        if not payload.deferIndexing and state.pending:
+            manager.flush_sync(project_id)
+    result: dict[str, Any] = {"deleted": list(deleted), "unknown": list(unknown)}
+    if payload.deferIndexing:
+        result["indexingDeferred"] = True
+    return result
 
 
 @router.get("/api/sync/status/{projectId}")
-def sync_status(projectId: str, request: Request) -> dict[str, Any]:  # noqa: N803 - CF-05 路径参数名
+def sync_status(  # noqa: N803 - CF-05 路径参数名
+    projectId: str, request: Request, progressOnly: bool = False
+) -> dict[str, Any]:
     """同步/索引状态（core 全字段 + 同步侧追加字段）。"""
     manager = get_engine_manager(request)
     # TASK-061 §C：经 require_project_id（存在 + 归属）；越权与不存在同为 404。
     project_id = require_project_id(request, projectId)
-    return manager.sync_status(project_id)
+    return manager.sync_status(project_id, progress_only=progressOnly)
 
 
 # --------------------------------------------------------------------------- 校验与工具

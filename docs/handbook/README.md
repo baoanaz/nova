@@ -9,7 +9,7 @@
 
 ```text
 ① 代码    git clone https://github.com/baoanaz/zace.git
-② 依赖    uv sync（Python 3.12+，见 getting-started/README.md）
+② 依赖    scripts/setup-dev.sh（清单与版本见根目录 ENVIRONMENT.txt）
 ③ 隐私    privacy/资产清单.md  （key / env / token，不能进 git）
 ④ 部署    deployment/ 对应篇章（VPS 或 WSL）
 ```
@@ -18,6 +18,7 @@
 
 | 我要做什么 | 看哪篇 |
 |---|---|
+| **安装完整开发环境** | [ENVIRONMENT.txt](../../ENVIRONMENT.txt) |
 | **安装依赖、本地把 core 跑起来** | [getting-started/README.md](getting-started/README.md) |
 | 配 embedding（Voyage / 硅基流动） | [getting-started/cloud-embedding.md](getting-started/cloud-embedding.md) |
 | 让编辑器 / Agent 接入（MCP） | [getting-started/agent接入与API-Key.md](getting-started/agent接入与API-Key.md) |
@@ -30,6 +31,7 @@
 | **准备密钥与隐私资产** | [privacy/资产清单.md](privacy/资产清单.md) |
 | 切换 embedding 参数 / 看实测数字 | [operations/embedding-provider切换.md](operations/embedding-provider切换.md) |
 | **按机器留档/切换批参数、并发与消费者数（换 VPS）** | [../../configs/profiles/README.md](../../configs/profiles/README.md) |
+| **换到新 VPS：量硬件上限与冷启动（上机三步 + 提示词）** | [perf/README.md](perf/README.md) |
 | 让 `.gitignore` 排除的文档也能被索引 | [operations/索引白名单.md](operations/索引白名单.md) |
 | 查一个 trace id / 看请求日志 | [operations/请求日志与trace-id报错手册.md](operations/请求日志与trace-id报错手册.md) |
 
@@ -43,6 +45,7 @@ handbook/
 ├── deployment/        部署到真实环境（VPS 生产 / WSL 同构验证）
 ├── release/           发一次新版本（npm + Release 六平台 + 重启生效）
 ├── benchmark/         改动 core 检索后的回归测试台
+├── perf/              换机/上新机：量硬件上限与冷启动基线（新增 2026-10-05）
 ├── privacy/           密钥与环境变量的统一管理（新增 2026-09-15）
 └── operations/        日常运维：调参、排障、日志
 ```
@@ -75,7 +78,17 @@ handbook/
 ### benchmark/
 
 [README.md](benchmark/README.md) —— **改了 `core/zace_core/{retrieval,contextpack}/` 必须跑**。
-四个靶场（3 个 primary + 1 个 internal），基线值与重建条件都在里面。
+默认公共靶场的版本、质量护栏与重建条件都在里面；内部资料只通过仓库外的私有清单显式加载。
+
+### perf/
+
+换到新机器（新 VPS）时量本地处理、CPU、直连网络及真实 API 冷启动，
+外加 DoD 回填与可直接复制的 AI 提示词。
+
+| 文档 | 内容 |
+|---|---|
+| [README.md](perf/README.md) | 固定版本与可比基线、免费硬件测试、付费 API 测试、指标与留档 |
+| [PROMPT.md](perf/PROMPT.md) | 四段可整段复制的提示词（P0 自检 → P1 免费基线 → P2 真实冷启动 → P3 报告回填） |
 
 ### privacy/
 

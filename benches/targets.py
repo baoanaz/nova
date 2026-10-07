@@ -110,6 +110,8 @@ def load_targets(path: Path | None = None) -> dict[str, Target]:
         raw = json.loads(target_path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
         raise TargetError(f"找不到靶场清单：{target_path}") from exc
+    except OSError as exc:
+        raise TargetError(f"无法读取靶场清单：{target_path}（{exc.strerror}）") from exc
     except json.JSONDecodeError as exc:
         raise TargetError(f"靶场清单不是合法 JSON：{target_path}（{exc}）") from exc
     if not isinstance(raw, dict) or raw.get("schema") != SCHEMA:

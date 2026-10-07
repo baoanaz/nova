@@ -24,7 +24,7 @@ import {
 
 const CTX = { baseUrl: "https://zace.example.com", token: "zace_abc123" };
 
-/** 用户什么都没填时页面传入的上下文（`ConnectPage` 的默认态）。 */
+/** 用户主动清空地址与 Key 后的上下文。 */
 const EMPTY_CTX = { baseUrl: "", token: "" };
 
 describe("卡牌一：下载客户端", () => {

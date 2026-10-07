@@ -193,12 +193,12 @@ export function SettingsPage() {
       <div>
         <h1 className="text-lg font-semibold">设置</h1>
         <p className="mt-1 text-sm text-ink-muted">
-          为你的账户指定总结模型。留空则使用服务端的默认配置。
+          自定义你的 LLM 总结模型：自由选择模型、接口地址和 API Key。
         </p>
       </div>
 
       <Card
-        title="总结模型（LLM）"
+        title="自定义 LLM 总结模型"
         actions={
           llm.configured ? (
             <span className="text-xs text-ink-muted">

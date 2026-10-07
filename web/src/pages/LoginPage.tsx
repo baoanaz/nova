@@ -11,9 +11,8 @@
  *
  * 都不需要用户去记"我该点哪个"。
  *
- * TASK-098 只改**外观**：左侧装饰区（老纸底 + 衬线品牌字 + 细线几何图案），
- * 右侧纯白浮卡片（参考 Voyage 登录页）。三种模式、三个字段、错误展示、忙态禁用、
- * 窄屏（<768px）时装饰区收起，只留表单。
+ * 视觉：暖白与珊瑚橙、方角边框、偏移阴影；左侧品牌区、右侧表单。
+ * 三种模式、字段、错误展示、忙态禁用保持一致；窄屏收起装饰区。
  *
  * TASK-110 §1.1：注册表单追加**邀请码**输入（注册**必须**有码）。它是注册模式的专属字段——
  * 登录与初始化不需要它（那两条路径面对的是已有/首个账户）。
@@ -32,6 +31,9 @@ import {
   register,
 } from "../api/client";
 import { ErrorBlock, LoadingBlock } from "../components/ui";
+import { Brand } from "../components/Brand";
+import { Icon } from "../components/Icon";
+import { site } from "../../site.config";
 
 /** 邀请码长度（与后端冻结的 6 位一致；前端只做输入体验，校验仍以后端为准）。 */
 const INVITE_CODE_LENGTH = 6;
@@ -104,62 +106,44 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (account: Account) => vo
 
   return (
     <div className="flex min-h-screen flex-col md:flex-row">
-      {/*
-       * 左装饰区：老纸底 + 衬线品牌字 + 细线几何图案（§B）。
-       * 窄屏收起（hidden md:flex）——不能挤压表单。
-       * 图案只用 CSS 边框渐变拼出细线矩形，不引图片/字体资源。
-       */}
+      {/* 品牌介绍区：点阵背景与代码节点装饰，窄屏收起以保留表单空间。 */}
       <section
         aria-hidden="true"
-        className="relative hidden overflow-hidden border-r border-ink-line md:flex md:w-1/2 md:flex-col md:justify-between md:p-12 lg:w-3/5"
+        className="login-art relative hidden overflow-hidden border-r-2 border-ink-line md:flex md:w-1/2 md:flex-col md:justify-between md:p-10 lg:w-auto lg:flex-1 lg:p-16"
       >
-        <div className="relative z-10 flex items-center gap-3">
-          <span className="h-6 w-6 rounded-full border-2 border-accent-seal/60" />
-          <span className="font-serif text-lg tracking-[0.2em] text-ink-muted uppercase">
-            zace
-          </span>
-        </div>
+        <div className="relative z-10"><Brand /></div>
 
         <div className="relative z-10 max-w-md">
           {/* 装饰性大标题：用 p 而不是 h1——真正的 h1 是表单标题（屏幕阅读器只该读一个）。 */}
-          <p className="font-serif text-4xl leading-tight font-semibold text-ink-primary lg:text-5xl">
-            Workspace
-            <br />
-            Context Engine
+          <p className="text-4xl font-bold leading-tight tracking-tight text-ink-primary lg:text-5xl">
+            {site.tagline}
           </p>
           <p className="mt-5 text-sm leading-relaxed text-ink-muted">
             把仓库索引成可检索的上下文，让编码 Agent 在你的代码里找到依据，
             <br />
             而不是靠猜。
           </p>
+          <div className="context-motif" aria-hidden="true">
+            <span><Icon name="folder" className="h-7 w-7" /></span>
+            <span><Icon name="cpu" className="h-7 w-7" /></span>
+            <span><Icon name="connect" className="h-7 w-7" /></span>
+          </div>
         </div>
 
-        <p className="relative z-10 text-xs tracking-wider text-ink-muted">
-          Workspace Context Engine
-        </p>
-
-        {/* 细线几何图案：三层同心圆角矩形，颜色取自墨线 token。 */}
-        <div className="pointer-events-none absolute inset-0 z-0 flex items-center justify-center">
-          <div className="h-[26rem] w-[26rem] rotate-12 rounded-[3rem] border border-ink-line/70" />
-          <div className="absolute h-[34rem] w-[34rem] rotate-12 rounded-[4rem] border border-ink-line/50" />
-          <div className="absolute h-[42rem] w-[42rem] rotate-12 rounded-[5rem] border border-ink-line/30" />
-        </div>
+        <p className="relative z-10 text-xs tracking-wider text-ink-muted">{site.tagline}</p>
       </section>
 
-      {/* 右表单区：米白浮卡片（TASK-100：不再是纯白，避免在浅底上突兀）。 */}
-      <section className="flex flex-1 items-center justify-center px-4 py-10 md:px-10">
+      {/* 登录、注册与初始化共用同一表单卡片。 */}
+      <section className="flex w-full items-center justify-center px-4 py-10 md:w-1/2 md:px-6 lg:w-[28%] lg:min-w-[22rem] lg:shrink-0">
         <div className="w-full max-w-md">
           {/* 窄屏下装饰区收起，品牌字改在卡片上方显示。 */}
-          <div className="mb-6 text-center md:hidden">
-            <div className="font-serif text-2xl font-semibold text-ink-primary">zace</div>
-            <p className="mt-1 text-sm text-ink-muted">Workspace Context Engine</p>
-          </div>
+          <div className="mb-8 text-center md:hidden"><Brand /></div>
 
           <form
             onSubmit={submit}
-            className="space-y-4 rounded-xl border border-ink-line bg-paper-card p-6 shadow-[0_18px_50px_-24px_rgba(42,36,25,0.45)] md:p-8"
+            className="space-y-5 border-2 border-ink-line bg-paper-card p-6 shadow-xl"
           >
-            <h1 className="font-serif text-xl font-semibold text-ink-primary">{title}</h1>
+            <h1 className="border-b border-ink-line pb-5 text-2xl font-bold tracking-tight text-ink-primary">{title}</h1>
 
             {mode === "bootstrap" && (
               <p className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
@@ -244,7 +228,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (account: Account) => vo
                 password.length === 0 ||
                 (mode === "register" && inviteCode.trim().length === 0)
               }
-              className="w-full rounded bg-accent-seal px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
+              className="ui-button w-full border border-accent-seal bg-accent-seal px-4 py-3 text-sm font-semibold text-white disabled:opacity-40"
             >
               {busy ? "处理中…" : submitLabel}
             </button>
@@ -271,7 +255,7 @@ export function LoginPage({ onSignedIn }: { onSignedIn: (account: Account) => vo
             </div>
           </form>
 
-          <p className="mt-4 text-center text-xs text-ink-muted">zace v{meta.version}</p>
+          <p className="mt-5 text-center text-xs text-ink-muted">{site.name} v{meta.version}</p>
         </div>
       </section>
     </div>

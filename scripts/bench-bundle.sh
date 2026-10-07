@@ -11,7 +11,7 @@
 #   bash scripts/bench-bundle.sh unpack <bundle> <data-root> [--project-id <id>]
 #   bash scripts/bench-bundle.sh verify <bundle>
 #
-# 打包后仓库里只提交 manifest（体积小），bundle 本体放 Release 资产/对象存储/内网共享盘。
+# bundle 含源码正文；内部资料及 manifest 只保存在授权的私有位置，不放公开 Release。
 
 set -euo pipefail
 
@@ -64,8 +64,8 @@ pack_bundle() {
   [ -f "$project_dir/index.db" ] || die "索引缺失：$project_dir/index.db（先 ingest）"
   [ -d "$project_dir/vectors" ] || die "向量库缺失：$project_dir/vectors（先 ingest）"
 
-  # 侧车文件放在**本仓**（golden 所在处），不是靶场仓库——靶场是只读外部仓库。
-  local cache="${ZACE_BENCH_VECTOR_CACHE:-$ROOT/benches/golden/query-vectors.json}"
+  # 查询向量侧车留在被 Git 忽略的本机目录，靶场始终只读。
+  local cache="${ZACE_BENCH_VECTOR_CACHE:-$ROOT/.local/bench/query-vectors.json}"
   local work
   work="$(mktemp -d)"
 

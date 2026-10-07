@@ -5,7 +5,7 @@
 
 ```bash
 # ① 只给靶场名（推荐）：golden / projectId 从 benches/targets.json 解析
-uv run python benches/run.py --target cockpit-agents-py --data ~/.zace/bench \
+uv run python benches/run.py --target langchain-v1 --data ~/.zace/bench \
   --report benches/results/<name>.md --vector-cache <侧车> --replay
 uv run python benches/run.py --list-targets
 
@@ -55,7 +55,7 @@ _FLAG_FLAGS = {"--replay": "replay"}
 def _usage() -> str:
     return (
         "用法：\n"
-        "  benches/run.py --list-targets\n"
+        "  benches/run.py --list-targets [--targets-file <外部清单>]\n"
         "  benches/run.py --target <靶场名> --data <索引根> --report <报告路径> [其余 eval 参数]\n"
         "不给 --target 时按 zace-core eval 的原样参数透传（此时要自己给 --golden）。"
     )
@@ -81,12 +81,42 @@ def _partition(args: Sequence[str]) -> tuple[dict[str, Any], list[str]]:
     return known, extra
 
 
+def _split_targets_file(args: Sequence[str]) -> tuple[Path | None, list[str]]:
+    remaining: list[str] = []
+    path: Path | None = None
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--targets-file" or arg.startswith("--targets-file="):
+            if path is not None:
+                raise TargetError("--targets-file 给了多次")
+            if arg == "--targets-file":
+                index += 1
+                if index >= len(args) or args[index].startswith("--"):
+                    raise TargetError("--targets-file 后面缺少清单路径")
+                value = args[index]
+            else:
+                value = arg.split("=", 1)[1]
+            if not value:
+                raise TargetError("--targets-file 后面缺少清单路径")
+            path = Path(value).expanduser()
+        else:
+            remaining.append(arg)
+        index += 1
+    return path, remaining
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """解析靶场名后把参数原样转给 ``zace-core eval``。"""
     args = list(sys.argv[1:] if argv is None else argv)
+    try:
+        targets_file, args = _split_targets_file(args)
+    except TargetError as exc:
+        print(f"bench: {exc}", file=sys.stderr)
+        return 2
     if "--list-targets" in args:
         try:
-            print(describe_targets(load_targets()))
+            print(describe_targets(load_targets(targets_file)))
         except TargetError as exc:
             print(f"bench: {exc}", file=sys.stderr)
             return 2
@@ -95,7 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         name, rest = split_target_arg(args)
         if name is not None:
-            target = resolve_target(name)
+            target = resolve_target(name, path=targets_file)
             if "--golden" in rest or "--project-id" in rest:
                 raise TargetError("--target 不能与 --golden/--project-id 同时给（清单里已经写了）")
             known, extra = _partition(rest)

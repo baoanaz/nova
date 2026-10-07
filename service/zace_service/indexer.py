@@ -23,6 +23,7 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
 import threading
 import time
@@ -109,6 +110,7 @@ class ProjectIndexer:
         ingest: Callable[[], IngestReport],
         lock: threading.Lock,
         on_finish: Callable[[IndexProgress], None] | None = None,
+        count_files: Callable[[], int] | None = None,
     ) -> None:
         self._project_id = project_id
         self._root = root
@@ -117,6 +119,7 @@ class ProjectIndexer:
         #: 结束回调（TASK-062）：把这一次的 run 落进 ``index_runs``。**成功与失败两条路径都调**
         #: （只记成功会让"失败次数"恒为 0）。回调自身的异常不得影响索引结果。
         self._on_finish = on_finish
+        self._count_source_files = count_files
         self._guard = threading.Lock()
         self._thread: threading.Thread | None = None
         self._cancelled = threading.Event()
@@ -150,8 +153,9 @@ class ProjectIndexer:
             self._progress = IndexProgress(
                 state=STATE_RUNNING, started_at=int(time.time())
             )
+            context = contextvars.copy_context()
             self._thread = threading.Thread(
-                target=self._run,
+                target=lambda: context.run(self._run),
                 name=f"zace-index-{self._project_id}",
                 daemon=True,  # 进程退出不等索引（服务是长期进程；测试也不该被线程拖住）
             )
@@ -208,6 +212,8 @@ class ProjectIndexer:
 
     def _count_files(self) -> int:
         """``total_files``：一次目录列举（只 walk，不读内容，因此不拖慢索引）。"""
+        if self._count_source_files is not None:
+            return self._count_source_files()
         return len(DirectorySource(self._root).list_files())
 
     def _finish(self, report: IngestReport, total: int) -> None:

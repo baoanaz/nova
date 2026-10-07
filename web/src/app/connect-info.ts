@@ -1,5 +1,5 @@
 /**
- * 接入片段（TASK-080：两卡牌——先装客户端，再配 Agent）。
+ * 接入片段：安装 npm 包、配置 Agent，以及可选的提示词样例。
  *
  * 事实来源（**不许凭印象写**）：
  * - 分发与配置片段：`npm/README.md` + `npm/package.json`（包名 `zace-client`，版本 `0.0.1`，
@@ -8,9 +8,9 @@
  * - 鉴权语义：`service/zace_service/auth.py`（Bearer token；API Key 前缀 `zace_`，在 UI 的
  *   「API Key」页创建）。
  *
- * 两条产品口径（用户 2026-09-13 指定）：
- * 1. 片段里的地址与 Key **默认是占位符**——用户在浏览器里打开的 origin 未必是别的机器上
- *    Agent 能连到的地址；自动带入真实 Key 还有截图/录屏泄露风险；
+ * 两条产品口径：
+ * 1. 页面默认预填当前服务地址，用户可修改；主动清空地址时回落到占位符。
+ *    API Key 不自动带入真实值，避免截图或录屏泄露；
  * 2. `--token` **永远出现**：空值只是"我还没填"，不是"没有 --token 这回事"。旧实现里
  *    token 为空就整段消失，用户因此不知道存在鉴权。
  */
@@ -20,6 +20,9 @@ export const CLIENT_PACKAGE = "zace-client";
 
 /** 卡牌一的安装命令（全局安装，装完 `zace-client` 进 PATH）。 */
 export const INSTALL_COMMAND = `npm install -g ${CLIENT_PACKAGE}`;
+
+/** AGENTS.md 等指令文件的单个可选样例，控制在 100 字以内。 */
+export const AGENT_PROMPT = "处理代码任务时，优先用 search_context 定位相关实现；需要跨文件解释时用 ask_project。修改前核对证据，任务转向新模块时补充检索，避免凭猜测作答。";
 
 /** 本地索引缓存根（客户端默认）。 */
 export const DEFAULT_CACHE_ROOT = "~/.cache/zace";

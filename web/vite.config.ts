@@ -1,5 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { site } from "./site.config";
+
+// HTML 标题与 React 品牌读取同一配置；转义防止名称被当成 HTML。
+const htmlEscapes: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
 
 // 开发期把 /api 与 /healthz 代理到本地 service：生产由 Caddy 同源承担（Module/07 §3），
 // 因此**不要求 service 提供 CORS**（service 目前也没有 CORS 中间件）。
@@ -12,7 +16,16 @@ const base = process.env["ZACE_WEB_BASE"] ?? "/";
 
 export default defineConfig({
   base,
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: "site-brand",
+      transformIndexHtml(html) {
+        const name = site.name.replace(/[&<>"']/g, (char) => htmlEscapes[char]!);
+        return html.replace("__APP_NAME__", () => name);
+      },
+    },
+  ],
   server: {
     port: 5173,
     proxy: {

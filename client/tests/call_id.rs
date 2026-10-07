@@ -93,6 +93,9 @@ fn response_json(request_line: &str) -> String {
     } else if request_line.contains("/api/sync/batch-upload") {
         r#"{"accepted":[],"skipped":[],"report":{"added":0,"modified":0,"deleted":0,"chunksNew":0,"chunksReused":0,"chunksRemoved":0,"filesParsed":0,"errors":[],"skippedFiles":[]}}"#
             .to_string()
+    } else if request_line.contains("/api/sync/status/") {
+        r#"{"pendingJobs":0,"indexProgress":{"state":"done","error":null},"skippedFiles":[]}"#
+            .to_string()
     } else if request_line.contains("/api/sync/checkpoint") {
         r#"{"checkpointId":"cp_test"}"#.to_string()
     } else if request_line.contains("/api/query/search") {

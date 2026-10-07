@@ -2,96 +2,145 @@
 @tailwind components;
 @tailwind utilities;
 
-/*
- * 全局主题与背景纹理（TASK-098 §A-1 / §A-3；TASK-100 调整色阶与纹理强度）。
- *
- * 主题：复古博物画 / 老纸——浅米底 + 深墨文字 + 深赭褐强调，纹理用斑驳旧纸感。
- * 所有色值走 tailwind.config.js 的 token（paper / ink / accent / danger），这里不写裸色值。
- *
- * TASK-100 调色（用户 2026-09-14 反馈）：底色变浅（#f3e4c7 → #f7ecd8）后，
- * 原纹理的 alpha 在浅底上反而更明显（浅色的相对差异更小），故同步减半，
- * 保持"旧纸感"而不变成"脏"。卡片也从纯白改成米白（#fdfdf7）。
- */
-
-/*
- * ---------------------------------------------------------------------------
- * 纹理参数（集中在这里，调参只改这一块）
- * ---------------------------------------------------------------------------
- * 手法：**多处极淡 radial-gradient 叠加**（斑驳褪色痕），不使用图片资源。
- *
- * - 斑点 14 处，圆半径 300-820px，坐标（%）互相错开 → 无规律感；
- * - 斑点色：`--zace-stain`（暗棕，模拟纸张氧化/褪色）与 `--zace-bleach`（提亮，
- *   模拟受光面泛白），单层 alpha 0.006-0.016（TASK-100 从 0.012-0.030 减半）；
- * - 叠加后最大偏移量远小于正文与底色的对比度余量（正文 13.2:1，见报告）；
- * - `background-attachment: fixed`：滚动时纹理不跟着跑，整页像"一张纸"；
- * - 另叠一层**极淡大间距斜线**（120px 间距、alpha 0.006）做纸张纤维感，
- *   间距刻意取大以避开高 DPI 屏的摩尔纹/色带（§A-3 的 banding 提醒）。
- *
- * 层次约定（不要互相覆盖）：
- * - `body` 铺底色与纹理（**全局**：登录页、加载态也在同一张纸上）；
- * - 卡片用 `bg-paper-card`（米白 #fdfdf7）+ `border-ink-line` 细线框浮在纸面上
- *   ——TASK-100 后两者亮度差很小，层次靠**边框**而非色差（用户反馈纯白卡片"突兀"）。
- */
 @layer base {
-  :root {
-    /* 斑驳痕：暗棕（旧纸氧化处） */
-    --zace-stain: 92 70 38;
-    /* 泛白处：受光/摩擦变浅 */
-    --zace-bleach: 255 250 236;
-  }
-
   body {
-    font-family:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-      "PingFang SC", "Microsoft YaHei", sans-serif;
-
-    /* 底色：浅米（token: paper.base = #f7ecd8，用户 2026-09-14 指定）。 */
-    background-color: theme("colors.paper.base");
-
+    @apply min-w-[320px] bg-paper-base font-sans text-ink-primary antialiased;
     background-image:
-      /* --- 斑驳褪色痕（暗）：14 处，圆半径 300-820px；alpha 0.006-0.014 --- */
-      radial-gradient(circle 680px at 12% 18%, rgb(var(--zace-stain) / 0.011), transparent 100%),
-      radial-gradient(circle 520px at 78% 8%, rgb(var(--zace-stain) / 0.007), transparent 100%),
-      radial-gradient(circle 820px at 46% 34%, rgb(var(--zace-stain) / 0.008), transparent 100%),
-      radial-gradient(circle 380px at 88% 46%, rgb(var(--zace-stain) / 0.012), transparent 100%),
-      radial-gradient(circle 620px at 22% 62%, rgb(var(--zace-stain) / 0.009), transparent 100%),
-      radial-gradient(circle 460px at 64% 74%, rgb(var(--zace-stain) / 0.010), transparent 100%),
-      radial-gradient(circle 740px at 6% 88%, rgb(var(--zace-stain) / 0.008), transparent 100%),
-      radial-gradient(circle 300px at 92% 84%, rgb(var(--zace-stain) / 0.013), transparent 100%),
-      /* --- 泛白受光面（亮）：与暗斑交错 --- */
-      radial-gradient(circle 560px at 34% 6%, rgb(var(--zace-bleach) / 0.015), transparent 100%),
-      radial-gradient(circle 700px at 96% 26%, rgb(var(--zace-bleach) / 0.011), transparent 100%),
-      radial-gradient(circle 420px at 8% 42%, rgb(var(--zace-bleach) / 0.013), transparent 100%),
-      radial-gradient(circle 800px at 52% 58%, rgb(var(--zace-bleach) / 0.009), transparent 100%),
-      radial-gradient(circle 340px at 74% 92%, rgb(var(--zace-bleach) / 0.014), transparent 100%),
-      radial-gradient(circle 600px at 40% 96%, rgb(var(--zace-stain) / 0.007), transparent 100%),
-      /* --- 纸张纤维：大间距斜线（alpha 0.006，间距 120px 避开摩尔纹） --- */
-      repeating-linear-gradient(
-        118deg,
-        rgb(var(--zace-stain) / 0.006) 0px,
-        rgb(var(--zace-stain) / 0.006) 1px,
-        transparent 1px,
-        transparent 120px
-      );
-
-    /* 滚动时纹理固定在视口：整页读起来是"一张纸"而不是"跟着跑的背景"。 */
+      radial-gradient(ellipse at 0 0, rgb(217 119 87 / 0.08), transparent 50%),
+      radial-gradient(ellipse at 100% 0, rgb(96 165 250 / 0.04), transparent 40%);
     background-attachment: fixed;
   }
 
-  /*
-   * 标题用衬线（§A-2）：复古博物画气质主要由此而来。
-   * 放在 base 层而不是逐页改 className——页面只改配色，不动结构（§D 的约束）。
-   * 正文仍是 sans（中文可读性优先），代码仍是 mono。
-   */
-  h1,
-  h2,
-  h3 {
-    font-family: theme("fontFamily.serif");
-    letter-spacing: 0.005em;
+  h1, h2, h3 {
+    font-family: inherit;
+    text-wrap: balance;
   }
 
-  /* 选中态用强调色，与 accent token 同源。 */
-  ::selection {
-    background-color: theme("colors.accent.soft");
+  button, a, input, select, textarea {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
+  button:disabled { cursor: not-allowed; }
+
+  :focus-visible {
+    outline: 2px solid theme("colors.accent.seal");
+    outline-offset: 3px;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    min-width: 0;
+    min-height: 2.5rem;
+    accent-color: theme("colors.accent.seal");
+  }
+
+  input::placeholder, textarea::placeholder { color: theme("colors.ink.muted"); opacity: 0.75; }
+  ::selection { background-color: theme("colors.accent.soft"); color: theme("colors.ink.primary"); }
+}
+
+@layer components {
+  .brand-mark {
+    @apply inline-flex h-10 w-10 shrink-0 items-center justify-center border-2 border-accent-bright bg-accent-soft text-accent-seal;
+    box-shadow: 3px 3px 0 rgb(217 119 87 / 0.18);
+  }
+
+  .sidebar-link {
+    @apply flex min-h-11 items-center gap-3 border-2 border-transparent px-3 py-2.5 font-medium;
+    transition: background-color 150ms, border-color 150ms, box-shadow 150ms;
+  }
+
+  .sidebar-link:hover {
+    @apply border-ink-line bg-paper-card text-ink-primary;
+    box-shadow: 3px 3px 0 rgb(39 22 16 / 0.1);
+  }
+
+  .sidebar-link[aria-current="page"] {
+    @apply border-accent-bright bg-accent-soft text-accent-seal;
+    box-shadow: 3px 3px 0 rgb(217 119 87 / 0.22);
+  }
+
+  .ui-button,
+  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):not([role="switch"]):not([aria-pressed]) {
+    min-height: 2.25rem;
+    border-width: 1px;
+    border-color: theme("colors.ink.line");
+    box-shadow: 2px 2px 0 rgb(39 22 16 / 0.14);
+    transition: box-shadow 150ms, background-color 150ms, transform 150ms;
+  }
+
+  .ui-button:hover:not(:disabled),
+  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):hover:not(:disabled):not([role="switch"]):not([aria-pressed]) {
+    box-shadow: 3px 3px 0 rgb(39 22 16 / 0.18);
+    transform: translateY(-1px);
+  }
+
+  .ui-button:active:not(:disabled),
+  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):active:not(:disabled):not([role="switch"]):not([aria-pressed]) {
+    box-shadow: 1px 1px 0 rgb(39 22 16 / 0.14);
+    transform: translate(1px, 1px);
+  }
+
+  .page-content {
+    @apply min-w-0 space-y-7;
+  }
+
+  .page-content h1 {
+    @apply text-2xl font-bold tracking-tight md:text-3xl;
+  }
+
+  .page-content :where(section, div).bg-paper-card.shadow-sm {
+    border-width: 2px;
+  }
+
+  .page-content :where(section, div).bg-paper-card.shadow-sm > h2 {
+    @apply mb-5 text-base;
+  }
+
+  .page-content table { font-variant-numeric: tabular-nums; }
+  .page-content thead { @apply bg-paper-raised text-ink-muted; }
+  .page-content tbody tr:hover { background-color: theme("colors.paper.base"); }
+  .page-content :where(th, td) { padding-top: 0.85rem; padding-bottom: 0.85rem; }
+
+  .panel-heading {
+    @apply flex items-center gap-2.5;
+  }
+
+  .panel-heading > svg { @apply text-accent-seal; }
+
+  .range-picker {
+    @apply inline-flex max-w-full flex-wrap gap-1.5 border border-ink-line bg-paper-card p-1.5;
+  }
+
+  .range-picker button {
+    @apply min-h-8 whitespace-nowrap px-3 py-1.5 text-xs font-medium;
+  }
+
+  .login-art {
+    background-image: radial-gradient(theme("colors.ink.line") 1px, transparent 1px);
+    background-size: 20px 20px;
+  }
+
+  .login-art::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, theme("colors.paper.raised"), transparent 35%, theme("colors.paper.base"));
+    pointer-events: none;
+  }
+
+  .context-motif {
+    @apply relative mt-12 flex h-32 max-w-sm items-center justify-center;
+  }
+
+  .context-motif::before { content: ""; @apply absolute left-0 right-0 border-t-2 border-dashed border-accent-bright/40; }
+  .context-motif > span { @apply relative flex h-16 w-16 items-center justify-center border-2 border-ink-line bg-paper-card text-accent-seal shadow-sm; }
+  .context-motif > span:nth-child(2) { @apply mx-10 -translate-y-6 border-accent-bright bg-accent-soft; }
+
+  @media (max-width: 767px) {
+    input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   }
 }

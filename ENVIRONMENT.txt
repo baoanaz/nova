@@ -1,0 +1,109 @@
+zace 开发环境安装说明
+====================
+此文件可以提交。实际环境、缓存和测试产物留在仓库内并被 Git 忽略；
+密钥单独存放在 $HOME/.key/zace/，本机即 /root/.key/zace/。
+
+1. 系统工具
+   - Linux 开发/复测：Python >= 3.12、git、curl。
+   - Python 包管理：uv。依赖由 uv.lock 锁定，不使用裸 pip。
+   - Web：Node.js 22、npm；依赖由 web/package-lock.json 锁定。
+   - Rust 客户端：Rust stable、Cargo、C/C++ 编译工具链。
+     Debian/Ubuntu 可安装 build-essential、pkg-config。
+   - VPS 性能复测额外需要 sysbench、systemd-run 和 timeout。
+     Debian/Ubuntu：sudo apt-get install sysbench curl coreutils
+   - nginx、TLS、域名仅用于生产部署；Docker 和浏览器自动化不是开发必需项。
+
+2. 初始化 Python 与 Web
+   cd <zace 仓库>
+   bash scripts/setup-dev.sh --with-web
+   set -a
+   source .env
+   set +a
+
+   安装脚本运行：
+   uv sync --frozen --all-packages --all-extras
+   npm --prefix web ci --no-audit --no-fund
+
+   .env.example 是无密钥模板；.env 是不提交的本机配置。
+   .venv/ 放 Python 环境；web/node_modules/ 放前端依赖；
+   .local/cache/ 放包与模型缓存；.local/data/ 放本机运行数据。
+   复制旧虚拟环境可能留下失效软链接：先审查并备份，再重建，不直接修补链接。
+   本机工具版本和性能数值见 benches/results/ 中的设备报告。
+
+3. Rust 环境（可选；仅 core/service/web 开发无需 Rust）
+   先按第 2 节加载 .env，其中 CARGO_HOME/RUSTUP_HOME 指向 .local/。
+   curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o .local/rustup-init.sh
+   sh .local/rustup-init.sh -y --profile minimal --no-modify-path
+   rm .local/rustup-init.sh
+   bash scripts/setup-dev.sh --with-client
+   cargo test --locked --manifest-path client/Cargo.toml -j 1
+
+   Rust 工具链：.local/cargo/、.local/rustup/
+   Rust 构建产物：client/target/
+   2 GiB VPS 上用 -j 1，避免与性能测量、Python 或 Web 测试同时运行。
+
+4. 私有凭据
+   文件：$HOME/.key/zace/secrets.env
+   目录权限 0700，文件权限 0600。安装脚本只创建空配置，不会覆盖已有凭据。
+   通过本机编辑器填写，不要粘贴到聊天、Issue、终端命令参数或提交记录。
+
+   EMBED_API_KEY：Voyage 签发，用于真实索引和 API 吞吐复测。
+   ANSWER_API_KEY：LLM 服务签发，仅 ask_project 的总结功能需要。
+   ANSWER_BASE_URL、ANSWER_MODEL：自建/第三方 LLM 配置，可以在该私有文件中设置。
+   npm token 和 SSH 私钥只在发布/访问 Git 时需要，不是运行索引的替代密钥。
+   第三方密钥无法通过本地随机生成恢复，需要从原来源恢复或重新签发。
+
+   set -a; source .env; set +a 会加载私有文件。
+   不配置 ANSWER_* 时，总结功能降级；真实向量索引仍需要 embedding 凭据。
+   local-only 性能探针不需要任何真实 API 密钥，也不下载本地 ONNX 模型。
+
+5. 验证
+   uv run ruff check .
+   uv run python scripts/check_dependency_direction.py
+   bash scripts/check-version.sh
+   uv run pytest -ra
+   npm --prefix web run lint
+   npm --prefix web test
+   npm --prefix web run build
+   cargo test --locked --manifest-path client/Cargo.toml -j 1
+
+   在 2 GiB VPS 上串行执行各组检查。普通测试不应调用付费 API。
+   若整组 pytest 进程累积内存导致 swap/回收停滞，可拆进程运行：
+   for group in core/tests/*/; do
+     [ "$(basename "$group")" = __pycache__ ] && continue
+     uv run pytest "$group" -o addopts= -q || break
+   done
+   uv run pytest core/tests/test_smoke.py -o addopts= -q
+   for test_file in service/tests/test_*.py; do
+     uv run pytest "$test_file" -o addopts= -q || break
+   done
+   uv run pytest tests benches/test_targets.py benches/test_run.py -o addopts= -q
+   核对每组退出码；不能把拆分后未执行的组当作通过。
+
+6. 新 VPS 复测
+   LangChain commit：
+   e75dae1f53c99c2b5ddb0c7bb36022c6aea25569
+   对照规模：2986 文件 / 20931 chunks。
+   旧机本地墙钟 45.462s，真实 API 63.326s；并发 4、消费者 2、1024 维。
+
+   bash scripts/benchmark-vps.sh local <langchain 路径>
+   bash scripts/benchmark-vps.sh hardware
+   # 恢复 Voyage 凭据后才运行：
+   bash scripts/benchmark-vps.sh ttfb <langchain 路径>
+   bash scripts/benchmark-vps.sh full <langchain 路径>
+
+   结果默认写入 .local/bench/<UTC 时间>-<模式>/。
+   local/full 每次创建独立索引；不改靶场、不复用暖索引。
+   ZACE_BENCH_OUT 可指定新目录；已存在的目录会被拒绝，避免覆盖证据或复用索引。
+   hardware 直连 OVH 公共文件测速下行、Cloudflare 测速上传，不使用代理，不上传源码；
+   默认下载合计 500 MiB、上传 16 MB（总流量约 540 MB）。端点与字节数可由探针参数指定。
+   结果只代表到所测端点的路径；发生 HTTP 错误或长度不符时不计算成功吞吐。
+   ttfb/full 会将公共 LangChain 文本发送到 Voyage 并消耗配额。
+   不把实际 API 吞吐当作 VPS 端口速率，不把按 TPM 计算的平均值当硬性耗时下限。
+
+7. 提交与迁移
+   可提交：源代码、依赖锁文件、此说明、无密钥模板、脱敏报告。
+   不提交：.env、.venv/、.local/、node_modules/、target/、backups/、密钥包。
+   .gitignore 不能保护已经被跟踪的文件。提交前检查 git status 和具体 diff。
+   scripts/pack-secrets.sh 打包外部凭据和本机配置；输出为私有文件，
+   默认保存在 $HOME/.key/zace/，恢复脚本默认只恢复凭据/配置，不启动服务。

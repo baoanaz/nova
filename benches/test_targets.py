@@ -41,7 +41,6 @@ def test_repo_manifest_lists_all_kept_targets() -> None:
     assert list(targets) == [
         "hello-agents",
         "zace",
-        "cockpit-agents-py",
         "leveldb-v1",
         "helloagents-v1",
         "langchain-v1",
@@ -64,7 +63,7 @@ def test_primary_target_is_a_public_local_build() -> None:
     for target in targets.values():
         if target.role in ("primary", "dogfood"):
             assert target.index_how in {"local-build", "vps-persistent"}
-    assert targets["cockpit-agents-py"].role == "internal"
+    assert all(target.role != "internal" for target in targets.values())
 
 
 def test_illegal_role_is_rejected(tmp_path: Path) -> None:
@@ -79,7 +78,6 @@ def test_recorded_indexes_carry_a_project_id_and_fingerprint() -> None:
     targets = tt.load_targets()
     assert targets["hello-agents"].project_id == "e9ee9dd1d41a7d2c"
     assert targets["zace"].project_id == "adfdd1a626db62b7"
-    assert targets["cockpit-agents-py"].project_id == "8e69da62f37e5783"
     assert targets["leveldb-v1"].project_id == "3ed886ce58bc0e47"
     assert targets["helloagents-v1"].project_id == "06078cc80c7ce7d7"
     assert targets["langchain-v1"].project_id == "ca2050db0db5b1e2"
@@ -104,10 +102,10 @@ def _unbound_target(tmp_path: Path) -> tt.Target:
 
 def test_unknown_target_lists_available_names(tmp_path: Path) -> None:
     with pytest.raises(tt.TargetError) as excinfo:
-        tt.resolve_target("cockpit", path=tt.TARGETS_PATH)
+        tt.resolve_target("missing-private-target", path=tt.TARGETS_PATH)
     message = str(excinfo.value)
-    assert "未知靶场：cockpit" in message
-    assert "cockpit-agents-py" in message
+    assert "未知靶场：missing-private-target" in message
+    assert "hello-agents" in message
 
 
 def test_bad_schema_is_rejected(tmp_path: Path) -> None:
@@ -137,7 +135,7 @@ def test_missing_manifest_is_reported(tmp_path: Path) -> None:
 
 
 def test_build_eval_args_binds_project_id_and_data() -> None:
-    target = tt.resolve_target("cockpit-agents-py")
+    target = tt.resolve_target("helloagents-v1")
     argv = tt.build_eval_args(
         target,
         data="/tmp/bench",
@@ -147,7 +145,7 @@ def test_build_eval_args_binds_project_id_and_data() -> None:
     )
     assert argv == [
         "--golden", str(target.golden),
-        "--project-id", "8e69da62f37e5783",
+        "--project-id", "06078cc80c7ce7d7",
         "--data", "/tmp/bench",
         "--report", "/tmp/r.md",
         "--vector-cache", "/tmp/qvec.json",
@@ -179,7 +177,7 @@ def test_target_without_index_binding_needs_repo(tmp_path: Path) -> None:
 
 
 def test_replay_without_sidecar_is_rejected() -> None:
-    target = tt.resolve_target("cockpit-agents-py")
+    target = tt.resolve_target("helloagents-v1")
     with pytest.raises(tt.TargetError) as excinfo:
         tt.build_eval_args(target, data="/tmp/bench", report="/tmp/r.md", replay=True)
     assert "--vector-cache" in str(excinfo.value)
@@ -198,12 +196,12 @@ def test_describe_targets_mentions_every_target_and_role() -> None:
     for name in (
         "zace",
         "hello-agents",
-        "cockpit-agents-py",
         "leveldb-v1",
         "helloagents-v1",
         "langchain-v1",
     ):
         assert name in text
-    for role in ("primary", "dogfood", "internal"):
+    for role in ("primary", "dogfood"):
         assert role in text
-    assert "8e69da62f37e5783" in text
+    assert "internal" not in text
+    assert "06078cc80c7ce7d7" in text

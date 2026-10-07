@@ -1,97 +1,89 @@
 # zace
 
-面向 Coding Agent 的 Workspace Context Engine：融合代码图谱、Spec 文档、混合检索与基于事实依据的回答，
-替代 Agent 在 Debug / 开发前大量 grep、read、调用链分析所消耗的 Context Acquisition 成本。
+zace 是面向 Coding Agent 的代码库上下文引擎。它结合代码解析、符号图谱、全文与向量检索，
+为开发、调试和代码审查提供带文件位置的上下文，减少 Agent 反复搜索、读取和整理代码的成本。
 
-> 核心指标不是搜索延迟，而是 **Context Acquisition Cost**：Agent 为正确理解任务所需的时间、Tool Calls、Token 与人工干预。
->
-> 对 Agent 只暴露两个工具：`search_context`（Fast，不调 LLM）/ `ask_project`（Deep，grounded answer + citation 回验）。
+通过 MCP 暴露两个工具：
 
-> **新人/新会话先读 [`HANDOFF.md`](HANDOFF.md)**：项目现状、下一步任务、环境事实、协作纪律与已知缺口，一份读完即可开工。
->
-> **要用三靶场（`leveldb` / `HelloAgents` / `langchain`）跑基准**：先读 [`benches/README.md`](benches/README.md) 的「新会话从这里开始」——
-> 索引已持久化在 `/root/.zace/bench/voyage-4-lite-d1024`，**复用即可，不要再 ingest**（清单见 `benches/results/raw/ingest-vps/INDEXES.json`）。
+- **search_context**：检索并组装上下文，不调用 LLM。
+- **ask_project**：在检索证据上调用可配置的 LLM 生成回答，并回验引用；缺少配置或证据时明确降级。
 
-## 仓库布局（monorepo，D-35）
+当前解析器支持 Python、C/C++ 和 Markdown。后端为 Python，stdio MCP 客户端为 Rust，
+管理界面使用 React。外部 embedding/LLM 服务可配置；API 模式会将相应文本发送给配置的服务，
+本地 ONNX 模式的安装和性能要求见操作手册。
 
-### 顶层
+## 开始使用
 
-| 目录 | 内容 | 状态 |
-|---|---|---|
-| `core/` | **zace-core** 纯库（Module/01-04）：解析 → 切片 → 存储 → 检索 → 组装 | 可用（已上线） |
-| `service/` | **zace-service** 外壳（Module/06）：REST API、MCP 端点 `/mcp`、鉴权/租户、索引 job、审计/统计/配额、LLM 总结 | 可用（已上线） |
-| `client/` | **zace-client**（Rust，Module/05）：MCP stdio + 本地同步代理 | 可用 |
-| `npm/` | 分发：主包 `zace-client`（仅启动器）+ 6 个平台子包（`optionalDependencies`，D-48/D-49） | 已发布（当前 `0.0.8`，以 `npm/package.json` 为准） |
-| `web/` | **zace-web** SPA（Module/07）：登录/控制台/接入指南/API Key/历史/设置/管理员后台，只消费 service 的 REST API（Playground 已于 TASK-082 移除） | 可用（已上线） |
-| `benches/` | golden 集与基准跑分（`golden/` 用例、`bakeoff/` 模型选型、`embed-bench/` 索引计量、`results/` 报告与证据） | — |
-| `docs/design/` | 设计文档（`INDEX.md` 为入口，决策以 §3 决策登记表为准） | 活文档 |
-| `docs/contracts/` | 冻结契约（DDL / JSON schema / OpenAPI / MCP tools）——变更须先提申请、等裁决 | 冻结 |
-| `docs/plan/` | roadmap / 索引性能计划 / **可优化项待办**（`optimization-backlog.md`） | — |
-| `docs/tasks/` | 任务板与任务卡（实施入口：`README.md` 是任务板） | — |
-| `docs/handbook/` | 操作手册：上手与 Agent 接入、部署（VPS/WSL）、运维（provider 切换、白名单、trace id）、发布（npm）、基准、隐私 | — |
-| `scripts/` | 工具脚本：依赖方向检查、版本/平台子包一致性、客户端发布、冒烟 | — |
-| `.github/workflows/` | `ci.yml`（推送触发）+ `release.yml`（`v*` tag 触发六平台构建 + npm 发布） | — |
-| `server.json` | MCP registry 清单（stdio 传输 + runtime 参数） | — |
-
-**依赖方向（CI 强制）**：`web, client → service → core`，core 零上层依赖（D-33/D-34）。
-
-### 包内模块
-
-```text
-core/zace_core/            service/zace_service/        client/src/
-├── parsing/   tree-sitter 抽取（Python/C/C++/MD）      ├── identity.rs  D-29 身份
-├── chunking/  切片 + unresolved 两阶段解析             ├── blobref.rs   CF-02 哈希
-├── storage/   SQLite+FTS5（jieba 双侧预分词）          ├── ignore.rs    D-28 三层忽略
-├── vectors/   LanceDB + hash 复用对账                  ├── index.rs     本地缓存与对账
-├── retrieval/ exact/literal/bm25/vector/rrf/fusion/    ├── remote.rs    CF-05 客户端
-│              expand/rerank/gap（二轮补检）
-├── contextpack/ 组装 + Markdown 渲染（D-21）           ├── tools.rs     CF-06 两工具
-├── embedding/ 双实现：本地 ONNX / OpenAI 兼容 API      ├── protocol.rs  MCP stdio
-├── pipeline/  ignore 规则 / source / indexer           └── main.rs      CLI 入口
-├── text/      CJK 分词（D-45）
-├── engine.py  引擎装配        routers/  auth|projects|query|sync|ops|admin
-├── hashing.py CF-02 哈希      mcp.py    /mcp 端点（HTTP 形态）
-├── types.py   CF-01 类型      runtime.py EngineManager（懒构造/懒重扫）
-└── interfaces.py CF-07/08/09  indexer.py 后台索引 + 进度
-                               metadb.py 用户/Key/审计/配额   answer.py LLM 总结（多协议）
-```
-
-`core/{types,interfaces,hashing}.py` 与 `docs/contracts/**` 是**冻结契约**：改它们必须走
-契约变更流程（在任务卡执行记录里提申请、等裁决），实施任务不得直接改。
-
-### 运行时形态
-
-```text
-编辑器（Claude Code / Codex / Cursor / pi）
-        │ stdio MCP（npx zace-client）
-        ▼
-   zace-client（本地：扫描 / 忽略 / 哈希 / 增量上传）
-        │ HTTPS + Bearer（resolve → batch-upload → query/search）
-        ▼
-   zace-service（FastAPI：API / 索引 job / 渲染）
-        │ 进程内调用
-        ▼
-   zace-core（引擎：检索 → 组装 → ContextPack）
-```
-
-## 开发环境
+客户端连接已有服务：
 
 ```bash
-# 需要 Python >= 3.12、uv（https://docs.astral.sh/uv/）
-uv sync --all-packages --all-extras     # 安装 core + service（含 dev extras）
-uv run ruff check .                     # lint
-uv run python scripts/check_dependency_direction.py   # 依赖方向检查（D-34）
-uv run pytest                           # 测试
+npx zace-client --base-url <服务地址> --token <API-Key>
 ```
 
-## 状态
+接入方式见 [客户端说明](npm/README.md) 与
+[Agent 接入手册](docs/handbook/getting-started/agent接入与API-Key.md)。
 
-V1 已上线：网页注册/登录 → 创建 API Key → `npx zace-client --base-url <服务地址> --token <Key>` 接入 Agent，
-暴露 `search_context` / `ask_project` 两个工具（见 `npm/README.md`）。当前重心是检索质量与性能打磨。
+从源码开发需要 Python 3.12+、uv；Web 另需 Node.js 22 和 npm：
 
-设计与分工入口：`docs/design/INDEX.md`（设计）、`docs/tasks/README.md`（任务板）、
-`docs/plan/optimization-backlog.md`（可优化项待办）。最新现状以 `HANDOFF.md` 顶部快照为准。
+```bash
+git clone https://github.com/baoanaz/zace.git
+cd zace
+bash scripts/setup-dev.sh --with-web
+set -a; source .env; set +a
+```
 
-## 许可
+安装清单、Rust 工具链和验证命令集中在 [ENVIRONMENT.txt](ENVIRONMENT.txt)。
+安装脚本只创建空凭据配置；真实 API 索引前，在本机
+`$HOME/.key/zace/secrets.env` 填入供应商签发的 `EMBED_API_KEY`。
+本地 `.env` 加载该文件；密钥不放在仓库中。
 
-TBD（开源发布前确定）。
+运行带账户鉴权的开发服务：
+
+```bash
+uv run zace-service serve --host 127.0.0.1 --port 8787
+```
+
+前端开发、首次账户初始化与生产部署见 [操作手册](docs/handbook/README.md)。
+当前仓库不预置可用的公共服务地址或生产账户。
+
+## 仓库构成
+
+| 路径 | 职责 |
+|---|---|
+| `core/` | 代码解析、切片、SQLite/FTS、向量、图谱、检索与上下文组装 |
+| `service/` | REST/MCP、鉴权、租户、同步、索引任务、审计与 LLM 总结 |
+| `client/` | Rust stdio MCP 客户端与本地同步代理 |
+| `web/` | React/Vite 管理界面 |
+| `npm/` | 客户端 npm 启动器与平台包清单 |
+| `configs/` | 无密钥的硬件配置档案 |
+| `scripts/` | 环境安装、基准入口、发布与一致性检查 |
+| `benches/` | 公共基准用例、计量工具和设备绑定的测试报告 |
+| `docs/handbook/` | 安装、部署、基准、隐私与运维指南 |
+| `docs/design/`、`docs/contracts/` | 架构决策与冻结契约 |
+| `docs/tasks/`、`docs/plan/` | 开发任务与后续计划 |
+
+依赖方向为 `web, client → service → core`；CI 检查 core 不依赖上层模块。
+源码、依赖锁文件、说明与脱敏报告可提交；`.venv/`、`.env`、`.local/`、
+构建产物、索引、日志和 `backups/` 被 Git 忽略。
+
+## 性能与验证
+
+换机复测使用固定版本的 LangChain，并保持模型、维度、批大小和并发一致：
+
+```bash
+bash scripts/benchmark-vps.sh local <langchain路径>  # 无 API 请求
+bash scripts/benchmark-vps.sh hardware               # CPU 与直连网络
+```
+
+脚本默认把结果写入 `.local/bench/`。真实 API 吞吐和完整冷启动需要 Voyage 凭据并消耗配额。
+测试版本、旧基线、内存限制和指标定义见 [性能手册](docs/handbook/perf/README.md)。
+已有索引仅适用于对应机器和配置，换机后不能假定它仍然存在。
+
+开发与提交约定见 [CONTRIBUTING.md](CONTRIBUTING.md)；
+开发现状见 [HANDOFF.md](HANDOFF.md)；
+安全问题报告见 [SECURITY.md](SECURITY.md)。
+
+## 许可证
+
+[MIT OR Apache-2.0](LICENSE)，与 Rust 客户端及 npm 包已有的许可声明一致。
+第三方依赖和外部基准仓库保留各自许可证。

@@ -1,14 +1,16 @@
 # benches/results — 报告与原始证据索引
 
 > **新 AI 请从本文件开始**：这里回答"哪份报告是当前口径、哪份是历史留档、数字由哪个原始文件支撑"。
-> 报告全部是**设备绑定**的：同一个数字换设备不成立，引用时必须带上设备标识与日期。
+> 报告全部是设备绑定的，引用时带设备、日期、版本与配置。
+> 新 VPS 当前报告是 `index-perf-epyc-2c2g.md`；旧机持久索引未迁移，不能直接套用历史复用指令。
 
 ## 0. 三十秒导航
 
 | 你要做的事 | 去看 |
 |---|---|
 | 复用三靶场的**持久索引**跑基准（**不要重新索引**） | `../targets-benchmark.md` §持久索引 + `raw/ingest-vps/INDEXES.json` |
-| 当前 VPS（生产）的索引耗时/内存/带宽/TPM 结论 | `index-cost-model-vps.md` |
+| 新 VPS 本地冷启动、CPU 与直连网络 | [index-perf-epyc-2c2g.md](index-perf-epyc-2c2g.md) |
+| 历史 Xeon VPS 的索引耗时/内存/带宽 | `index-cost-model-vps.md`、`index-perf-task115-vps.md` |
 | **要改维度 / chunk 切分，找对照点** | **`baseline-v1.md`**（冻结配置、基线数字、必须换数据根的原因） |
 | **要看检索/问答质量**（三仓库 60 题） | **`qa-audit-2026-09-15.md`**（v2 当前）+ `qa-quality-v1.md`（v1 历史） |
 | 公司 WSL 的同名结论（对照设备） | `index-cost-model-company-wsl.md` |
@@ -19,7 +21,8 @@
 
 | 设备标识 | 机器 | embedding | 数据根 | 主导报告 |
 |---|---|---|---|---|
-| `vps-la-2c2g` | 洛杉矶 VPS：2 vCPU / 1.9 GiB / 内核 5.15.0-191 | `voyage-4-lite` @1024（API） | `/root/.zace/bench/voyage-4-lite-d1024` | `index-cost-model-vps.md` |
+| `epyc-2c2g` | EPYC 7282，2 vCPU / 1919 MiB / 内核 6.8 | 本地替身 + Voyage 1024 维 | `.local/bench/` | `index-perf-epyc-2c2g.md` |
+| `vps-la-2c2g` | 历史洛杉矶 VPS：2 vCPU / 1.9 GiB / 内核 5.15.0-191 | `voyage-4-lite` @1024（API） | `/root/.zace/bench/voyage-4-lite-d1024` | `index-cost-model-vps.md` |
 | `company-wsl` | 公司 WSL2：6 核 / 15.6 GiB | 硅基流动 `BAAI/bge-m3` @1024 | `~/.cache/zace-bench` | `index-cost-model-company-wsl.md` |
 | 旧开发机（已下线） | 历史工作区，靶场不可得 | 本地 ONNX / e5-small | — | `phase1/phase2/robustness/index-performance` |
 
@@ -27,6 +30,7 @@
 
 | 文件 | 设备 | 日期 | 一句话结论 |
 |---|---|---|---|
+| [index-perf-epyc-2c2g.md](index-perf-epyc-2c2g.md) | `epyc-2c2g` | 2026-10-07 UTC | 本地中位数 40.950s，比旧基线缩短 9.92%；四连接下行 199.331 Mbps；API full 单次 52.664s |
 | `index-cost-model-vps.md` | `vps-la-2c2g` | 2026-09-15 | 冷启动 = 本地 70% + 网络 30%；TPM 受链路限制永远跑不满 16M；并发 4 是甜点；内存是唯一风险 |
 | **`baseline-v1.md`** | `vps-la-2c2g` | 2026-09-15 | **冻结配置 v1 + 三靶场基线**（后续调维度/chunk 的对照点）：含 ±20% 抖动纪律与两个「当前不可配」阻塞项 |
 | **`qa-quality-v1.md`** | `vps-la-2c2g` | 2026-09-15 | **60 题质量首测**：search recall@5 0.64–0.77 / MRR 0.39–0.69；ask 全部作答且证据不足时如实拒绝；失败集中在符号级定位与负例阈值 |
@@ -36,7 +40,6 @@
 | `index-cost-model-company-wsl.md` | `company-wsl` | 2026-09-15 | 耗时 ≈ chunk × 21 ms，瓶颈是下载响应体（~1 MB/s），与 TPM 无关 |
 | `phase2-helloagents-baseline.md` | 旧机→当前 | 2026-09-14 | hello-agents 主靶场基线（recall@5 0.586 / recall@10 0.655 / MRR 0.388） |
 | `raw-helloagents-baseline.md` | — | 2026-09-14 | 上表的 **runner 直出**原始产物 |
-| `raw-cockpit-baseline.md` / `raw-cockpit-t101-final.md` | — | 2026-09-14 | 内部靶场 cockpit 修复前 / TASK-101 修复后 |
 | `raw-zace-t101-final.md` | — | 2026-09-14 | zace dogfood 20 题（TASK-101 后） |
 
 ## 3. 历史报告（**决策依据留档**，与当前靶场不可比）
@@ -55,6 +58,7 @@
 
 | 文件/目录 | 产出脚本 | 支撑 |
 |---|---|---|
+| `epyc-2c2g/summary.json` | 硬件探针 + 三轮 coldstart 的脱敏摘要 | 新 VPS 报告；完整本地曲线保留于 `.local/` |
 | `ingest-vps/INDEXES.json` | `build_indexes.sh` | **持久索引清单**：projectId / chunks / 体积 / CLI 与探针两套墙钟与峰值 |
 | `ingest-vps/{leveldb,HelloAgents,langchain}.json` | `ingest_probe.py` | `index-cost-model-vps.md` §1/§2 五项留档 |
 | `ingest-vps/reuse-{langchain,leveldb}.json` | `ingest_probe.py --incremental` | 证明"复用不重嵌"（chunks_new=0 / api_tokens=0） |
@@ -71,7 +75,8 @@
 | `ingest-run1/*.log` | `run_targets.sh`（WSL） | WSL 端到端墙钟与峰值（含 429 失败样本） |
 
 > 命名约定：`*.json` = 脚本产出的**原始证据**（不改动）；`raw-*.md` = runner 直出的**报告**；
-> 其余 `*.md` = 人工整理的结论。新增证据请沿用 `raw/` 下放 JSON、结论写 md 的分工。
+> 其余 `*.md` = 人工整理的结论。`summary.json` 明确标为脱敏摘要，不冒充完整原始曲线。
+> 内部用例及其原始报告已移至 `$HOME/.key/zace/benchmarks/`；历史提交仍需另行审查。
 
 ## 5. 引用纪律
 

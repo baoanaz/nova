@@ -1,69 +1,50 @@
-# 硬件配置档案（`configs/profiles/`）
+# 硬件配置档案
 
-> **这一层解决什么**：`EMBED_BATCH_SIZE` / `EMBED_CONCURRENCY` / `ZACE_EMBED_WORKERS` 这几个旋钮
-> **随硬件变化**（核数、内存、网速），并且直接是"索引内存峰值"与"冷启动时间"的乘数。
-> 以前它们散落在各机器的 `/etc/zace/zace.env` 与文档正文里，换机时既无法对照也无法回滚。
-> 这里把**非密钥**的调优取值按机器命名、进 Git 留档；密钥仍只留在 `/etc/zace/zace.env`（0600，永不进 Git）。
+这里仅提交无密钥的批大小、并发、消费者和内存护栏说明。
+实际密钥放 `$HOME/.key/zace/secrets.env`，机器路径和运行数据放本机 `.env`、`.local/`。
+配置按规格别名命名，不使用真实 IP 或主机名。
 
-## 用法
+## 使用
+
+从仓库根加载：
 
 ```bash
-# 本地 / 基准
-set -a; source /etc/zace/zace.env                     # 密钥 + 服务形态（不进 Git）
-set -a; source configs/profiles/<档案名>.env          # 本机调优档（进 Git）
+set -a
+source .env
+source configs/profiles/epyc-2c2g.env
 set +a
 ```
 
-后 source 的覆盖前者（同名键）。systemd 部署：在 `EnvironmentFile=/etc/zace/zace.env` **之后**
-再加一行（`-` 表示文件缺失不报错）：
+后加载的同名参数覆盖前者。`scripts/benchmark-vps.sh` 显式使用基线配置，
+不根据机器型号自动抬高并发，也不让本机日常配置改变测试口径。
 
-```ini
-EnvironmentFile=-/opt/zace/app/configs/profiles/<档案名>.env
-```
+## 参数
 
-## 命名约定
+| 键 | 含义 | 基线 |
+|---|---|---:|
+| `EMBED_BATCH_SIZE` | 每个 HTTP 请求的最大条数 | 500 |
+| `EMBED_CONCURRENCY` | 单次 embed 调用内的并发批数 | 4 |
+| `ZACE_EMBED_WORKERS` | 并行处理整窗的消费者数 | 2 |
+| `EMBED_BATCH_TOKEN_BUDGET` | 单请求 token 预算 | 300000 |
+| `EMBED_MAX_INPUT_TOKENS` | 单条输入截断上限 | 32000 |
+| `EMBED_DIM` | 向量维度 | 1024 |
 
-**档案名 = 机器标识**：优先用 IP（如 `154.12.34.214`）；还没拿到 IP 的用规格占位
-（如 `dmit-2c2g-200m`），上机后按 IP 复制一份新档、把占位档留在表里当历史（README §档案清单）。
+窗口为批大小 × 并发（当前 2000 chunks，代码上限 4000）。
+TASK-115 采用主线程攒满整窗再派发；不要按消费者数把窗口切小，
+否则单次调用填不满原定并发。详情见 [TASK-115 报告](../../benches/results/index-perf-task115-vps.md)。
 
-## 旋钮是什么
+峰值内存不能仅按在飞向量线性估计：解析器、SQLite、Arrow 和 LanceDB 都有基础与缓冲开销。
+2 GiB 机器的性能测量串行执行，并使用 systemd cgroup 护栏。
+基线旧机 K=1/K=2 真实 API RSS 分别为 748.4/823.4 MiB；
+这些数值不是新机器的内存承诺。
 
-| 键 | 缺省 | 作用 | 对内存/时间的影响 |
-|---|---|---|---|
-| `EMBED_BATCH_SIZE` | 64（Voyage 档 500） | 单次 HTTP 请求最多几条文本 | 与并发一起决定"窗口"大小 |
-| `EMBED_CONCURRENCY` | 厂商档（Voyage 8） | **单次 `embed()` 调用内**的并发批数 | 在飞请求数；内存 × |
-| `ZACE_EMBED_WORKERS` | 2（夹在 1..4） | 向量阶段**消费者线程数**（TASK-115） | 同时在处理的窗口数；网络与解码/落库的重叠度 |
-| `EMBED_BATCH_TOKEN_BUDGET` | 8192（Voyage 档 300000） | 单请求 token 预算（与 batch_size 取先到者） | 影响请求数与尖峰 |
-| `EMBED_MAX_INPUT_TOKENS` | 模型上限 | 单条输入截断上限 | 不影响内存峰值 |
+## 档案
 
-**窗口 = `EMBED_BATCH_SIZE × EMBED_CONCURRENCY`**（chunk 数，`MAX_EMBED_WINDOW=4000` 封顶）。
-TASK-115 起窗口由**主线程攒满整窗再派发**给 `ZACE_EMBED_WORKERS` 个消费者：
-
-- 向量在飞 ≈ `ZACE_EMBED_WORKERS × 窗口 × 33KB`（1024 维 float 的 Python 形态，33KB/条）；
-- ⚠️ **不要把窗口按消费者切小**：provider 的并发是"单次 `embed()` 调用内"的，窗口切半会让每次调用
-  打不满并发，实测零收益（`benches/results/index-perf-task115-vps.md` §2 有负结果）。
-
-## 内存峰值怎么估
-
-实测（同一台 2 vCPU / 1.9GiB，langchain 20931 chunk，真实 API）：
-
-| 配置 | 峰值 RSS | 冷启动 |
+| 档案 | 设备 | 状态 |
 |---|---|---|
-| 窗口 2000 × 1 消费者 | 748MB | 79.5s |
-| 窗口 2000 × 2 消费者 | 823MB | 63.3s |
+| [vps-xeon-2c2g.env](vps-xeon-2c2g.env) | Xeon E5-2680 v4，2 vCPU，1.9 GiB | 2026-09-26 历史实测，TASK-115 |
+| [epyc-2c2g.env](epyc-2c2g.env) | EPYC 7282，2 vCPU，1.9 GiB | 新 VPS 本地/硬件/API 已测；配置保持可比基线 |
+| [dmit-2c2g-200m.env](dmit-2c2g-200m.env) | 历史规划规格 | 外推占位，不能当实测 |
 
-**不要拿线性公式外推**（进程基础、解析器、Arrow/LanceDB 缓冲、SQLite WAL 各占一块）。
-做法：在目标机上用内存护栏 + 探针实测：
-
-```bash
-systemd-run --scope --quiet -p MemoryHigh=1400M -p MemoryMax=1700M -p MemorySwapMax=1024M -- \
-  uv run python benches/embed-bench/coldstart_probe.py --repo <仓库> --data "$(mktemp -d)" \
-  --out /tmp/x.json --mode local-only     # 免费；去掉 --mode 走真实 API
-```
-
-## 档案清单
-
-| 档案 | 机器 | 状态 | 关键取值 |
-|---|---|---|---|
-| [`154.12.34.214.env`](154.12.34.214.env) | 现役 VPS：2 vCPU Xeon E5-2680v4 / 1.9GiB / 出口实测 ~90Mbps | ✅ 已实测冻结（2026-09-26 复核） | 窗口 2000、K=2、MemoryMax=1400M |
-| [`dmit-2c2g-200m.env`](dmit-2c2g-200m.env) | 计划中的 DMIT：2 vCPU / 2GiB / 200Mbps | ⏳ 待上机实测 | 窗口 2000、K=2（内存允许可试 3）、MemoryMax=1500M |
+新 VPS 数据见 [设备报告](../../benches/results/index-perf-epyc-2c2g.md)。
+硬件档只说明配置来源，完整测量口径与限制在报告及 [性能手册](../../docs/handbook/perf/README.md)。

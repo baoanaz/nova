@@ -40,10 +40,10 @@ from typing import Any, TypeVar
 from zace_core.engine import PROJECT_META_FILENAME, Engine, EngineError, RepoIdentity, SearchTrace
 from zace_core.pipeline import IngestReport
 from zace_core.storage.db import DB_FILENAME
-from zace_core.types import ChangeSet, ProjectHandle
+from zace_core.types import BlobInput, ChangeSet, ProjectHandle
 
 from zace_service.blobstore import BlobSource, BlobStore
-from zace_service.errors import embedding_failure_reason
+from zace_service.errors import ApiError, embedding_failure_reason
 from zace_service.indexer import (
     STATE_DONE,
     STATE_FAILED,
@@ -115,8 +115,9 @@ class EngineManager:
     def __init__(self, data_root: str | Path, engine: Engine) -> None:
         self._data_root = Path(data_root).expanduser()
         self._engine = engine
-        self._locks: dict[str, threading.Lock] = {}
+        self._locks: dict[str, threading.RLock] = {}
         self._locks_guard = threading.Lock()
+        self._deleting: set[str] = set()
         #: 最近一次 provider 故障摘要（脱敏）；成功后清空。见 provider_health。
         self._provider_error: str | None = None
         #: 本地模式（TASK-034）：projectId → 已绑定的仓库根 / 后台索引任务 / 上次重扫时刻。
@@ -236,14 +237,22 @@ class EngineManager:
         TASK-034 §B：先取消并等后台索引线程收尾，再拿 per-project 锁删除——否则索引线程
         可能在 ``rm -rf`` 之后重建项目目录（"删除后不复活目录"）。
         """
-        self._stop_indexer(project_id)
-        with self._lock_for(project_id):
-            if not self.project_exists(project_id):
+        with self._locks_guard:
+            if project_id in self._deleting:
                 return False
-            self._engine.delete_project(project_id)  # core：整个项目目录 rm -rf（D-03）
+            self._deleting.add(project_id)
+        try:
+            self._stop_indexer(project_id)
+            with self._lock_for(project_id):
+                if not self.project_exists(project_id):
+                    return False
+                self._engine.delete_project(project_id)
+                # Keep the lock identity: requests already waiting on it must not race
+                # a newly resolved project using a different lock for the same id.
+            return True
+        finally:
             with self._locks_guard:
-                self._locks.pop(project_id, None)
-        return True
+                self._deleting.discard(project_id)
 
     # ------------------------------------------------------------------ blob / 账本
 
@@ -264,6 +273,58 @@ class EngineManager:
         return BlobStore.open(directory), SyncState.load(directory)
 
     # ------------------------------------------------------------------ 数据面
+
+    def project_lock(self, project_id: str) -> threading.RLock:
+        """Serialize blob/ledger/index mutations with the same project lock."""
+        return self._lock_for(project_id)
+
+    def flush_sync(self, project_id: str) -> IngestReport:
+        """Ingest one durable pending set; exceptions leave it available for retry."""
+        with self._lock_for(project_id):
+            state = self.sync_state(project_id)
+            if not state.pending:
+                return IngestReport()
+            source = self.blob_source(project_id)
+            files = state.files
+            added: list[BlobInput] = []
+            modified: list[BlobInput] = []
+            for path, kind in sorted(state.pending_files.items()):
+                item = BlobInput(path=path, content=source.read(path),
+                                 blob_hash=files[path].blob_hash)
+                (added if kind == "added" else modified).append(item)
+            report = self.ingest(project_id, ChangeSet(
+                added=tuple(added), modified=tuple(modified), deleted=state.pending_deleted,
+                branch=state.branch, commit_id=state.commit,
+            ))
+            if not report.errors:
+                state.complete_pending(report.skipped_files)
+                state.save()
+                with self._locks_guard:
+                    previous = self._indexers.get(project_id)
+                    if previous is not None and not previous.running and previous.progress().error:
+                        self._indexers.pop(project_id, None)
+            return report
+
+    def start_sync(self, project_id: str) -> IndexProgress:
+        """Start or join a single background flush; no in-memory queue to lose on restart."""
+        self._initialize_project(project_id)
+        lock = self._lock_for(project_id)
+        with self._locks_guard:
+            if project_id in self._deleting or not self.project_exists(project_id):
+                raise ApiError("project_not_found", "项目不存在或正在删除", 404)
+            current = self._indexers.get(project_id)
+            if current is not None and current.running:
+                return current.progress()
+            if not self.sync_state(project_id).pending:
+                return current.progress() if current is not None else IndexProgress(state="done")
+            indexer = ProjectIndexer(
+                project_id, self._engine.project_dir(project_id),
+                ingest=lambda: self.flush_sync(project_id), lock=lock,
+                count_files=lambda: len(self.sync_state(project_id).pending_files),
+            )
+            self._indexers[project_id] = indexer
+            indexer.start()
+            return indexer.progress()
 
     def ingest(self, project_id: str, changes: ChangeSet) -> IngestReport:
         """索引一次变更集（同 project 串行；source 用账本快照，见卡内 §A/§B）。
@@ -307,19 +368,34 @@ class EngineManager:
             )
             return report
 
-    def sync_status(self, project_id: str) -> dict[str, Any]:
-        """core ``sync_status`` 全字段（camelCase，CF-05）+ 同步侧追加字段（TASK-033 口径）。"""
+    def sync_status(self, project_id: str, *, progress_only: bool = False) -> dict[str, Any]:
+        """默认返回完整统计；就绪度轮询只读 worker 快照，避免反复开库/遍历 blob。"""
+        if progress_only:
+            progress = self.index_progress(project_id)
+            running = progress.state == "running"
+            state = None if running else self.sync_state(project_id)
+            return {
+                "projectId": project_id,
+                "pendingJobs": int(running or (state is not None and state.pending)),
+                "indexProgress": progress.to_json(),
+                "skippedFiles": [] if state is None else list(state.skipped_files),
+            }
         status = self._engine.sync_status(project_id)
         state = self.sync_state(project_id)
         blob_count, blob_bytes = self.blob_store(project_id).usage()
+        progress = self.index_progress(project_id)
         return {
             "projectId": status.project_id,
             "filesIndexed": status.files_indexed,
             "chunks": status.chunks,
             "symbols": status.symbols,
             "edges": status.edges,
-            "pendingJobs": status.pending_jobs,
+            "pendingJobs": max(
+                status.pending_jobs, int(state.pending or progress.state == "running")
+            ),
             "indexingFiles": list(status.indexing_files),
+            "indexProgress": progress.to_json(),
+            "skippedFiles": list(state.skipped_files),
             "lastIndexedAt": status.last_indexed_at,
             "branch": state.branch,
             "commit": state.commit,
@@ -486,6 +562,8 @@ class EngineManager:
         if (directory / DB_FILENAME).exists():
             return
         with self._lock_for(project_id):
+            if project_id in self._deleting or not self.project_exists(project_id):
+                raise ApiError("project_not_found", "项目不存在或正在删除", 404)
             if not (directory / DB_FILENAME).exists():
                 self._engine.sync_status(project_id)  # 建库/建表（空库代价极小）
 
@@ -698,11 +776,11 @@ class EngineManager:
 
     # ------------------------------------------------------------------ 内部
 
-    def _lock_for(self, project_id: str) -> threading.Lock:
+    def _lock_for(self, project_id: str) -> threading.RLock:
         with self._locks_guard:
             lock = self._locks.get(project_id)
             if lock is None:
-                lock = threading.Lock()
+                lock = threading.RLock()
                 self._locks[project_id] = lock
             return lock
 

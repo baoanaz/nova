@@ -1,0 +1,427 @@
+{
+  "schema": 1,
+  "generated_at": "2026-10-07T05:34:43.252078+00:00",
+  "api_results_added_on": "2026-10-07 UTC",
+  "device": "epyc-2c2g",
+  "zace_commit": "bbbd89b07a57894090680b49fb18803af0b651e4",
+  "worktree": "environment/documentation/benchmark tooling changes; application source unchanged",
+  "langchain_commit": "e75dae1f53c99c2b5ddb0c7bb36022c6aea25569",
+  "machine": {
+    "cpu_model": "AMD EPYC 7282 16-Core Processor",
+    "cpu_count": 2,
+    "kernel": "6.8.0-94-generic",
+    "loadavg_before": [
+      1.4765625,
+      0.7265625,
+      0.46142578125
+    ],
+    "loadavg_after": [
+      1.91455078125,
+      0.875,
+      0.51611328125
+    ],
+    "ram_mib": 1919,
+    "swap_mib": 1535
+  },
+  "units": {
+    "wall_s": "seconds",
+    "cpu_total_s": "seconds",
+    "peak_rss_mb": "MiB",
+    "bandwidth": "decimal Mbps",
+    "api_response_mb": "MiB",
+    "api_MB_per_s": "MiB/s"
+  },
+  "config": {
+    "model": "voyage-4-lite",
+    "dim": 1024,
+    "batch_size": 500,
+    "concurrency": 4,
+    "embed_workers": 2,
+    "batch_token_budget": 300000,
+    "max_input_tokens": 32000
+  },
+  "local_runs": [
+    {
+      "run": 1,
+      "wall_s": 44.543,
+      "cpu_total_s": 38.545,
+      "cpu_util_pct_of_ncpu": 43.3,
+      "peak_rss_mb": 803.3,
+      "files_parsed": 2986,
+      "chunks_new": 20931,
+      "requests": 0,
+      "phases_s": {
+        "ingest.total": 44.5316,
+        "engine.ingest_inner": 41.9708,
+        "ingest.run": 38.3025,
+        "embed.stage_window": 25.375,
+        "index.file_total": 15.684,
+        "embed.stage_rebuild": 11.9448,
+        "embed.batch_thread_wall": 9.9081,
+        "sqlite.apply_file_change": 9.8645,
+        "lancedb.upsert": 8.4405,
+        "embed.pipeline_backpressure_wait": 6.1462,
+        "sqlite.fts_insert": 6.0654,
+        "sqlite.jieba_segment": 5.2976,
+        "parse.tree_sitter": 4.5639,
+        "embed.embed_side_total": 3.6574,
+        "graph.resolve_phase2": 3.5146,
+        "embed.float_convert": 3.1508,
+        "embed.l2_normalize": 2.8521,
+        "scan.plan_scan": 2.5068,
+        "scan.collect_inputs": 1.1691,
+        "chunk.split_file": 0.9493,
+        "embed.synth_reply_offline": 0.2528,
+        "sqlite.unresolved_rows": 0.0569,
+        "sqlite.spec_ref_cascade": 0.0455,
+        "embed.prepare_truncate": 0.0406,
+        "engine.displacement_check": 0.0363,
+        "embed.estimate_tokens": 0.0343,
+        "embed.tokenizer_load": 0.0145,
+        "engine.write_manifest": 0.0086,
+        "engine.resolve_repo": 0.0085,
+        "finalize.fingerprint_read": 0.0025,
+        "sqlite.set_config": 0.0019,
+        "engine.open": 0.0001
+      }
+    },
+    {
+      "run": 2,
+      "wall_s": 39.775,
+      "cpu_total_s": 36.492,
+      "cpu_util_pct_of_ncpu": 45.9,
+      "peak_rss_mb": 818.4,
+      "files_parsed": 2986,
+      "chunks_new": 20931,
+      "requests": 0,
+      "phases_s": {
+        "ingest.total": 39.7646,
+        "engine.ingest_inner": 37.1297,
+        "ingest.run": 35.2205,
+        "embed.stage_window": 23.1191,
+        "index.file_total": 15.3037,
+        "sqlite.apply_file_change": 9.5602,
+        "embed.stage_rebuild": 9.2963,
+        "embed.batch_thread_wall": 8.2027,
+        "lancedb.upsert": 6.4215,
+        "sqlite.fts_insert": 5.9106,
+        "sqlite.jieba_segment": 5.193,
+        "parse.tree_sitter": 4.508,
+        "embed.pipeline_backpressure_wait": 4.268,
+        "graph.resolve_phase2": 3.5854,
+        "embed.embed_side_total": 3.0238,
+        "embed.float_convert": 2.7496,
+        "scan.plan_scan": 2.5848,
+        "embed.l2_normalize": 1.4695,
+        "scan.collect_inputs": 0.9686,
+        "chunk.split_file": 0.9401,
+        "embed.estimate_tokens": 0.0592,
+        "sqlite.unresolved_rows": 0.0544,
+        "embed.prepare_truncate": 0.0542,
+        "sqlite.spec_ref_cascade": 0.0436,
+        "embed.synth_reply_offline": 0.042,
+        "engine.displacement_check": 0.0303,
+        "embed.tokenizer_load": 0.0287,
+        "engine.write_manifest": 0.0154,
+        "engine.resolve_repo": 0.0085,
+        "sqlite.set_config": 0.0018,
+        "finalize.fingerprint_read": 0.0014,
+        "engine.open": 0.0001
+      }
+    },
+    {
+      "run": 3,
+      "wall_s": 40.95,
+      "cpu_total_s": 36.656,
+      "cpu_util_pct_of_ncpu": 44.8,
+      "peak_rss_mb": 796.2,
+      "files_parsed": 2986,
+      "chunks_new": 20931,
+      "requests": 0,
+      "phases_s": {
+        "ingest.total": 40.9388,
+        "engine.ingest_inner": 38.5123,
+        "ingest.run": 36.2785,
+        "embed.stage_window": 23.8445,
+        "index.file_total": 14.9597,
+        "embed.stage_rebuild": 9.5138,
+        "sqlite.apply_file_change": 9.25,
+        "embed.batch_thread_wall": 7.7672,
+        "lancedb.upsert": 7.053,
+        "sqlite.fts_insert": 5.6076,
+        "sqlite.jieba_segment": 4.9012,
+        "parse.tree_sitter": 4.4736,
+        "graph.resolve_phase2": 4.1995,
+        "embed.pipeline_backpressure_wait": 4.0501,
+        "embed.embed_side_total": 3.0194,
+        "embed.float_convert": 2.4684,
+        "scan.plan_scan": 2.3828,
+        "embed.l2_normalize": 1.6293,
+        "scan.collect_inputs": 1.0506,
+        "chunk.split_file": 0.9392,
+        "embed.synth_reply_offline": 0.0596,
+        "sqlite.unresolved_rows": 0.0556,
+        "embed.prepare_truncate": 0.0448,
+        "sqlite.spec_ref_cascade": 0.0433,
+        "embed.estimate_tokens": 0.0397,
+        "engine.displacement_check": 0.0282,
+        "engine.write_manifest": 0.01,
+        "embed.tokenizer_load": 0.0098,
+        "engine.resolve_repo": 0.0094,
+        "sqlite.set_config": 0.0018,
+        "finalize.fingerprint_read": 0.0016,
+        "engine.open": 0.0001
+      }
+    }
+  ],
+  "local_median": {
+    "wall_s": 40.95,
+    "cpu_total_s": 36.656,
+    "peak_rss_mb": 803.3
+  },
+  "old_local": {
+    "wall_s": 45.462,
+    "cpu_total_s": 44.965,
+    "peak_rss_mb": 777.2
+  },
+  "cpu": [
+    {
+      "threads": 1,
+      "seconds": 10,
+      "max_prime": 20000,
+      "events_per_second": 577.98
+    },
+    {
+      "threads": 2,
+      "seconds": 10,
+      "max_prime": 20000,
+      "events_per_second": 1020.39
+    }
+  ],
+  "network": {
+    "download_endpoint": "https://proof.ovh.net/files/100Mb.dat",
+    "upload_endpoint": "https://speed.cloudflare.com",
+    "proxy": "disabled",
+    "scope": "throughput to this endpoint, not a guaranteed port speed",
+    "download": [
+      {
+        "connections": 1,
+        "bytes_per_connection": 104857600,
+        "total_bytes": 104857600,
+        "wall_s": 11.211956,
+        "aggregate_mbps": 74.818,
+        "connection_mbps_median": 74.965,
+        "rows": [
+          {
+            "http_status": 200,
+            "bytes": 104857600,
+            "total_s": 11.190032,
+            "ttfb_s": 0.456391,
+            "mbps_including_latency": 74.965
+          }
+        ]
+      },
+      {
+        "connections": 4,
+        "bytes_per_connection": 104857600,
+        "total_bytes": 419430400,
+        "wall_s": 16.833527,
+        "aggregate_mbps": 199.331,
+        "connection_mbps_median": 76.36850000000001,
+        "rows": [
+          {
+            "http_status": 200,
+            "bytes": 104857600,
+            "total_s": 11.03704,
+            "ttfb_s": 0.577847,
+            "mbps_including_latency": 76.004
+          },
+          {
+            "http_status": 200,
+            "bytes": 104857600,
+            "total_s": 16.7989,
+            "ttfb_s": 0.586518,
+            "mbps_including_latency": 49.935
+          },
+          {
+            "http_status": 200,
+            "bytes": 104857600,
+            "total_s": 10.57286,
+            "ttfb_s": 0.59046,
+            "mbps_including_latency": 79.341
+          },
+          {
+            "http_status": 200,
+            "bytes": 104857600,
+            "total_s": 10.932161,
+            "ttfb_s": 0.590086,
+            "mbps_including_latency": 76.733
+          }
+        ]
+      }
+    ],
+    "upload": {
+      "http_status": 200,
+      "bytes": 16000000,
+      "total_s": 0.430365,
+      "ttfb_s": 0.051179,
+      "mbps_including_latency": 297.422
+    }
+  },
+  "unsuccessful_attempt": {
+    "endpoint": "https://speed.cloudflare.com/__down",
+    "errors": [
+      "curl failed: curl: (22) The requested URL returned error: 403"
+    ],
+    "upload": {
+      "http_status": 200,
+      "bytes": 16000000,
+      "total_s": 0.37928,
+      "ttfb_s": 0.042017,
+      "mbps_including_latency": 337.482
+    }
+  },
+  "pending": [],
+  "validation": {
+    "python": {"passed": 1362, "skipped": 9},
+    "web": {"passed": 109, "skipped": 3, "lint": "passed", "build": "passed"},
+    "rust": {"passed": 61},
+    "ruff": "passed",
+    "dependency_direction": "passed",
+    "version_consistency": "passed",
+    "private_package_roundtrip": "passed",
+    "read_only_review": "no blocking findings",
+    "scope": "current changes and direct dependencies; not a full history or screenshot audit"
+  },
+  "local_wall_reduction_pct": 9.92,
+  "local_cpu_reduction_pct": 18.48,
+  "aggregation": "Manually selected and merged fields from coldstart/hardware/TTFB outputs; not a direct probe output.",
+  "full_api": {
+    "wall_s": 52.664,
+    "cpu_total_s": 47.593,
+    "peak_rss_mb": 843.3,
+    "cpu_util_pct_of_ncpu": 45.2,
+    "phases_s": {
+      "embed.batch_thread_wall": 93.4661,
+      "embed.stage_window": 52.6741,
+      "ingest.total": 52.6462,
+      "engine.ingest_inner": 50.0836,
+      "ingest.run": 47.5542,
+      "embed.embed_side_total": 30.9901,
+      "index.file_total": 16.0477,
+      "embed.stage_rebuild": 12.3645,
+      "lancedb.upsert": 10.5171,
+      "sqlite.apply_file_change": 9.7727,
+      "embed.pipeline_backpressure_wait": 8.8707,
+      "embed.json_decode": 7.2439,
+      "sqlite.fts_insert": 5.8437,
+      "sqlite.jieba_segment": 5.0567,
+      "parse.tree_sitter": 4.9408,
+      "graph.resolve_phase2": 3.3253,
+      "scan.plan_scan": 2.51,
+      "embed.float_convert": 1.6327,
+      "scan.collect_inputs": 1.0678,
+      "chunk.split_file": 1.0131,
+      "embed.l2_normalize": 0.3922,
+      "sqlite.unresolved_rows": 0.0563,
+      "sqlite.spec_ref_cascade": 0.0502,
+      "embed.estimate_tokens": 0.0424,
+      "embed.prepare_truncate": 0.0418,
+      "engine.displacement_check": 0.0272,
+      "engine.write_manifest": 0.0151,
+      "embed.tokenizer_load": 0.0116,
+      "engine.resolve_repo": 0.009,
+      "sqlite.set_config": 0.0022,
+      "finalize.fingerprint_read": 0.0019,
+      "engine.open": 0.0001
+    },
+    "report": {
+      "added": 2986,
+      "modified": 0,
+      "deleted": 0,
+      "chunks_new": 20931,
+      "chunks_reused": 0,
+      "chunks_deduped": 1077,
+      "files_parsed": 2986,
+      "vectors_upserted": 20931,
+      "invalidation": "full_reparse",
+      "errors": []
+    },
+    "network": {
+      "api_total_tokens": 3565219,
+      "requests": 58,
+      "status_counts": {
+        "200": 58
+      },
+      "request_bytes": 16669561,
+      "response_bytes": 238806124,
+      "network_busy_s": 15.142,
+      "api_window_from_first_req_to_last_end_s": 26.361,
+      "mb_per_s_network_busy": 15.041
+    },
+    "runs": 1,
+    "wall_reduction_pct": 16.84
+  },
+  "old_full_api": {
+    "wall_s": 63.326,
+    "peak_rss_mb": 823.4,
+    "network_busy_s": 29.75
+  },
+  "ttfb": [
+    {
+      "config": {
+        "concurrency": 1,
+        "batch_size": 500
+      },
+      "requests": 8,
+      "chunks": 4000,
+      "response_mb": 48.67,
+      "wall_s": 7.5,
+      "aggregate_MB_per_s": 6.49,
+      "ttfb_s_median": 0.538,
+      "transfer_s_median": 0.374,
+      "connection_MB_per_s_median": 16.24,
+      "status_counts": {
+        "200": 8
+      }
+    },
+    {
+      "config": {
+        "concurrency": 4,
+        "batch_size": 500
+      },
+      "requests": 8,
+      "chunks": 4000,
+      "response_mb": 48.67,
+      "wall_s": 2.52,
+      "aggregate_MB_per_s": 19.3,
+      "ttfb_s_median": 0.855,
+      "transfer_s_median": 0.278,
+      "connection_MB_per_s_median": 21.88,
+      "status_counts": {
+        "200": 8
+      }
+    },
+    {
+      "config": {
+        "concurrency": 8,
+        "batch_size": 500
+      },
+      "requests": 8,
+      "chunks": 4000,
+      "response_mb": 48.67,
+      "wall_s": 1.67,
+      "aggregate_MB_per_s": 29.1,
+      "ttfb_s_median": 0.948,
+      "transfer_s_median": 0.299,
+      "connection_MB_per_s_median": 21.41,
+      "status_counts": {
+        "200": 8
+      }
+    }
+  ],
+  "llm": {
+    "provider_smoke": "passed",
+    "scope": "one minimal request through zace provider; no end-to-end ask_project test"
+  }
+}

@@ -500,4 +500,4 @@ def test_tests_import_path_is_available() -> None:
     assert (ROOT / "pyproject.toml").is_file(), f"ROOT 不是仓库根：{ROOT}"
     assert (ROOT / "core" / "pyproject.toml").is_file()
     assert (ROOT / "service" / "pyproject.toml").is_file()
-    assert (ROOT / "benches" / "golden" / "cockpit-agents-py" / "cockpit.jsonl").is_file()
+    assert (ROOT / "benches" / "targets.json").is_file()

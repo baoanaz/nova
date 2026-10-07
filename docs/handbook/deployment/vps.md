@@ -34,22 +34,21 @@ sudo mkdir -p /opt && cd /opt
 git clone https://github.com/baoanaz/zace.git
 cd /opt/zace
 
-# ── ② 依赖（Python 3.12 + uv；见 ../getting-started/README.md）──
-uv sync
+# ── ② 依赖（Python 3.12 + uv + Node 22；见 ENVIRONMENT.txt）──
+bash scripts/setup-dev.sh --with-web
 
 # ── ③ 隐私资产（从你保存的包恢复）──────────────────
 #    把 zace-secrets.tar.gz 拷到机器上，然后：
 tar xzf zace-secrets.tar.gz -C ~/
-bash ~/zace-secrets/restore.sh vps      # 交互式：填域名/路径/key
+bash ~/zace-secrets/restore.sh /opt/zace  # 仅恢复凭据与本机配置，不启动服务
 
 # ── ④ 前端构建 ─────────────────────────────────────
 cd /opt/zace/web
 ZACE_WEB_BASE=/zace-web/ VITE_ZACE_API_BASE=/zace-service npm run build
 
 # ── ⑤ systemd + nginx ──────────────────────────────
-sudo cp ~/zace-secrets/systemd/zace-service.service /etc/systemd/system/
-sudo cp ~/zace-secrets/nginx/zace-vps.conf /etc/nginx/sites-available/zace
-sudo ln -sf /etc/nginx/sites-available/zace /etc/nginx/sites-enabled/zace
+# 按 §3 创建 .local/service.env，按 §4/§6 配置 systemd/nginx。
+# 启用 nginx 站点链接前先审查现有目标；不要覆盖未知链接。
 sudo nginx -t && sudo systemctl daemon-reload
 sudo systemctl enable --now zace-service nginx
 
@@ -59,14 +58,18 @@ curl -s -X POST https://<域名>/zace-service/api/auth/bootstrap \
   -d '{"name":"admin","password":"<强密码>"}' -c /tmp/cookie.txt
 ```
 
-## 3. 环境变量（`/etc/zace/zace.env`）
+## 3. 本机配置与外部密钥
 
-权限必须是 `0600`（含 key 明文）。完整键名与取值见
+非密钥生产参数放 `/opt/zace/.local/service.env`（0600，不提交）；
+真实 Key 放 `/root/.key/zace/secrets.env`（目录 0700、文件 0600）。
+完整键名与取值见
 [`../privacy/资产清单.md`](../privacy/资产清单.md) §3（密钥种类与来源），此处是生产取值：
 
 ```bash
 # ---- 数据根（持久化；只要这个目录不动，换代码不丢数据）
-ZACE_DATA_ROOT=/root/.zace
+ZACE_DATA_ROOT=/opt/zace/.local/data
+ZACE_COOKIE_SECURE=true
+ZACE_ADMIN_NAME=admin
 
 # ---- 前端/后端公开路径（构建 web 时要用同一份 ZACE_WEB_BASE）
 ZACE_WEB_BASE=/zace-web/
@@ -81,7 +84,6 @@ EMBED_CONCURRENCY=4
 EMBED_BATCH_SIZE=500
 EMBED_BATCH_TOKEN_BUDGET=300000
 EMBED_MAX_INPUT_TOKENS=32000
-EMBED_API_KEY=<你的 Voyage key>
 
 # ---- 向量阶段消费者（TASK-115；不写也是 2，写出来便于留档与回滚）
 # 窗口 = EMBED_BATCH_SIZE × EMBED_CONCURRENCY = 2000；K 个消费者同时在处理 K 个窗口。
@@ -90,7 +92,6 @@ ZACE_EMBED_WORKERS=2
 # ---- LLM（OpenAI-compatible 网关）
 ANSWER_BASE_URL=http://<网关地址>:8080/v1
 ANSWER_MODEL=deepseek-flash
-ANSWER_API_KEY=<你的网关 key>
 ANSWER_TIMEOUT_S=120
 ANSWER_MAX_TOKENS=16384
 
@@ -102,7 +103,7 @@ EMBED_RPM=2000
 ```
 
 > **按机器留档的调优档在 [`configs/profiles/`](../../../configs/profiles/README.md)**：
-> 每个机器一份 `<机器标识>.env`（现役 VPS = `154.12.34.214.env`，计划中的 DMIT = `dmit-2c2g-200m.env`），
+> 使用规格别名（历史 Xeon 为 `vps-xeon-2c2g.env`，新 VPS 为 `epyc-2c2g.env`），
 > 只放非密钥调优项（批大小 / 并发 / 消费者数）与 systemd 内存护栏留档；
 > 用法与"窗口不能按消费者切小"的告警见该目录 README。
 
@@ -117,7 +118,9 @@ EMBED_RPM=2000
 
 ## 4. systemd 单元
 
-`/etc/systemd/system/zace-service.service`（模板在隐私包 `systemd/`）：
+`/etc/systemd/system/zace-service.service` 使用以下模板。
+两个 EnvironmentFile 均是普通 `KEY=value` 文件；systemd 不执行 `.env` 中的 shell/source 语法。
+外部凭据文件填写 `EMBED_API_KEY`、可选 `ANSWER_API_KEY`；非 root 服务应改为服务用户可读的专用外部位置。
 
 ```ini
 [Unit]
@@ -127,7 +130,8 @@ After=network.target
 [Service]
 Type=simple
 WorkingDirectory=/opt/zace
-EnvironmentFile=/etc/zace/zace.env
+EnvironmentFile=/opt/zace/.local/service.env
+EnvironmentFile=/root/.key/zace/secrets.env
 ExecStart=/opt/zace/.venv/bin/zace-service serve --host 127.0.0.1 --port 8787
 Restart=on-failure
 RestartSec=3
@@ -222,10 +226,11 @@ startup_timeout_ms = 60000
 
 ```bash
 # 备份：只要这两个（代码不含数据）
-tar czf zace-backup-$(date +%F).tgz -C /root/.zace projects zace-meta.db
+tar czf /root/.key/zace/zace-data-$(date +%F).tgz -C /opt/zace/.local/data projects zace-meta.db
+chmod 600 /root/.key/zace/zace-data-$(date +%F).tgz
 
 # 升级：换代码 → 重建 web → 重启 service；数据根不动
-cd /opt/zace && git pull && uv sync
+cd /opt/zace && git pull && bash scripts/setup-dev.sh --with-web
 cd web && ZACE_WEB_BASE=/zace-web/ VITE_ZACE_API_BASE=/zace-service npm run build
 sudo systemctl restart zace-service
 ```

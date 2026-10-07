@@ -23,6 +23,8 @@ web/dist/
 # --- zace 运行时产物（本地调试可能落在仓库内）---
 .zace/
 data/
+.local/
+backups/
 *.db-wal
 *.db-shm
 
@@ -30,6 +32,12 @@ data/
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+zace-secrets*.tar.gz
+secrets/
 
 # --- 编辑器 / 系统 ---
 .idea/

@@ -35,14 +35,14 @@ export function Card({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-ink-line bg-paper-card shadow-sm">
+    <section className="min-w-0 border-2 border-ink-line bg-paper-card shadow-sm">
       {(title || actions) && (
-        <header className="flex items-center justify-between gap-3 border-b border-ink-line/70 px-4 py-3">
-          <h2 className="text-sm font-semibold text-ink-primary">{title}</h2>
+        <header className="flex flex-wrap items-center justify-between gap-3 border-b border-ink-line bg-paper-raised px-5 py-4">
+          <h2 className="text-base font-semibold text-ink-primary">{title}</h2>
           {actions}
         </header>
       )}
-      <div className="px-4 py-3">{children}</div>
+      <div className="px-5 py-5">{children}</div>
     </section>
   );
 }
@@ -87,27 +87,56 @@ export function ErrorBlock({ error }: { error: unknown }) {
   );
 }
 
+/** HTTP 公网预览没有 Clipboard API，使用用户点击触发的兼容复制。 */
+function copyWithSelection(text: string): boolean {
+  const previousFocus = document.activeElement;
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.readOnly = true;
+  field.style.cssText = "position:fixed;left:-9999px;top:0;font-size:16px";
+  document.body.appendChild(field);
+  try {
+    field.focus({ preventScroll: true });
+    field.select();
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    field.remove();
+    if (previousFocus instanceof HTMLElement) previousFocus.focus({ preventScroll: true });
+  }
+}
+
 export function CopyButton({ text, label = "复制" }: { text: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const resetTimer = useRef<number>();
+
+  useEffect(() => () => window.clearTimeout(resetTimer.current), []);
 
   async function onCopy() {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // 剪贴板不可用（非安全上下文/权限）：如实提示，不静默失败。
-      setCopied(false);
+    let copied = false;
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {
+        // 浏览器拒绝 Clipboard API 时继续尝试兼容复制。
+      }
     }
+    if (!copied) copied = copyWithSelection(text);
+    setStatus(copied ? "copied" : "failed");
+    window.clearTimeout(resetTimer.current);
+    resetTimer.current = window.setTimeout(() => setStatus("idle"), 2000);
   }
 
   return (
     <button
       type="button"
       onClick={onCopy}
+      aria-live="polite"
       className="rounded border border-ink-line bg-paper-card px-2 py-1 text-xs text-ink-primary hover:bg-paper-base"
     >
-      {copied ? "已复制" : label}
+      {status === "copied" ? "已复制" : status === "failed" ? "请手动复制" : label}
     </button>
   );
 }
@@ -141,11 +170,11 @@ export function LoadingBlock({ text = "加载中…" }: { text?: string }) {
  * 自动判断会在新页面出现时默默给出错误宽度；显式声明让每个页面自己负责。
  */
 export function Page({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-5xl space-y-5">{children}</div>;
+  return <div className="page-content mx-auto max-w-5xl">{children}</div>;
 }
 
 export function WidePage({ children }: { children: ReactNode }) {
-  return <div className="mx-auto max-w-[120rem] space-y-5">{children}</div>;
+  return <div className="page-content mx-auto max-w-[120rem]">{children}</div>;
 }
 
 /**
@@ -192,8 +221,7 @@ export function Switch({
  * 为什么用原生 `<dialog>` 而不是自造遮罩层：浏览器已经给了焦点陷阱、`Esc` 关闭与
  * `aria-modal` 语义，自造一套的常见后果是“键盘用户被卡在遮罩里”与“Esc 不生效”。
  *
- * 确认按钮用 `danger` token（TASK-100）：删除是破坏性操作，保留红色系；
- * 但用收敛的砖红（#9c3d2e）而不是高饱和正红——老纸主题下后者刺眼。
+ * 确认按钮使用独立的 danger token，保持危险操作的辨识度。
  *
  * 调用方负责挂载/卸载本组件（`open` 控制）；**取消按钮不发任何请求**——那是调用方必须
  * 自己保证的（本组件只回调 `onCancel`/`onConfirm`，不做业务判断）。
@@ -234,7 +262,7 @@ export function ConfirmDialog({
         event.preventDefault();
         if (!busy) onCancel();
       }}
-      className="max-w-lg rounded-lg border border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-ink-primary/40"
+      className="w-[calc(100%-2rem)] max-w-lg border-2 border-ink-line bg-paper-card p-0 shadow-xl backdrop:bg-ink-primary/40"
     >
       <div className="p-4">
         <h2 className="text-sm font-semibold text-ink-primary">{title}</h2>
@@ -307,7 +335,7 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={typeof title === "string" ? title : undefined}
-        className="relative z-10 w-full max-w-md rounded-lg border border-ink-line bg-paper-card p-5 shadow-xl"
+        className="relative z-10 w-full max-w-md border-2 border-ink-line bg-paper-card p-6 shadow-xl"
       >
         <div className="mb-3 flex items-start justify-between gap-3">
           <h2 className="text-sm font-semibold text-ink-primary">{title}</h2>
@@ -348,7 +376,7 @@ export function EmptyState({
   action?: ReactNode;
 }) {
   return (
-    <div className="px-4 py-6 text-center">
+    <div className="px-4 py-10 text-center">
       <p className="text-sm font-medium text-ink-primary">{title}</p>
       {hint && <p className="mx-auto mt-1 max-w-prose text-sm text-ink-muted">{hint}</p>}
       {action && <div className="mt-3 flex justify-center">{action}</div>}

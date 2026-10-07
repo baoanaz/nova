@@ -254,6 +254,7 @@ impl ToolLayer {
             .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
         require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
 
+        let mut deferred_confirmed = false;
         // 上传变更（有变更才发请求）。
         if !scan.to_upload.is_empty() {
             let payload = crate::index::upload_payload(&scan.to_upload);
@@ -261,6 +262,7 @@ impl ToolLayer {
                 .upload_files(&project_id, &payload)
                 .await
                 .map_err(|error| ToolError::Failed(format!("上传失败：{error:#}")))?;
+            deferred_confirmed |= outcome.indexing_deferred;
             let rejected = IndexManager::apply_upload_outcome(
                 &mut scan.index,
                 &scan.to_upload,
@@ -282,7 +284,7 @@ impl ToolLayer {
 
         // 通知删除（幂等）。
         if !scan.deleted.is_empty() {
-            remote
+            deferred_confirmed |= remote
                 .notify_deletions(&project_id, &scan.deleted)
                 .await
                 .map_err(|error| ToolError::Failed(format!("删除通知失败：{error:#}")))?;
@@ -292,6 +294,17 @@ impl ToolLayer {
         manager
             .commit(&scan.index)
             .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
+
+        // 每次调用都 flush，包括上传已缓存、但上次索引失败/超时的恢复路径。
+        let skipped = remote.wait_for_indexing(&project_id, deferred_confirmed).await
+            .map_err(|error| ToolError::Failed(format!("索引尚不可用：{error:#}")))?;
+        if !skipped.is_empty() {
+            for path in skipped {
+                scan.index.entries.remove(&path);
+            }
+            manager.commit(&scan.index)
+                .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
+        }
 
         let scope: Arc<Vec<String>> = Arc::new(scan.index.all_blob_hashes());
         let previous = self.session(&project_id);

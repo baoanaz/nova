@@ -91,6 +91,9 @@ class SyncState:
         self.branch = branch
         self.commit = commit
         self._files: dict[str, FileEntry] = dict(files or {})
+        self._pending_files: dict[str, str] = {}
+        self._pending_deleted: set[str] = set()
+        self._skipped_files: set[str] = set()
         #: 插入顺序即 LRU 顺序（最近使用在末尾）。
         self._checkpoints: dict[str, tuple[str, ...]] = {
             key: tuple(value) for key, value in (checkpoints or {}).items()
@@ -130,6 +133,17 @@ class SyncState:
                 entry = FileEntry.from_json(value)
                 if isinstance(key, str) and entry is not None:
                     state._files[key] = entry
+        pending = raw.get("pendingFiles", {})
+        if isinstance(pending, Mapping):
+            state._pending_files = {
+                path: kind for path, kind in pending.items()
+                if path in state._files and kind in ("added", "modified")
+            }
+        for field, target in (("pendingDeleted", state._pending_deleted),
+                              ("skippedFiles", state._skipped_files)):
+            values = raw.get(field, [])
+            if isinstance(values, list):
+                target.update(value for value in values if isinstance(value, str))
         checkpoints = raw.get("checkpoints")
         if isinstance(checkpoints, Mapping):
             for key, value in checkpoints.items():
@@ -147,6 +161,9 @@ class SyncState:
             "files": {
                 path: entry.to_json() for path, entry in sorted(self._files.items())
             },
+            "pendingFiles": dict(sorted(self._pending_files.items())),
+            "pendingDeleted": sorted(self._pending_deleted),
+            "skippedFiles": sorted(self._skipped_files),
             "checkpoints": {
                 key: list(value) for key, value in self._checkpoints.items()
             },
@@ -232,6 +249,40 @@ class SyncState:
             else:
                 deleted.append(path)
         return tuple(deleted), tuple(unknown)
+
+    @property
+    def pending_files(self) -> Mapping[str, str]:
+        return dict(self._pending_files)
+
+    @property
+    def pending_deleted(self) -> tuple[str, ...]:
+        return tuple(sorted(self._pending_deleted))
+
+    @property
+    def pending(self) -> bool:
+        return bool(self._pending_files or self._pending_deleted)
+
+    @property
+    def skipped_files(self) -> tuple[str, ...]:
+        return tuple(sorted(self._skipped_files))
+
+    def queue_file(self, path: str, *, added: bool) -> None:
+        # A repeated upload before flush must retain its original added/modified classification.
+        self._pending_files.setdefault(path, "added" if added else "modified")
+        self._pending_deleted.discard(path)
+        self._skipped_files.discard(path)
+
+    def queue_deletions(self, paths: Iterable[str]) -> None:
+        for path in paths:
+            self._pending_files.pop(path, None)
+            self._pending_deleted.add(path)
+            self._skipped_files.discard(path)
+
+    def complete_pending(self, skipped: Sequence[str]) -> None:
+        """Only acknowledge after the complete ingest succeeded, under the project lock."""
+        self._pending_files.clear()
+        self._pending_deleted.clear()
+        self._skipped_files.update(skipped)
 
     def record_checkpoint(self, checkpoint_id: str, blob_hashes: Sequence[str]) -> None:
         """登记 checkpoint（内容寻址，天然幂等）；超过上限则淘汰最久未使用的。"""
