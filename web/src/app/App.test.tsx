@@ -129,8 +129,26 @@ describe("首屏门禁", () => {
 
     render(<App />);
 
+    const start = await screen.findByRole("button", { name: "Start now" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    await userEvent.click(start);
     expect(await screen.findByRole("heading", { name: "登录" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "没有账户？注册" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "关闭登录面板" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(start).toHaveFocus();
+    const loginTrigger = screen.getByRole("button", { name: "Login" });
+    await userEvent.click(loginTrigger);
+    expect(screen.getByRole("dialog", { name: "登录" })).toBeInTheDocument();
+    await userEvent.keyboard("{Tab}");
+    expect(screen.getByRole("button", { name: "关闭登录面板" })).toHaveFocus();
+    await userEvent.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(screen.getByRole("button", { name: "没有账户？注册" })).toHaveFocus();
+    await userEvent.click(screen.getByRole("button", { name: "显示密码" }));
+    expect(screen.getByLabelText("密码")).toHaveAttribute("type", "text");
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(loginTrigger).toHaveFocus();
   });
 
   it("云端 + 无账户 → 显示初始化账户（否则用户没有账户可登）", async () => {
@@ -149,6 +167,7 @@ describe("首屏门禁", () => {
 
     render(<App />);
 
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     expect(await screen.findByRole("heading", { name: "初始化账户" })).toBeInTheDocument();
     expect(screen.getByText(/首次部署/)).toBeInTheDocument();
   });
@@ -299,6 +318,7 @@ describe("登录交互", () => {
     const user = userEvent.setup();
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     await screen.findByRole("heading", { name: "登录" });
 
     await user.type(screen.getByLabelText("账户"), "owner");
@@ -353,6 +373,7 @@ describe("邀请码注册（TASK-110 §1.1）", () => {
     const user = userEvent.setup();
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     await screen.findByRole("heading", { name: "登录" });
     expect(screen.queryByLabelText("邀请码")).toBeNull();
 
@@ -366,6 +387,7 @@ describe("邀请码注册（TASK-110 §1.1）", () => {
     const user = userEvent.setup();
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     await screen.findByRole("heading", { name: "登录" });
     await user.click(screen.getByRole("button", { name: "没有账户？注册" }));
 
@@ -393,6 +415,7 @@ describe("邀请码注册（TASK-110 §1.1）", () => {
     const user = userEvent.setup();
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     await screen.findByRole("heading", { name: "登录" });
     await user.click(screen.getByRole("button", { name: "没有账户？注册" }));
 
@@ -425,6 +448,7 @@ describe("邀请码注册（TASK-110 §1.1）", () => {
     const user = userEvent.setup();
 
     render(<App />);
+    await userEvent.click(await screen.findByRole("button", { name: "Start now" }));
     await screen.findByRole("heading", { name: "登录" });
     await user.click(screen.getByRole("button", { name: "没有账户？注册" }));
 

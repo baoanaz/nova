@@ -1,0 +1,94 @@
+.nova-landing {
+  position: relative;
+  isolation: isolate;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  color: #634c40;
+  background: #fff9f3;
+}
+.nova-landing-background {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: #fbf3ec;
+}
+.nova-background-media {
+  position: absolute;
+  top: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 90rem;
+  height: 60svh;
+  object-fit: cover;
+  object-position: 50% 40%;
+  -webkit-mask-image: linear-gradient(#000 45%, transparent 100%), linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(#000 45%, transparent 100%), linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-composite: intersect;
+}
+.nova-landing-nav {
+  display: flex;
+  align-items: center;
+  gap: 2.4rem;
+  padding: 1.6rem 6%;
+  font-size: 1.125rem;
+}
+.nova-small-logo { display: block; width: 8.5rem; flex-shrink: 0; }
+/* 独立字标按原比例完整显示，保留透明边距。 */
+.nova-small-logo img { display: block; width: 100%; height: auto; }
+.nova-nav-divider { height: 1.6rem; width: 1px; background: #d8c8bc; }
+.nova-nav-end { margin-left: auto; display: flex; align-items: center; gap: 2.8rem; }
+.nova-github { display: flex; align-items: center; gap: .75rem; }
+.nova-landing-nav a:hover, .nova-landing-nav button:hover { color: #bd502d; }
+.nova-landing-nav button { min-height: 2.75rem; }
+.nova-landing-hero { margin-top: auto; padding: min(48svh, 30rem) 1.5rem 2.2rem; text-align: center; }
+.nova-landing-hero h1 { margin: 0 auto; max-width: 38rem; }
+.nova-landing-hero h1 img { display: block; width: 100%; height: auto; }
+.nova-landing-hero > p { margin: -.1rem 0 1.25rem; font-size: clamp(1rem, 1.4vw, 1.4rem); line-height: 1.4; }
+.nova-primary { display: inline-flex; justify-content: center; align-items: center; gap: .9rem; min-height: 3.6rem; padding: .8rem 1.5rem; border: 1px solid #bf4e2b; border-radius: .4rem; background: #c4512f; color: #fff; font-size: 1.15rem; transition: background 150ms; }
+.nova-primary:hover:not(:disabled) { background: #ad4123; }
+.nova-primary:disabled { opacity: .55; }
+.nova-start { width: 16.5rem; min-height: 3.3rem; }
+.nova-start span, .nova-mode-switch button span { font-size: 1.6rem; line-height: 1; }
+.nova-login-overlay { position: fixed; inset: 0; z-index: 50; display: flex; justify-content: flex-end; }
+.nova-login-panel { width: clamp(26rem, 28vw, 34rem); max-width: 100%; height: 100%; overflow-y: auto; overscroll-behavior: contain; position: relative; background: #fffbf7; border-left: 1px solid #ebded4; box-shadow: -8px 0 32px #79543b0c; animation: nova-panel-in 220ms ease-out; }
+.nova-login-panel:focus { outline: none; }
+.nova-login-close { position: absolute; right: 1.4rem; top: 1.2rem; width: 2.75rem; height: 2.75rem; font-size: 2.4rem; font-weight: 300; line-height: 1; color: #3d3028; }
+.nova-login-content { padding: clamp(5rem, 16svh, 10rem) clamp(1.5rem, 3.3vw, 3.6rem) 3rem; }
+.nova-login-content h2 { margin-top: 1.25rem; font-size: 3rem; line-height: 1.2; font-weight: 600; color: #30271f; }
+.nova-login-intro { margin: 1.1rem 0 2.7rem; font-size: 1.15rem; line-height: 1.6; }
+.nova-login-form { display: grid; gap: 1.8rem; }
+.nova-login-form label { display: block; font-size: 1rem; }
+.nova-login-form label > span:first-child { display: block; margin-bottom: .6rem; }
+.nova-login-form input { width: 100%; min-height: 3.7rem; padding: .85rem 1rem; border: 1px solid #d8c9be; border-radius: .65rem; background: #fffdfb; color: #48372c; font-size: 1rem; }
+.nova-login-form input::placeholder { color: #a7998e; }
+.nova-password-field { display: block; position: relative; }
+.nova-password-field input { padding-right: 3.4rem; }
+.nova-password-field button { position: absolute; top: 0; right: .3rem; width: 3rem; height: 100%; display: grid; place-items: center; }
+.nova-login-form > .nova-primary { width: 100%; margin-top: .3rem; }
+.nova-mode-switch { margin-top: .6rem; color: #8b796b; font-size: 1.05rem; }
+.nova-mode-switch button { color: #bd4c28; min-height: 2.75rem; }
+.nova-mode-switch button span { margin-left: .6rem; }
+.nova-invite-hint, .nova-bootstrap-note { font-size: .8rem; line-height: 1.6; }
+.nova-invite-hint { margin-top: .5rem; }
+@keyframes nova-panel-in { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@media (min-width: 1600px) { .nova-landing-hero { padding-top: 48svh; } }
+@media (max-width: 640px) {
+  .nova-background-media { width: 92%; height: 44svh; }
+  .nova-landing-nav { gap: 1rem; padding: 1rem 1.2rem; font-size: .9rem; }
+  .nova-small-logo { width: 6rem; }
+  .nova-nav-end { gap: 1rem; }
+  .nova-github { gap: .4rem; }
+  .nova-github span, .nova-nav-end .nova-nav-divider { display: none; }
+  .nova-landing-hero { padding: 35svh 1.2rem 2.5rem; }
+  .nova-landing-hero > p { margin-top: .5rem; }
+  .nova-login-panel { width: 100%; }
+  .nova-login-content { max-width: 30rem; margin: auto; padding-top: 5rem; }
+  .nova-login-content h2 { font-size: 2.5rem; }
+  .nova-login-intro { margin-bottom: 2rem; }
+}
+@media (prefers-reduced-motion: reduce) { .nova-login-panel { animation: none; } }

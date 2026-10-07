@@ -123,7 +123,7 @@ function buildRouter(options: {
     },
     {
       path: "/",
-      element: <Layout account={account} onSignedOut={onSignedOut} />,
+      element: account === null ? <LoginPage onSignedIn={onSignedIn} /> : <Layout account={account} onSignedOut={onSignedOut} />,
       children: [
         { index: true, element: <Guard><DashboardPage /></Guard> },
         // TASK-100：项目页与控制台同级（用户 2026-09-14 要求）。
