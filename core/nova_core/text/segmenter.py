@@ -28,8 +28,13 @@ unicode61 之后是完全相同的 token 流，不影响索引/查询）。
 ① FTS token 流与 jieba 逐 token 相同（因此**不需要重建索引、召回不变**）；
 ② token 形状与 jieba 一致（除数字字面量分组）。
 
-**非 ASCII 文本（含变音字母、非 CJK 文字）仍走 jieba**，与旧行为逐字节一致——这保证了
-"文档含 CJK、查询纯 ASCII"（或反之）的混合场景两侧 token 空间不漂移，是 P0-1 的关键前提。
+**ASCII 主体加 Unicode 标点／符号／空白**：按 Unicode 类别保守放行，保留 jieba 的
+数字字面量和连续 ASCII 符号分组，输出与原非 ASCII 路径逐 token 相同。默认 jieba
+词典中的 ASCII 词（AT&T、C#、c#、C++、c++）会影响 DAG 切分，包含它们时整串回退。
+本快速路径以默认词典为契约，与已有 ASCII 路径一样不支持运行时自定义词典。
+
+**其他非 ASCII 文本（含变音字母、数字、组合标记和其他语言文字）仍走 jieba**，
+与旧行为逐字节一致，确保混合语言场景两侧 token 空间不漂移。
 
 收益：langchain 的 chunk 里 >99.9% 不含 CJK，而 jieba 实测吞吐只有 0.32–0.54 MB/s，
 跳过它是冷启动里最大的一块本地开销（handoff 实测 36.4s）。
@@ -40,6 +45,7 @@ from __future__ import annotations
 import logging
 import re
 from types import ModuleType
+from unicodedata import category
 
 __all__ = ["segment"]
 
@@ -47,6 +53,20 @@ _jieba: ModuleType | None = None
 
 #: ASCII 快速路径的 token 规则：字母数字串成词，其余非空白单字符各成一个 token。
 _ASCII_TOKEN_RE = re.compile(r"[A-Za-z0-9]+|[\S]")
+
+_NON_ASCII_RE = re.compile(r"[^\x00-\x7f]")
+# jieba 默认词典仅有这五个纯 ASCII 词；子串也可能参与 DAG，必须整串回退。
+_ASCII_DICT_WORD_RE = re.compile(r"AT&T|[cC](?:#|\+\+)")
+# jieba re_han 内的 ASCII 块走 finalseg.re_skip：数字小数/百分号归入词，
+# 剩下的连续 +#&._%- 成组；块外非空白字符（含 Unicode 标点）逐字符输出。
+_PUNCTUATED_TOKEN_RE = re.compile(r"[A-Za-z0-9]+(?:\.[0-9]+)?%?|[+#&._%\-]+|[^\s]")
+
+
+def _can_segment_punctuated_ascii(text: str) -> bool:
+    return not _ASCII_DICT_WORD_RE.search(text) and all(
+        category(char)[0] in "PSZ" or char.isspace()
+        for char in _NON_ASCII_RE.findall(text)
+    )
 
 
 def _load_jieba() -> ModuleType:
@@ -75,6 +95,7 @@ def segment(text: str) -> str:
 
     - 空白输入返回 ``""``（调用方按空查询处理）；
     - 纯 ASCII 输入走不加载 jieba 的等价快速路径（见模块 docstring）；
+    - ASCII 主体加 Unicode 标点／符号／空白也走快速路径，保留 jieba 分组；
     - 输出 token 间恒为单空格，token 内不含空白；
     - 对未登录词/英文标识符 jieba 原样保留，FTS unicode61 再按自身规则切分。
     """
@@ -82,4 +103,6 @@ def segment(text: str) -> str:
         return ""
     if text.isascii():
         return _ascii_segment(text)
+    if _can_segment_punctuated_ascii(text):
+        return " ".join(_PUNCTUATED_TOKEN_RE.findall(text))
     return _jieba_segment(text)
