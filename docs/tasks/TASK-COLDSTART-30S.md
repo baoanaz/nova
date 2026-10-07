@@ -174,8 +174,14 @@ ordering/recovery boundaries before integration. Rust compilation, heavy recover
 tests and full pipeline timings remain outstanding. AI1's branch is retained
 separately as work in progress, not deployed.
 
-At the user's request, implementation pauses here for a local backup and remote
-branch checkpoint. Main worktree changes remain outside this integration branch.
+The checkpoint was backed up locally and pushed remotely. At the user's explicit
+request, the effective optimization commits were then cherry-picked directly onto
+`main`, preserving its newer UI/branding changes. The frozen-runtime bootstrap,
+rejected cache experiment and unaccepted AI1 pipeline were not included. Main's
+five changed runtime modules match the measured integration version exactly.
+Main regression checks: 201 core tests passed / 4 documented pre-existing xfails,
+plus 33 service tests passed. The 30-second target remains unmet.
+
 `paired_acceptance.py` is ready for final control/candidate runs: three trials
 per mode and side with alternating pair order. Its 12-trial scheduling logic was
 validated with a temporary mocked runner; real paired acceptance is NOT yet run.
