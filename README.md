@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="docs/assets/nova-logo.webp" alt="NOVA Logo" width="112" height="112">
+  <img src="web/src/assets/nova-wordmark.png" alt="NOVA — Further Together" width="420">
   <h1>NOVA</h1>
   <p><strong>NOVA · Workspace Context Engine</strong></p>
   <p>把代码库变成有据可查的上下文，让 Coding Agent 更懂你的项目。</p>
@@ -16,7 +16,7 @@
     <img src="https://img.shields.io/badge/MCP-stdio-cf684b?style=flat-square" alt="MCP stdio">
   </p>
   <p>
-    <a href="https://acenova.space/">Web 用户控制台</a> ·
+    <a href="https://acenova.space/">官方网址</a> ·
     <a href="#快速开始">快速开始</a> ·
     <a href="docs/README.md">文档中心</a> ·
     <a href="CONTRIBUTING.md">参与贡献</a>
@@ -31,7 +31,7 @@
 
 本次更名的包名、运行配置与迁移步骤见 [NOVA 迁移说明](docs/handbook/deployment/nova-migration.md)。新 npm 包名需要完成正式发布后才能通过 npm 安装。
 
-**Web 用户控制台：<https://acenova.space/>**
+**官方网址：<https://acenova.space/>**
 
 注册账户后，进入 **接入指南** 页面，按步骤完成配置，开始您的第一次使用。
 
