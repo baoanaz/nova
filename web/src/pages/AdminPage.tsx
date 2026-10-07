@@ -139,7 +139,7 @@ function UsersTab() {
 
   return (
     <>
-      <section className="rounded-lg border border-ink-line bg-paper-card shadow-sm">
+      <section className="overflow-hidden rounded-xl border-2 border-ink-line bg-paper-card shadow-sm">
         {users.length === 0 ? (
           <EmptyState title="还没有用户" />
         ) : (
@@ -396,7 +396,7 @@ function InvitesTab() {
 
       <form
         onSubmit={onCreate}
-        className="flex flex-wrap items-end gap-3 rounded-lg border border-ink-line bg-paper-card p-4 shadow-sm"
+        className="flex flex-wrap items-end gap-3 rounded-xl border-2 border-ink-line bg-paper-card p-4 shadow-sm"
       >
         <label className="text-sm">
           <span className="mb-1 block text-xs text-ink-muted">类型</span>
@@ -452,7 +452,7 @@ function InvitesTab() {
         </button>
       </form>
 
-      <section className="rounded-lg border border-ink-line bg-paper-card shadow-sm">
+      <section className="overflow-hidden rounded-xl border-2 border-ink-line bg-paper-card shadow-sm">
         {invites === null ? (
           <LoadingBlock />
         ) : invites.length === 0 ? (
@@ -651,7 +651,7 @@ function InsightsTab() {
         </div>
       )}
 
-      <section className="rounded-lg border border-ink-line bg-paper-card shadow-sm">
+      <section className="overflow-hidden rounded-xl border-2 border-ink-line bg-paper-card shadow-sm">
         {projects === null ? (
           <LoadingBlock />
         ) : projects.length === 0 ? (

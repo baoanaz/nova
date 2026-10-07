@@ -6,7 +6,8 @@
 
 部署位置：
 
-- 公网入口：Nginx `:8088`，配置 `/etc/nginx/conf.d/nova-ui-demo.conf`
+- 公网入口：<https://acenova.space/>，HTTPS 配置 `/etc/nginx/conf.d/acenova.conf`
+- UI 上游：Nginx `127.0.0.1:8088`，配置 `/etc/nginx/conf.d/nova-ui-demo.conf`；由 HTTPS 入口转发访问
 - 静态文件：`/var/www/nova-ui-demo/`
 - 演示 API：`/opt/nova-ui-demo/{server,data}.mjs`，仅监听 `127.0.0.1:8789`
 - 常驻服务：`nova-ui-demo.service`，systemd 自动启动与故障重启
@@ -20,7 +21,7 @@
 复制到静态目录。更新演示 API 后运行 `systemctl restart nova-ui-demo`。
 修改 Nginx 后先运行 `nginx -t`，通过后再 `systemctl reload nginx`。
 
-检查：`systemctl status nova-ui-demo`、`curl http://127.0.0.1:8088/healthz`。
+检查：`systemctl status nova-ui-demo`、`curl https://acenova.space/healthz`；本机上游可用 `curl http://127.0.0.1:8088/healthz` 排查。
 停止展示：停止 `nova-ui-demo` 服务，并移除本演示站的 Nginx 配置后重载 Nginx。
 
 所有指标、项目、历史与后台主机信息均为模拟数据，仅用于查看排版和交互。

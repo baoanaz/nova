@@ -31,7 +31,7 @@
 ## 交付边界
 
 - GitHub 仓库已正式更名为 [baoanaz/nova](https://github.com/baoanaz/nova)，本地 origin 及当前文档、npm 元数据中的仓库链接已同步。新 npm 包仍需正式发布。
-- 在线演示已更新为 NOVA，访问 `http://23.159.248.240:8088/login`。静态文件、API 与 systemd 服务使用 `nova-ui-demo`；原演示账户凭据已原样迁移。公网登录页、健康检查和浏览器 LOGO 加载已验证通过。
+- 在线演示已更新为 NOVA，访问 `https://acenova.space/login`。静态文件、API 与 systemd 服务使用 `nova-ui-demo`；原演示账户凭据已原样迁移。公网登录页、健康检查和浏览器 LOGO 加载已验证通过。
 - 备份、历史任务、归档及已记录的 benchmark 结果保留历史名称，避免改写原始记录。
 - [登录页](../../assets/screenshots/nova-login.png)与[控制台首页](../../assets/screenshots/nova-dashboard.png)来自实际前端构建，接口使用本项目演示数据，不含真实账户、邮箱、密码或 Key。
 - 当前 UI 已恢复暖白与珊瑚橙配色，LOGO 换为用户提供的 `LOGO/LOGO3.png`；登录页、侧栏、浏览器图标与文档素材同步更新，原始文件未改动。
