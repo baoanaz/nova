@@ -1,0 +1,544 @@
+{
+  "kind": "quick single-run comparison, not formal three-run acceptance",
+  "order": [
+    "control",
+    "default",
+    "no-prefetch"
+  ],
+  "control_commit": "d1196bc",
+  "candidate_commit": "01b74b0",
+  "paid_calls": 0,
+  "cohorts": {
+    "control": {
+      "conditions": {
+        "corpus_commit": "e75dae1f53c99c2b5ddb0c7bb36022c6aea25569",
+        "fixture_sha256": "e29e21d7406969d128245287481ffce121e32dc22544627c17a95740f3e2074a",
+        "source": "/root/xuwenzheng/ace/nova/.local/perf-30s/round6-control",
+        "commit": "d1196bcfdf47835f2e1f06f7c9e90cb1bdc1a473",
+        "cache_policy": "fresh stores/processes; tracked corpus+fixture fadvise DONTNEED",
+        "timing": "client process launch through complete Tool response and client exit",
+        "instrumentation": false
+      },
+      "binary_sha256": "805ead9fe89c8d34ba941f9529cdf54d2e56ba76f5af45beeae91bc816bbebd4",
+      "tool_wall_s": 28.8002991710091,
+      "server_cpu_s": 19.762907,
+      "server_children_cpu_s": 8.21,
+      "total_service_cpu_s": 27.972907,
+      "cgroup_memory_peak_mib": 984.79296875,
+      "cgroup_swap_peak_mib": 86.10546875,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "remaining_processes_after_probe": [
+        {
+          "pid": 866639,
+          "ppid": 1,
+          "state": "S",
+          "command": "/root/xuwenzheng/ace/nova/.venv/bin/python -c from multiprocessing.resource_tracker import main;main(10) ",
+          "still_present_after_unit_exit": false
+        },
+        {
+          "pid": 866640,
+          "ppid": 1,
+          "state": "S",
+          "command": "/root/xuwenzheng/ace/nova/.venv/bin/python -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=11, pipe_handle=15) --multiprocessing-fork ",
+          "still_present_after_unit_exit": false
+        },
+        {
+          "pid": 866643,
+          "ppid": 1,
+          "state": "S",
+          "command": "/root/xuwenzheng/ace/nova/.venv/bin/python -c from multiprocessing.spawn import spawn_main; spawn_main(tracker_fd=11, pipe_handle=17) --multiprocessing-fork ",
+          "still_present_after_unit_exit": false
+        }
+      ],
+      "preload_s": {
+        "lancedb": 1.576,
+        "jieba": 0.948,
+        "parsers": 0.027,
+        "parse_worker": 1.554
+      },
+      "ingests": [
+        {
+          "wall_s": 21.81292538100388,
+          "report": {
+            "added": 2986,
+            "modified": 0,
+            "deleted": 0,
+            "chunks_new": 20931,
+            "chunks_reused": 0,
+            "chunks_deduped": 1456,
+            "chunks_removed": 0,
+            "unresolved_resolved": 440,
+            "errors": [],
+            "invalidation": "none",
+            "files_parsed": 2986,
+            "vectors_upserted": 20931,
+            "vectors_deleted": 0,
+            "edges_retargeted": 9933,
+            "spec_refs": 15768,
+            "ambiguous_refs": 8655,
+            "skipped_files": [],
+            "skip_reasons": [],
+            "orphan_files": [],
+            "languages": [
+              "fallback",
+              "markdown",
+              "python"
+            ],
+            "warnings": []
+          }
+        }
+      ],
+      "stage_log_lines": {
+        "service.log": [],
+        "client.log": []
+      },
+      "equivalence": {
+        "counts": {
+          "files": 2986,
+          "chunks": 20931,
+          "symbols": 15947,
+          "edges": 72080,
+          "unresolved_refs": 538,
+          "spec_blocks": 960,
+          "spec_references": 15768,
+          "fts_rows": 20931,
+          "vectors": 20931
+        },
+        "hashes": {
+          "files": "3f291a84c18d2f13ed2956dba2b1c2107f54afa6385be829369bf58c1493e5cc",
+          "chunks": "5197ab97425fa086cdd489673ae6f9af48f3384d2e2bf53757152eadcdda707d",
+          "symbols": "3c4329d7bc8222e2f79775556ac023da8fceef935b64f574a3f4f1642d015b79",
+          "edges": "23a5a6964cdb76b5ea3327b142c1c543e1fdad3ab841aa56da5d3e2069d61cac",
+          "unresolved_refs": "ff734c80e54f3842d3a38547ac4230efb0b73a9ba42b5d069e8cde369287b3b2",
+          "spec_blocks": "73fbcb46efdc06f50329106309846b121fb74a8f2e4b729689fa5b5fb8c68e16",
+          "spec_references": "c090401e50d1943532d5a41ffd68fc29e99d00f826a9cddfccbda7a0cac751cd",
+          "fts_text_by_chunk": "5a1bc2fd922a7bc50baace0ccb9af10cd05d7e24767dac13622d3853cda6759e",
+          "vectors": "b7cf6583f2af8dbadd4d8749023515dd3364a5ceb80b3d5763f3f5f5d25e3ba7",
+          "tool_result_raw": "3d4bf2e8cba2663664d6450d1ce12a75372bca5470885b6aba792317c7ddc3fe",
+          "tool_result": "61b548af13b72d40339b567c1ef0a85f02b971bd315abc1a58c6c2e74ca6633a"
+        }
+      },
+      "mismatches": []
+    },
+    "default": {
+      "conditions": {
+        "corpus_commit": "e75dae1f53c99c2b5ddb0c7bb36022c6aea25569",
+        "fixture_sha256": "e29e21d7406969d128245287481ffce121e32dc22544627c17a95740f3e2074a",
+        "source": "/root/xuwenzheng/ace/nova/.local/perf-30s/round6-candidate",
+        "commit": "01b74b0c3d77ea46b7ae6cc2c5424dcf552c675b",
+        "cache_policy": "fresh stores/processes; tracked corpus+fixture fadvise DONTNEED",
+        "timing": "client process launch through complete Tool response and client exit",
+        "instrumentation": false
+      },
+      "binary_sha256": "1e516a0f0710d4150fbfa486968dd74b112c2685b0a111a06fa48351e69310da",
+      "tool_wall_s": 30.191794708007365,
+      "server_cpu_s": 21.830891,
+      "server_children_cpu_s": 8.23,
+      "total_service_cpu_s": 30.060891,
+      "cgroup_memory_peak_mib": 924.12890625,
+      "cgroup_swap_peak_mib": 0.00390625,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "remaining_processes_after_probe": [],
+      "preload_s": {
+        "lancedb": 1.563,
+        "jieba": 0.996,
+        "parsers": 0.014
+      },
+      "ingests": [
+        {
+          "wall_s": 23.588410365002346,
+          "report": {
+            "added": 2986,
+            "modified": 0,
+            "deleted": 0,
+            "chunks_new": 20931,
+            "chunks_reused": 0,
+            "chunks_deduped": 1456,
+            "chunks_removed": 0,
+            "unresolved_resolved": 440,
+            "errors": [],
+            "invalidation": "none",
+            "files_parsed": 2986,
+            "vectors_upserted": 20931,
+            "vectors_deleted": 0,
+            "edges_retargeted": 9933,
+            "spec_refs": 15768,
+            "ambiguous_refs": 8655,
+            "skipped_files": [],
+            "skip_reasons": [],
+            "orphan_files": [],
+            "languages": [
+              "fallback",
+              "markdown",
+              "python"
+            ],
+            "warnings": [],
+            "timings": [
+              [
+                "engine_open",
+                0.0259,
+                0
+              ],
+              [
+                "collect",
+                0.013,
+                0.0101
+              ],
+              [
+                "prefetch_take",
+                1.2234,
+                1.0607
+              ],
+              [
+                "persist",
+                8.1213,
+                4.7854
+              ],
+              [
+                "submit",
+                0.0135,
+                0.0106
+              ],
+              [
+                "prepare",
+                4.4244,
+                3.7389
+              ],
+              [
+                "write_batch",
+                20.0992,
+                10.2715
+              ],
+              [
+                "graph_index",
+                0.194,
+                0.1473
+              ],
+              [
+                "graph_pending",
+                0.0528,
+                0.0268
+              ],
+              [
+                "graph_retry",
+                0.0349,
+                0.0339
+              ],
+              [
+                "graph_edges",
+                2.8057,
+                1.6215
+              ],
+              [
+                "graph_specs",
+                0.208,
+                0.1341
+              ],
+              [
+                "graph",
+                3.3211,
+                1.9891
+              ],
+              [
+                "vector_drain",
+                0.003,
+                0.0002
+              ],
+              [
+                "vec_lookup",
+                1.078,
+                0.0549
+              ],
+              [
+                "vec_embed",
+                3.0989,
+                0.8937
+              ],
+              [
+                "vec_upsert",
+                2.5124,
+                0.2612
+              ],
+              [
+                "vec_cache_put",
+                2.3846,
+                0.0125
+              ],
+              [
+                "finalize",
+                0.0029,
+                0.0019
+              ],
+              [
+                "process_cpu",
+                0,
+                16.4431
+              ],
+              [
+                "engine_ready",
+                0.0619,
+                0
+              ]
+            ],
+            "prefetched": 2466
+          }
+        }
+      ],
+      "stage_log_lines": {
+        "service.log": [
+          "{\"ts\": \"2026-10-07T17:20:15.074+00:00\", \"level\": \"info\", \"logger\": \"nova_service.runtime\", \"msg\": \"flush 完成：{\\\"projectId\\\": \\\"4c0617fc2fac1add\\\", \\\"files\\\": 2986, \\\"prefetched\\\": 2466, \\\"loadBlobsS\\\": 0.3416, \\\"ingestS\\\": 23.5887, \\\"ledgerS\\\": 0.0131, \\\"stages\\\": [[\\\"engine_open\\\", 0.0259, 0.0], [\\\"collect\\\", 0.013, 0.0101], [\\\"prefetch_take\\\", 1.2234, 1.0607], [\\\"persist\\\", 8.1213, 4.7854], [\\\"submit\\\", 0.0135, 0.0106], [\\\"prepare\\\", 4.4244, 3.7389], [\\\"write_batch\\\", 20.0992, 10.2715], [\\\"graph_index\\\", 0.194, 0.1473], [\\\"graph_pending\\\", 0.0528, 0.0268], [\\\"graph_retry\\\", 0.0349, 0.0339], [\\\"graph_edges\\\", 2.8057, 1.6215], [\\\"graph_specs\\\", 0.208, 0.1341], [\\\"graph\\\", 3.3211, 1.9891], [\\\"vector_drain\\\", 0.003, 0.0002], [\\\"vec_lookup\\\", 1.078, 0.0549], [\\\"vec_embed\\\", 3.0989, 0.8937], [\\\"vec_upsert\\\", 2.5124, 0.2612], [\\\"vec_cache_put\\\", 2.3846, 0.0125], [\\\"finalize\\\", 0.0029, 0.0019], [\\\"process_cpu\\\", 0.0, 16.4431], [\\\"engine_ready\\\", 0.0619, 0.0]]}\", \"requestId\": \"1791393586958-2126cbc099644c73\"}",
+          "{\"ts\": \"2026-10-07T17:20:16.972+00:00\", \"level\": \"info\", \"logger\": \"nova_core.engine\", \"msg\": \"search 阶段耗时：{\\\"open\\\": 0.0132, \\\"recall\\\": 0.6843, \\\"expand\\\": 0.4445, \\\"rerank\\\": 0.1875, \\\"assemble\\\": 0.1545, \\\"backfill\\\": 0.0616}\", \"requestId\": \"1791393586958-2126cbc099644c73\"}"
+        ],
+        "client.log": [
+          "nova-client: 同步耗时 resolve=8ms scan=2631ms upload=4042ms scan+upload=4046ms wait_index=24126ms total=28221ms batches=20",
+          "nova-client: 检索耗时 1938ms"
+        ]
+      },
+      "equivalence": {
+        "counts": {
+          "files": 2986,
+          "chunks": 20931,
+          "symbols": 15947,
+          "edges": 72080,
+          "unresolved_refs": 538,
+          "spec_blocks": 960,
+          "spec_references": 15768,
+          "fts_rows": 20931,
+          "vectors": 20931
+        },
+        "hashes": {
+          "files": "3f291a84c18d2f13ed2956dba2b1c2107f54afa6385be829369bf58c1493e5cc",
+          "chunks": "5197ab97425fa086cdd489673ae6f9af48f3384d2e2bf53757152eadcdda707d",
+          "symbols": "3c4329d7bc8222e2f79775556ac023da8fceef935b64f574a3f4f1642d015b79",
+          "edges": "23a5a6964cdb76b5ea3327b142c1c543e1fdad3ab841aa56da5d3e2069d61cac",
+          "unresolved_refs": "ff734c80e54f3842d3a38547ac4230efb0b73a9ba42b5d069e8cde369287b3b2",
+          "spec_blocks": "73fbcb46efdc06f50329106309846b121fb74a8f2e4b729689fa5b5fb8c68e16",
+          "spec_references": "c090401e50d1943532d5a41ffd68fc29e99d00f826a9cddfccbda7a0cac751cd",
+          "fts_text_by_chunk": "5a1bc2fd922a7bc50baace0ccb9af10cd05d7e24767dac13622d3853cda6759e",
+          "vectors": "b7cf6583f2af8dbadd4d8749023515dd3364a5ceb80b3d5763f3f5f5d25e3ba7",
+          "tool_result_raw": "0f7facd1764a7cf21891e30343911b2df5cb423f1fa74f9885bf1e98ca3d08d9",
+          "tool_result": "61b548af13b72d40339b567c1ef0a85f02b971bd315abc1a58c6c2e74ca6633a"
+        }
+      },
+      "mismatches": []
+    },
+    "no-prefetch": {
+      "conditions": {
+        "corpus_commit": "e75dae1f53c99c2b5ddb0c7bb36022c6aea25569",
+        "fixture_sha256": "e29e21d7406969d128245287481ffce121e32dc22544627c17a95740f3e2074a",
+        "source": "/root/xuwenzheng/ace/nova/.local/perf-30s/round6-candidate",
+        "commit": "01b74b0c3d77ea46b7ae6cc2c5424dcf552c675b",
+        "cache_policy": "fresh stores/processes; tracked corpus+fixture fadvise DONTNEED",
+        "timing": "client process launch through complete Tool response and client exit",
+        "instrumentation": false
+      },
+      "binary_sha256": "1e516a0f0710d4150fbfa486968dd74b112c2685b0a111a06fa48351e69310da",
+      "tool_wall_s": 31.672632967005484,
+      "server_cpu_s": 27.167776,
+      "server_children_cpu_s": 0,
+      "total_service_cpu_s": 27.167776,
+      "cgroup_memory_peak_mib": 887.40625,
+      "cgroup_swap_peak_mib": 0,
+      "memory_events": {
+        "low": 0,
+        "high": 0,
+        "max": 0,
+        "oom": 0,
+        "oom_kill": 0,
+        "oom_group_kill": 0
+      },
+      "remaining_processes_after_probe": [],
+      "preload_s": {
+        "lancedb": 1.532,
+        "jieba": 0.919,
+        "parsers": 0.013
+      },
+      "ingests": [
+        {
+          "wall_s": 26.310482098997454,
+          "report": {
+            "added": 2986,
+            "modified": 0,
+            "deleted": 0,
+            "chunks_new": 20931,
+            "chunks_reused": 0,
+            "chunks_deduped": 1456,
+            "chunks_removed": 0,
+            "unresolved_resolved": 440,
+            "errors": [],
+            "invalidation": "none",
+            "files_parsed": 2986,
+            "vectors_upserted": 20931,
+            "vectors_deleted": 0,
+            "edges_retargeted": 9933,
+            "spec_refs": 15768,
+            "ambiguous_refs": 8655,
+            "skipped_files": [],
+            "skip_reasons": [],
+            "orphan_files": [],
+            "languages": [
+              "fallback",
+              "markdown",
+              "python"
+            ],
+            "warnings": [],
+            "timings": [
+              [
+                "engine_open",
+                0.0233,
+                0
+              ],
+              [
+                "collect",
+                0.0071,
+                0.007
+              ],
+              [
+                "prepare",
+                11.4651,
+                10.7125
+              ],
+              [
+                "persist",
+                6.3145,
+                5.176
+              ],
+              [
+                "submit",
+                0.0135,
+                0.0115
+              ],
+              [
+                "write_batch",
+                23.0937,
+                16.543
+              ],
+              [
+                "graph_index",
+                0.4319,
+                0.3659
+              ],
+              [
+                "graph_pending",
+                0.0451,
+                0.0322
+              ],
+              [
+                "graph_retry",
+                0.0395,
+                0.0384
+              ],
+              [
+                "graph_edges",
+                2.2778,
+                1.5336
+              ],
+              [
+                "graph_specs",
+                0.2428,
+                0.142
+              ],
+              [
+                "graph",
+                3.0672,
+                2.1406
+              ],
+              [
+                "vector_drain",
+                0.0015,
+                0.0001
+              ],
+              [
+                "vec_lookup",
+                1.1911,
+                0.0724
+              ],
+              [
+                "vec_embed",
+                3.3647,
+                0.7394
+              ],
+              [
+                "vec_upsert",
+                1.223,
+                0.2267
+              ],
+              [
+                "vec_cache_put",
+                2.091,
+                0.0109
+              ],
+              [
+                "finalize",
+                0.0032,
+                0.0016
+              ],
+              [
+                "process_cpu",
+                0,
+                22.4481
+              ],
+              [
+                "engine_ready",
+                0.0616,
+                0
+              ]
+            ],
+            "prefetched": 0
+          }
+        }
+      ],
+      "stage_log_lines": {
+        "service.log": [
+          "{\"ts\": \"2026-10-07T17:20:59.549+00:00\", \"level\": \"info\", \"logger\": \"nova_service.runtime\", \"msg\": \"flush 完成：{\\\"projectId\\\": \\\"4c0617fc2fac1add\\\", \\\"files\\\": 2986, \\\"prefetched\\\": 0, \\\"loadBlobsS\\\": 0.2048, \\\"ingestS\\\": 26.3107, \\\"ledgerS\\\": 0.0114, \\\"stages\\\": [[\\\"engine_open\\\", 0.0233, 0.0], [\\\"collect\\\", 0.0071, 0.007], [\\\"prepare\\\", 11.4651, 10.7125], [\\\"persist\\\", 6.3145, 5.176], [\\\"submit\\\", 0.0135, 0.0115], [\\\"write_batch\\\", 23.0937, 16.543], [\\\"graph_index\\\", 0.4319, 0.3659], [\\\"graph_pending\\\", 0.0451, 0.0322], [\\\"graph_retry\\\", 0.0395, 0.0384], [\\\"graph_edges\\\", 2.2778, 1.5336], [\\\"graph_specs\\\", 0.2428, 0.142], [\\\"graph\\\", 3.0672, 2.1406], [\\\"vector_drain\\\", 0.0015, 0.0001], [\\\"vec_lookup\\\", 1.1911, 0.0724], [\\\"vec_embed\\\", 3.3647, 0.7394], [\\\"vec_upsert\\\", 1.223, 0.2267], [\\\"vec_cache_put\\\", 2.091, 0.0109], [\\\"finalize\\\", 0.0032, 0.0016], [\\\"process_cpu\\\", 0.0, 22.4481], [\\\"engine_ready\\\", 0.0616, 0.0]]}\", \"requestId\": \"1791393629373-5e009bd6011aba70\"}",
+          "{\"ts\": \"2026-10-07T17:21:00.899+00:00\", \"level\": \"info\", \"logger\": \"nova_core.engine\", \"msg\": \"search 阶段耗时：{\\\"open\\\": 0.0144, \\\"recall\\\": 0.5409, \\\"expand\\\": 0.3391, \\\"rerank\\\": 0.1079, \\\"assemble\\\": 0.1118, \\\"backfill\\\": 0.043}\", \"requestId\": \"1791393629373-5e009bd6011aba70\"}"
+        ],
+        "client.log": [
+          "nova-client: 同步耗时 resolve=6ms scan=2227ms upload=3558ms scan+upload=3560ms wait_index=26642ms total=30258ms batches=20",
+          "nova-client: 检索耗时 1381ms"
+        ]
+      },
+      "equivalence": {
+        "counts": {
+          "files": 2986,
+          "chunks": 20931,
+          "symbols": 15947,
+          "edges": 72080,
+          "unresolved_refs": 538,
+          "spec_blocks": 960,
+          "spec_references": 15768,
+          "fts_rows": 20931,
+          "vectors": 20931
+        },
+        "hashes": {
+          "files": "3f291a84c18d2f13ed2956dba2b1c2107f54afa6385be829369bf58c1493e5cc",
+          "chunks": "5197ab97425fa086cdd489673ae6f9af48f3384d2e2bf53757152eadcdda707d",
+          "symbols": "3c4329d7bc8222e2f79775556ac023da8fceef935b64f574a3f4f1642d015b79",
+          "edges": "23a5a6964cdb76b5ea3327b142c1c543e1fdad3ab841aa56da5d3e2069d61cac",
+          "unresolved_refs": "ff734c80e54f3842d3a38547ac4230efb0b73a9ba42b5d069e8cde369287b3b2",
+          "spec_blocks": "73fbcb46efdc06f50329106309846b121fb74a8f2e4b729689fa5b5fb8c68e16",
+          "spec_references": "c090401e50d1943532d5a41ffd68fc29e99d00f826a9cddfccbda7a0cac751cd",
+          "fts_text_by_chunk": "5a1bc2fd922a7bc50baace0ccb9af10cd05d7e24767dac13622d3853cda6759e",
+          "vectors": "b7cf6583f2af8dbadd4d8749023515dd3364a5ceb80b3d5763f3f5f5d25e3ba7",
+          "tool_result_raw": "5fc84641a795abd0c993ccc42aacc13577f544982c266f71d8ec62243878e151",
+          "tool_result": "61b548af13b72d40339b567c1ef0a85f02b971bd315abc1a58c6c2e74ca6633a"
+        }
+      },
+      "mismatches": []
+    }
+  }
+}
