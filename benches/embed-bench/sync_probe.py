@@ -58,7 +58,8 @@ def serve(args, provider):
 
     @app.get('/bench/metrics')
     def metrics():
-        return {**snapshot(), 'ingests': reports}
+        return {**snapshot(), 'ingests': reports,
+                'engine_source': sys.modules[Engine.__module__].__file__}
 
     uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='warning')
 
@@ -70,6 +71,8 @@ def run_client(args, provider):
     server_command = [sys.executable, __file__, '--kind', 'serve', '--out', str(args.out),
                       '--fixture', str(args.fixture), '--repo', str(args.repo),
                       '--port', str(args.port)]
+    if args.phase_timings:
+        server_command.append('--phase-timings')
     with (args.out / 'service.log').open('w') as log:
         process = subprocess.Popen(server_command, stdout=log, stderr=subprocess.STDOUT)
         try:
@@ -90,7 +93,7 @@ def run_client(args, provider):
                                     'arguments': {'query': query, 'project_root': str(args.repo)}}}
                 t0 = time.perf_counter()
                 result = subprocess.run(
-                    [str(root / 'client/target/debug/nova-client'),
+                    [str(args.client or root / 'client/target/debug/nova-client'),
                      '--base-url', f'http://127.0.0.1:{args.port}',
                      '--cache-root', str(args.out / 'client-cache')],
                     input=json.dumps(frame)+'\n', text=True, capture_output=True, timeout=600,
@@ -128,6 +131,9 @@ def main():
     parser.add_argument('--repo', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--port', type=int, default=18973)
+    parser.add_argument('--client', type=Path, help='Explicit frozen debug/release binary')
+    parser.add_argument('--phase-timings', action='store_true',
+                        help='Opt-in aggregate instrumentation; disabled for acceptance runs')
     args = parser.parse_args()
     args.out = args.out.resolve()
     args.repo = args.repo.resolve()
@@ -136,7 +142,8 @@ def main():
         args.out.mkdir(parents=True, exist_ok=False)
     sys.addaudithook(deny_external)
     provider = ReplayEmbedding(args.fixture)
-    install_patches(provider, meter)
+    if args.phase_timings:
+        install_patches(provider, meter)
     if args.kind == 'serve':
         serve(args, provider)
     elif args.kind == 'client':
