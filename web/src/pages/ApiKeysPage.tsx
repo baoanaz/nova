@@ -101,6 +101,7 @@ export function ApiKeysPage() {
             hint="点右上角「创建 Key」，再把完整 Key 配置到编辑器 / CLI 客户端里；只有创建那一刻能看到完整值。"
           />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="text-left text-xs text-ink-muted">
@@ -141,6 +142,7 @@ export function ApiKeysPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 
@@ -174,7 +176,7 @@ function CreateKeyTrigger({
       onClick={onClick}
       // 身份还没加载完就允许点：弹窗自己会按 account 决定显示哪几行，
       // 而"等一下再点"是个没必要的限制。
-      className="rounded bg-accent-seal px-3 py-1.5 text-xs font-medium text-accent-contrast hover:opacity-90"
+      className="rounded bg-primary px-3 py-1.5 text-xs font-medium text-primary-contrast hover:bg-primary-hover"
       title={account?.capabilities.canCustomKey ? "创建随机 Key 或自定义 Key" : "创建一个 Key"}
     >
       创建 Key
@@ -238,7 +240,7 @@ function CreateKeyDialog({
           <button
             type="button"
             onClick={onClose}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90"
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover"
           >
             我已保存，关闭
           </button>
@@ -296,7 +298,7 @@ function CreateKeyDialog({
           <button
             type="submit"
             disabled={busy}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90 disabled:opacity-40"
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-40"
           >
             {busy ? "创建中…" : "创建"}
           </button>

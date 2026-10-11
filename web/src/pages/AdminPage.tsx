@@ -322,7 +322,7 @@ function QuotaDialog({
               setError(null);
               void onSave(resolved).catch(setError);
             }}
-            className="rounded bg-accent-seal px-3 py-1.5 text-sm font-medium text-accent-contrast hover:opacity-90 disabled:opacity-40"
+            className="rounded bg-primary px-3 py-1.5 text-sm font-medium text-primary-contrast hover:bg-primary-hover disabled:opacity-40"
           >
             {busy ? "保存中…" : "保存"}
           </button>
@@ -446,7 +446,7 @@ function InvitesTab() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded bg-accent-seal px-4 py-1.5 text-sm text-accent-contrast disabled:opacity-40"
+          className="rounded bg-primary px-4 py-1.5 text-sm text-primary-contrast disabled:opacity-40"
         >
           {busy ? "创建中…" : "创建邀请码"}
         </button>

@@ -3,20 +3,56 @@
 @tailwind utilities;
 
 @layer base {
-  :root { color-scheme: light; }
+  :root {
+    color-scheme: light;
+    /* RGB 通道让 Tailwind 的 /opacity 修饰符与普通 CSS 共用同一套 Token。 */
+    --nova-bg: 250 249 245; /* #FAF9F5 */
+    --nova-surface: 255 255 255; /* #FFFFFF */
+    --nova-surface-secondary: 245 244 237; /* #F5F4ED */
+    --nova-surface-warm: 240 238 230; /* #F0EEE6 */
+    --nova-brand: 217 119 87; /* #D97757：装饰，不作小字或白字按钮底色 */
+    --nova-action: 41 37 34; /* #292522：主要 CTA，与品牌强调分离 */
+    --nova-action-hover: 64 57 52; /* #403934 */
+    --nova-action-active: 20 20 19; /* 按下时保持深暖灰黑 */
+    --nova-accent-control: 182 75 50; /* #B64B32：选中控件与 Focus，保持可辨识对比 */
+    --nova-accent-text: 161 70 45; /* #A1462D：浅橙背景上的 AA 小字 */
+    --nova-on-action: 255 255 255;
+    --nova-hero: 235 201 183; /* #EBC9B7 */
+    --nova-selected: 251 231 218; /* #FBE7DA */
+    --nova-text: 20 20 19; /* #141413 */
+    --nova-text-secondary: 94 93 89; /* #5E5D59 */
+    --nova-text-subtle: 176 174 165; /* #B0AEA5：仅辅助装饰和禁用态 */
+    --nova-border: 232 230 220; /* #E8E6DC */
+    --nova-control: 133 131 122; /* 控件轮廓与暖白底保持至少 3:1 */
+    --nova-brand-gold: 138 90 36; /* 保留 NOVA 身份徽章 */
+    --nova-success: 120 140 93; /* #788C5D */
+    --nova-success-soft: 240 243 235;
+    --nova-success-text: 70 91 52;
+    --nova-warning-soft: 255 247 237;
+    --nova-warning-text: 146 64 14;
+    --nova-warning-line: 184 119 59;
+    --nova-error-soft: 255 241 242;
+    --nova-error-text: 190 18 60;
+    --nova-error-line: 200 110 124;
+    --nova-danger: 189 52 52;
+    --nova-danger-hover: 161 39 39;
+    --nova-shadow-sm: 0 2px 8px rgb(var(--nova-text) / 0.04);
+    --nova-shadow-xl: 0 16px 40px rgb(var(--nova-text) / 0.10);
+    --nova-shadow-panel: -8px 0 24px rgb(var(--nova-text) / 0.06);
+  }
   body { @apply min-w-[320px] bg-paper-base font-sans text-ink-primary antialiased; }
   h1, h2, h3 { font-family: inherit; text-wrap: balance; }
   button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   button:not(:disabled), [role="button"]:not(:disabled) { cursor: pointer; }
   button:disabled { cursor: not-allowed; }
-  :focus-visible { outline: 2px solid theme("colors.accent.seal"); outline-offset: 3px; }
+  :focus-visible { outline: 2px solid rgb(var(--nova-accent-control)); outline-offset: 3px; }
   input:not([type="checkbox"]):not([type="radio"]), select, textarea {
     min-width: 0;
     min-height: 2.75rem;
-    accent-color: theme("colors.accent.seal");
+    accent-color: rgb(var(--nova-accent-control));
   }
-  input::placeholder, textarea::placeholder { color: theme("colors.ink.muted"); opacity: 1; }
-  ::selection { background: theme("colors.accent.soft"); color: theme("colors.ink.primary"); }
+  input::placeholder, textarea::placeholder { color: rgb(var(--nova-text-secondary)); opacity: 1; }
+  ::selection { background: rgb(var(--nova-selected)); color: rgb(var(--nova-text)); }
 }
 
 @layer components {
@@ -25,27 +61,30 @@
     @apply flex min-h-11 items-center gap-3 border border-transparent px-3 py-2.5 font-medium;
     transition: background-color 150ms, color 150ms;
   }
-  .sidebar-link:hover { @apply bg-paper-card text-ink-primary; }
-  .sidebar-link[aria-current="page"] { @apply border-accent-seal bg-accent-soft text-accent-seal; }
+  .sidebar-link:hover { @apply bg-paper-warm text-ink-primary; }
+  .sidebar-link:active { @apply bg-accent-soft; }
+  .sidebar-link[aria-current="page"] { @apply border-transparent bg-accent-soft text-accent-seal; }
   .ui-button,
-  .page-content :where(button.border, button.bg-accent-seal, button.bg-danger-base):not([role="switch"]):not([aria-pressed]) {
+  .page-content :where(button.border, button.bg-primary, button.bg-accent-seal, button.bg-danger-base):not([role="switch"]):not([aria-pressed]) {
     min-height: 2.5rem;
     border-radius: 0;
     transition: background-color 150ms, border-color 150ms;
   }
   .ui-button:hover:not(:disabled),
   .page-content :where(button.border):hover:not(:disabled):not([role="switch"]):not([aria-pressed]) {
-    border-color: theme("colors.accent.seal");
+    border-color: rgb(var(--nova-accent-control));
   }
   .page-content { @apply min-w-0 space-y-7; }
   .page-content h1 { @apply text-2xl font-semibold tracking-tight md:text-3xl; }
-  .page-content :where(section, div).bg-paper-card.shadow-sm { @apply rounded-xl; border-width: 2px; }
+  .page-content :where(section, div).bg-paper-card.shadow-sm { @apply rounded-xl; border-width: 1px; }
   .page-content :where(section, div).bg-paper-card.shadow-sm > h2 { @apply mb-5 text-base; }
   .page-content.dashboard-page { @apply space-y-4; }
   .page-content.dashboard-page .dashboard-panel > h2 { @apply mb-3; }
   .page-content table { font-variant-numeric: tabular-nums; }
   .page-content thead { @apply bg-paper-raised text-ink-muted; }
-  .page-content tbody tr:hover { background: theme("colors.paper.base"); }
+  dialog.bg-paper-card, [role="dialog"].bg-paper-card { border-width: 1px; }
+  aside[data-testid="sidebar"], header.bg-paper-raised { background: rgb(var(--nova-bg)); }
+  .page-content tbody tr:hover { background: rgb(var(--nova-bg)); }
   .page-content :where(th, td) { padding-top: 0.85rem; padding-bottom: 0.85rem; }
   .panel-heading { @apply flex items-center gap-2.5; }
   .panel-heading > svg { @apply text-ink-muted; }
@@ -53,15 +92,13 @@
   .range-picker button { @apply min-h-8 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium; }
 
   .login-art {
-    background:
-      radial-gradient(ellipse at 50% 42%, rgb(217 119 87 / 0.10), transparent 60%),
-      theme("colors.paper.base");
+    background: rgb(var(--nova-hero));
   }
   .login-art::before {
     content: "";
     position: absolute;
     inset: 10% 8%;
-    border: 1px solid rgb(185 83 54 / 0.16);
+    border: 1px solid rgb(var(--nova-brand) / 0.16);
     border-radius: 50%;
     transform: rotate(-26deg) scaleX(1.18);
     pointer-events: none;
@@ -71,11 +108,11 @@
     position: absolute;
     width: 90%; height: 45%; left: 5%; bottom: -35%;
     border-radius: 50%;
-    box-shadow: 0 -2px 0 rgb(185 83 54 / 0.35), 0 -18px 90px rgb(217 119 87 / 0.12);
+    box-shadow: 0 -2px 0 rgb(var(--nova-brand) / 0.35);
     pointer-events: none;
   }
   .login-logo { @apply mx-auto w-full max-w-[19rem] rounded-[2rem]; }
-  .login-form input { min-height: 3rem; background: theme("colors.paper.raised"); }
+  .login-form input { min-height: 3rem; background: rgb(var(--nova-bg)); }
 
   @media (max-width: 767px) {
     input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
@@ -89,6 +126,43 @@
 @layer utilities {
   input:not([type="checkbox"]):not([type="radio"]), select, textarea,
   button.border-ink-line, [role="switch"].border-ink-line {
-    border-color: theme("colors.ink.control");
+    border-color: rgb(var(--nova-control));
   }
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea {
+    background-color: rgb(var(--nova-bg));
+    color: rgb(var(--nova-text));
+  }
+  input:not([type="checkbox"]):not([type="radio"]):enabled:hover, select:enabled:hover, textarea:enabled:hover {
+    border-color: rgb(var(--nova-text-secondary));
+  }
+  input:not([type="checkbox"]):not([type="radio"]):focus-visible, select:focus-visible, textarea:focus-visible {
+    border-color: rgb(var(--nova-accent-control));
+  }
+  input:disabled, select:disabled, textarea:disabled {
+    background-color: rgb(var(--nova-surface-warm));
+    color: rgb(var(--nova-text-secondary));
+    cursor: not-allowed;
+  }
+  button.bg-primary:hover:not(:disabled), .nova-primary:hover:not(:disabled) {
+    background-color: rgb(var(--nova-action-hover));
+    opacity: 1;
+  }
+  button.bg-primary:active:not(:disabled), .nova-primary:active:not(:disabled) {
+    background-color: rgb(var(--nova-action-active));
+  }
+  button.bg-accent-seal:hover:not(:disabled) { background-color: rgb(var(--nova-accent-text)); }
+  button.bg-accent-seal:active:not(:disabled) { background-color: rgb(var(--nova-accent-control)); }
+  button.bg-danger-base:active:not(:disabled) { background-color: rgb(var(--nova-danger-hover)); }
+  button.border:active:not(:disabled):not(.bg-primary):not(.bg-accent-seal):not(.bg-danger-base):not([role="switch"]) {
+    background-color: rgb(var(--nova-surface-warm));
+  }
+  button[class]:disabled { opacity: 0.55; }
+}
+
+/* Chromium/Safari 会用 UA !important 背景绘制自动填充；内阴影覆盖蓝底，保留内容与焦点轮廓。 */
+input:is(:-webkit-autofill, :autofill) {
+  -webkit-box-shadow: 0 0 0 1000px rgb(var(--nova-bg)) inset !important;
+  box-shadow: 0 0 0 1000px rgb(var(--nova-bg)) inset !important;
+  -webkit-text-fill-color: rgb(var(--nova-text)) !important;
+  caret-color: rgb(var(--nova-text));
 }

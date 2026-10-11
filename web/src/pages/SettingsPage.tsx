@@ -316,7 +316,7 @@ export function SettingsPage() {
             <button
               type="submit"
               disabled={busy}
-              className="rounded bg-accent-seal px-4 py-1.5 text-sm font-medium text-accent-contrast disabled:opacity-40"
+              className="rounded bg-primary px-4 py-1.5 text-sm font-medium text-primary-contrast disabled:opacity-40"
             >
               保存
             </button>

@@ -123,6 +123,7 @@ export function ProjectsPage() {
             }
           />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="text-left text-xs text-ink-muted">
@@ -188,6 +189,7 @@ export function ProjectsPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </section>
 

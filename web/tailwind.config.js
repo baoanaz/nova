@@ -1,3 +1,5 @@
+const token = (name) => `rgb(var(--nova-${name}) / <alpha-value>)`;
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -9,20 +11,21 @@ export default {
       },
       borderRadius: { DEFAULT: "0", sm: "0", md: "0.625rem", lg: "0.75rem", xl: "1rem", "2xl": "1.25rem" },
       boxShadow: {
-        sm: "0 4px 20px rgb(39 22 16 / 0.06)",
-        xl: "0 24px 64px rgb(39 22 16 / 0.12)",
+        sm: "var(--nova-shadow-sm)",
+        xl: "var(--nova-shadow-xl)",
       },
-      // 文字橙比按钮底色稍深，确保浅橙选中背景上的小字也达到 4.5:1。
-      textColor: { accent: { seal: "#A1462D" } },
+      // 装饰橙、白字按钮底色与小字号强调文字分别管理。
+      textColor: { accent: { seal: token("accent-text") } },
       colors: {
-        paper: { base: "#FFF7F2", raised: "#FFFCF9", card: "#FFFFFD" },
-        ink: { primary: "#271610", muted: "#816055", line: "#D7C5BC", control: "#967B6B" },
-        accent: { seal: "#B95336", soft: "#FBE7DA", bright: "#D97757", contrast: "#FFFFFF" },
-        brand: { gold: "#8A5A24" },
-        success: { soft: "#ECFDF5", text: "#047857", line: "#45866D" },
-        warning: { soft: "#FFF7ED", text: "#92400E", line: "#B8773B" },
-        error: { soft: "#FFF1F2", text: "#BE123C", line: "#C86E7C" },
-        danger: { base: "#BD3434", hover: "#A12727" },
+        paper: { base: token("bg"), raised: token("surface-secondary"), card: token("surface"), warm: token("surface-warm"), hero: token("hero") },
+        ink: { primary: token("text"), muted: token("text-secondary"), subtle: token("text-subtle"), line: token("border"), control: token("control") },
+        primary: { DEFAULT: token("action"), hover: token("action-hover"), active: token("action-active"), contrast: token("on-action") },
+        accent: { seal: token("accent-control"), soft: token("selected"), bright: token("brand"), contrast: token("on-action") },
+        brand: { gold: token("brand-gold") },
+        success: { soft: token("success-soft"), text: token("success-text"), line: token("success") },
+        warning: { soft: token("warning-soft"), text: token("warning-text"), line: token("warning-line") },
+        error: { soft: token("error-soft"), text: token("error-text"), line: token("error-line") },
+        danger: { base: token("danger"), hover: token("danger-hover") },
       },
     },
   },
