@@ -318,6 +318,10 @@ class BudgetConfig:
     # （保底是"至少给这些"，与"最多给到哪"不冲突，否则纯文档查询可能被清空）。
     # ``0.0`` = 显式关闭闸门（回到"贪心填满"），供机制类测试与修改前/后对照测量使用。
     score_ratio: float = CONTEXT_SCORE_RATIO
+    # D-51：用途构建器显式启用；直接 assemble 的旧默认行为保持不变。
+    prefer_explicit: bool = False
+    focus_windows: bool = False
+    focus_symbols: tuple[str, ...] = ()
 
 
 FAST_BUDGET = BudgetConfig(hard_cap=14_000, single_file_tokens=2_500, docs_tokens=950)
@@ -611,7 +615,15 @@ def assemble(
     index_signals = signals if signals is not None else IndexSignals()
     fresh = freshness if freshness is not None else store.freshness()
     pool = sorted(candidates, key=lambda c: (-c.score, -c.rrf_score, c.chunk_id))
+    explicit_ids = {c.chunk_id for c in pool if _is_explicit(c)}
+    explicit_symbols = {c.symbol_fqn for c in pool if _is_explicit(c) and c.symbol_fqn}
     pool, pre_aggregated = _prefer_definition_representatives(store, pool)
+
+    def is_target(candidate: Candidate) -> bool:
+        return candidate.chunk_id in explicit_ids or candidate.symbol_fqn in explicit_symbols
+
+    if active.prefer_explicit:
+        pool.sort(key=lambda c: (not is_target(c), -c.score, -c.rrf_score, c.chunk_id))
 
     # R21：内容预算与 spec 份额上限。池里**存在代码候选**时 docs_ratio 才生效
     # （纯文档问题——如 spec 类查询——不应被本机制伤害）。
@@ -642,7 +654,7 @@ def assemble(
     )
     below_floor = 0
 
-    used = active.framework_overhead
+    used = min(active.framework_overhead, active.hard_cap)
     omitted = pre_aggregated
     capacity_cut = 0
     tier3_used = 0
@@ -738,9 +750,14 @@ def assemble(
         # （tier3 图扩展邻居恒为固定分 0.70，以及 0 分/负分的边缘命中），
         # 结果是包被填满 10K token，但 E29 之后全是 0.00/-0.24 这类噪音。
         # “装不装满”不是目标，“装的都有用”才是；阈值的作用必须保留。
-        if score_floor is not None and candidate.score < score_floor:
+        if (
+            score_floor is not None and candidate.score < score_floor
+            and not (active.prefer_explicit and is_target(candidate))
+        ):
             below_floor += 1
             omitted += 1
+            if active.prefer_explicit:
+                continue
             break
         slot = _build_slot(store, candidate, index_signals)
         if slot is None:
@@ -770,7 +787,7 @@ def assemble(
         hard_limit = _hard_limit()
         over_file_cap = file_usage.get(file_key, 0) + tokens > single_file_cap
         if over_file_cap or used + tokens > hard_limit:
-            degraded = _degrade(candidate, slot, active, store)
+            degraded = _degrade(candidate, slot, active, store, query=query)
             if degraded is not None:
                 tokens = degraded.tokens
 
@@ -842,7 +859,7 @@ def assemble(
             # 实测 LC-21：保底先把 used 冲到 11344，补检目标（320 token）
             # 因 ``over_budget`` 差 115 token 被丢弃。
             if over_file_cap or used + tokens > active.hard_cap:
-                degraded = _degrade(candidate, slot, active, store)
+                degraded = _degrade(candidate, slot, active, store, query=query)
                 if degraded is not None:
                     tokens = degraded.tokens
             if file_usage.get(file_key, 0) + tokens > single_file_cap:
@@ -946,6 +963,7 @@ def assemble(
                 store,
                 backfill=True,
                 force=over_single,
+                query=query,
             )
             if degraded is not None:
                 # reason 含降级签名，重写一次（_degrade 会重置 content，但不动 reason）
@@ -1019,10 +1037,28 @@ def assemble(
         backfill_used += tokens
         backfill_placed += 1
 
-    # ``truncated`` 只反映**真的被预算截断**（TASK-108：闸外候选已不再被丢弃，
-    # 它们要么装进包、要么因预算耗尽被 capacity_cut 计数）。
+    # 最终编号/聚合说明/flow 也计入硬预算。优先保留已选源码，不以提高硬顶兜底。
+    delivered_flows = list(flows)
+    for index, slot in enumerate(slots, start=1):
+        slot.item.id = f"E{index}"
+
+    def final_cost() -> int:
+        return min(active.framework_overhead, active.hard_cap) + sum(s.tokens for s in slots) + sum(
+            estimate_tokens(n.symbol) + estimate_tokens(n.path)
+            for f in delivered_flows for n in f.nodes
+        )
+
+    while final_cost() > active.hard_cap:
+        if delivered_flows:
+            delivered_flows.pop()
+        elif slots:
+            slots.pop()
+            omitted += 1
+        else:
+            break
+        capacity_cut += 1
     truncated = capacity_cut > 0
-    flow_tokens = base_flow_tokens
+    used = final_cost()
 
     evidence: list[EvidenceItem] = []
     docs: list[EvidenceItem] = []
@@ -1038,11 +1074,11 @@ def assemble(
         freshness=fresh,
         evidence=evidence,
         docs=docs,
-        flows=list(flows),
+        flows=delivered_flows,
         missing_evidence=[],
         next_queries=[],
         budget=Budget(
-            used_tokens=used + flow_tokens,
+            used_tokens=used,
             hard_cap=active.hard_cap,
             truncated=truncated,
             omitted_count=omitted,
@@ -1108,6 +1144,7 @@ def _degrade(
     *,
     backfill: bool = False,
     force: bool = False,
+    query: str = "",
 ) -> _Slot | None:
     """单 chunk > 行长阈值且超预算 → 签名 + 起始行起 N 行。
 
@@ -1125,11 +1162,31 @@ def _degrade(
         config.backfill_skeleton_lines if backfill else config.skeleton_line_threshold
     )
     start, end = slot.span
-    if not force and end - start + 1 <= threshold:
+    if not force and not config.focus_windows and end - start + 1 <= threshold:
         return None
     chunk = store.chunk_by_id(candidate.chunk_id)
     if chunk is None:
         return None
+    if config.focus_windows:
+        from nova_core.contextpack.selection import focused_segments
+
+        calls = []
+        if candidate.symbol_fqn:
+            for edge in store.edges_for(candidate.symbol_fqn, kinds=["calls"]):
+                if edge.source == candidate.symbol_fqn and edge.target in config.focus_symbols:
+                    if edge.line is not None:
+                        calls.append(edge.line)
+        ranges = focused_segments(
+            chunk.content, start, query, chunk.file_path, calls,
+            max_lines=config.skeleton_context_lines + 1,
+        )
+        slot.segments = [_Segment(a, b, text) for a, b, text in ranges]
+        slot.prelude = ""
+        note = f"源码片段；完整实现 {chunk.file_path}:{start}-{end} 可按需 read"
+        slot.item.reason = f"{slot.item.reason} + {note}"
+        slot.base_reason = slot.item.reason
+        _sync(slot)
+        return slot
     kept_end = min(start + config.skeleton_context_lines, end)
     head = chunk.content.splitlines()[: config.skeleton_context_lines + 1]
     slot.prelude = numbered_lines(chunk.signature, start) if chunk.signature else ""
@@ -1151,6 +1208,11 @@ def _try_merge(slots: list[_Slot], slot: _Slot, tokens: int) -> int | None:
         if _segments_distance(existing.segments, slot.segments) > ADJACENT_GAP_LINES:
             continue
         before = existing.tokens
+        existing.elision_upper = max(existing.elision_upper, slot.elision_upper)
+        if "源码片段；" in slot.base_reason:
+            note = slot.base_reason.split("源码片段；", 1)[1]
+            if note not in existing.base_reason:
+                existing.base_reason += f" + 源码片段；{note}"
         _merge_segments(existing, slot.segments)
         existing.item.reason = f"{existing.base_reason} + {_MERGE_NOTE}"
         return existing.tokens - before
