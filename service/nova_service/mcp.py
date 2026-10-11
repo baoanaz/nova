@@ -524,9 +524,10 @@ def _ask_text(
     TASK-MCP-BUDGET：``max_tokens`` 是**装填预算**，与回答长度无关。
     此前 MCP 的 ``ask_project`` 把工具参数的默认值（10K）直接当装填预算用，
     而 HTTP ``ask`` 走 16K——两个面不一致；现在两边都由调用方传 ``ASK_MAX_TOKENS``。
+    D-50：两侧均走独立 Deep 证据入口；仅传 16K 数值而漏传 Deep 的旧差异已消除。
     """
     _rescan_if_due(manager, settings, project_id)
-    trace = _call_engine(lambda: manager.search(project_id, question, max_tokens))
+    trace = _call_engine(lambda: manager.ask_evidence(project_id, question, max_tokens))
     warning = _storage_warning(manager, settings, project_id)
     insufficient = not trace.pack.answerable
     meta = pack_meta(

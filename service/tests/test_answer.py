@@ -968,3 +968,87 @@ def test_meta_reports_missing_answer_env_by_name(ask_env: SimpleNamespace) -> No
     assert llm["apiKeyConfigured"] is False
     assert llm["missingEnv"] == ["ANSWER_BASE_URL", "ANSWER_API_KEY", "ANSWER_MODEL"]
     assert llm["model"] is None
+
+
+# ---------------------------------------------------------------------------
+# D-50：独立 Deep 证据与两入口一致性
+
+
+@pytest.mark.parametrize("surface", ["http", "mcp"])
+@pytest.mark.parametrize("scenario", ["answered", "insufficient", "failed", "unconfigured"])
+def test_ask_surfaces_use_independent_deep_evidence(
+    ask_env: SimpleNamespace,
+    monkeypatch: pytest.MonkeyPatch,
+    surface: str,
+    scenario: str,
+) -> None:
+    from nova_service.mcp import _ask_text
+    from nova_service.routers.query import ASK_MAX_TOKENS
+
+    traces = []
+    ask_evidence = ask_env.manager.ask_evidence
+
+    def observed(project_id, question, max_tokens=ASK_MAX_TOKENS):
+        trace = ask_evidence(project_id, question, max_tokens)
+        traces.append(trace)
+        return trace
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("ask 不得调用 manager.search 或 Engine.search_with_trace")
+
+    monkeypatch.setattr(ask_env.manager, "ask_evidence", observed)
+    monkeypatch.setattr(ask_env.manager, "search", forbidden)
+    monkeypatch.setattr(ask_env.manager.engine, "search_with_trace", forbidden)
+    provider = FakeAnswerProvider(
+        error=AnswerUnavailableError("fake failure") if scenario == "failed" else None
+    )
+    question = "zzzz qqqq 与语料完全无关的主题" if scenario == "insufficient" else ANSWERABLE_QUERY
+
+    if surface == "http":
+        if scenario != "unconfigured":
+            _with_fake_provider(ask_env, provider)
+        response = ask_env.client.post(
+            "/api/query/ask", json={"projectId": ask_env.project_id, "question": question}
+        )
+        assert response.status_code == 200
+        body = response.json()
+        expected = {
+            "answered": "answered",
+            "insufficient": "insufficient_evidence",
+            "failed": "degraded",
+            "unconfigured": "degraded",
+        }[scenario]
+        assert body["status"] == expected
+        if scenario == "insufficient":
+            assert "bestEffortContext" in body and "answer" not in body
+            assert isinstance(body["missingEvidence"], list)
+            assert body["meta"]["answerable"] is False
+            assert "nextQueries" in body
+            text = body["meta"]["degradedReason"]
+        else:
+            text = body["answer"]
+        assert body["meta"]["mode"] == "deep"
+    else:
+        text = _ask_text(
+            ask_env.manager,
+            ask_env.app.state.settings,
+            ask_env.project_id,
+            question,
+            ASK_MAX_TOKENS,
+            lambda: None if scenario == "unconfigured" else provider,
+        )
+
+    assert len(traces) == 1
+    assert traces[0].pack.mode == "deep"
+    assert traces[0].pack.budget.hard_cap == ASK_MAX_TOKENS
+    assert traces[0].evidence_set is not None
+    assert len(provider.calls) == (0 if scenario in {"insufficient", "unconfigured"} else 1)
+    if scenario == "answered":
+        assert "## Answer" in text
+        assert "[E1]" in text
+    elif scenario == "failed":
+        assert "总结模型暂时不可用" in text
+    elif scenario == "unconfigured":
+        assert "未配置总结模型" in text
+    else:
+        assert "证据不足" in text

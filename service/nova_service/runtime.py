@@ -457,6 +457,15 @@ class EngineManager:
             # 降级（如向量通道失败）不是"provider 恢复了"：保留故障记忆，不谎报健康。
             recovered=lambda trace: not trace.degraded,
         )
+    def ask_evidence(
+        self, project_id: str, question: str, max_tokens: int = 16_000
+    ) -> SearchTrace:
+        """D-50：从共享证据集合独立构建 Deep 输入，不调用 search 返回包。"""
+        return self._observe_provider(
+            lambda: self._engine.ask_with_trace(project_id, question, max_tokens),
+            recovered=lambda trace: not trace.degraded,
+        )
+
     # ------------------------------------------------------------------ provider 健康（§A/§B）
 
     def provider_health(self) -> tuple[bool, str | None]:

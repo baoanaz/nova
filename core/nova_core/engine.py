@@ -52,10 +52,10 @@ from nova_core.contextpack import (
     MODE_DEEP,
     MODE_FAST,
     BudgetConfig,
-    assemble,
     budget_for,
     collect_index_signals,
 )
+from nova_core.contextpack.evidence import EvidenceSet, build_ask_evidence, build_search_pack
 from nova_core.embedding import EmbeddingConfig, create_provider
 from nova_core.hashing import blob_hash, file_content_hash
 from nova_core.interfaces import ContextEngine, EmbeddingProvider
@@ -306,6 +306,8 @@ class SearchTrace:
     candidates: tuple[Candidate, ...] = ()
     gap_kinds: tuple[str, ...] = ()
     backfilled: int = 0
+    # D-50：保留未裁剪证据集合供观测；不进入 CF-03 JSON 或 HTTP/MCP 响应。
+    evidence_set: EvidenceSet | None = None
 
     @property
     def candidate_count(self) -> int:
@@ -686,29 +688,24 @@ class Engine:
         *,
         deep: bool = False,
     ) -> SearchTrace:
-        """``search`` 的带 trace 版本（通道健康度/候选计数；CLI 与测试用）。
+        """Fast 检索；保留 ``deep=True`` 作为旧调用方的 Deep 兼容入口。"""
+        return self._query_with_trace(project_id, query, max_tokens, deep=deep)
 
-        两轮管线（TASK-109，D-19；Module/02 §4.7/§4.8）：
+    def ask_with_trace(
+        self, project_id: str, question: str, max_tokens: int = 16_000
+    ) -> SearchTrace:
+        """独立 Deep 证据入口；不调用 search、不调用 LLM（总结仍由 service 负责）。"""
+        return self._query_with_trace(project_id, question, max_tokens, deep=True)
 
-        ```text
-        第一轮：recall → expand → rerank → assemble
-                    ↓
-                gap 检查（确定性，纯函数，<5ms）
-                    ↓ 命中 G1/G2
-        第二轮：定向补检（只补缺口，不全量重跑）
-                → 并入同一 rerank → 重新 assemble（独立小预算）
-        ```
+    def _query_with_trace(
+        self, project_id: str, query: str, max_tokens: int, *, deep: bool
+    ) -> SearchTrace:
+        """共享发现 → EvidenceSet → 按用途组装 → 最多一次 Gap 补检。
 
-        ``deep``（TASK-109 §“与 ask 的关系”）：Deep 模式（``ask_project``）用**更大**的
-        补检配额。Fast/Deep **共用同一条管线与同一份代码**（D-10）——差异只在配额，
-        不在分支；分叉点在**组装之后**（Fast 拿到包即停，Deep 交给 LLM）。
-        两边都触发补检：实测两个失败用例（``cockpit-0033``/``0035``）都是 search 题，
-        只在 Deep 触发就修不了它们。
-
-        ``deep`` 同时选定**装填预算档位**（TASK-MCP-BUDGET 修复）：此前两次 ``assemble``
-        都硬编码 ``mode=MODE_FAST``（该参数与 ``config`` 二选一，传了 ``config`` 后 ``mode``
-        就是死参），因此 ``DEEP_BUDGET`` 从未生效、``ask_project`` 实际按 Fast 预算装填。
-        现在 ``mode`` 随 ``deep`` 走：Fast 14K / Deep 16K。
+        召回、扩展与排序只维护一份实现；两个组装器都消费完整候选集合，不从已裁剪的
+        ContextPack 重建候选。Gap 判定仍使用首轮包，但只触发一次定向补检，修复候选
+        并入同一 rerank 后再从 EvidenceSet 组装。保持 Fast 14K / Deep 16K 配额与
+        原有一轮/两轮组装次数；本阶段不修改外部 ContextPack 合同。
         """
         if not query.strip():
             raise EngineError("query 不能为空")
@@ -737,37 +734,30 @@ class Engine:
             marks.append(("expand", time.perf_counter()))
             ranked = rerank(pool, collect_signals(store, query, pool))
             marks.append(("rerank", time.perf_counter()))
-            pack = assemble(
-                store,
-                query,
-                ranked,
-                flows=expansion.flows,
+            evidence_set = EvidenceSet(
+                query=query,
+                candidates=tuple(ranked),
+                flows=tuple(expansion.flows),
                 freshness=store.freshness(),
-                mode=mode,
-                config=self._budget(max_tokens, mode),
                 signals=collect_index_signals(store, ranked),
             )
+            build_pack = build_ask_evidence if deep else build_search_pack
+            pack = build_pack(store, evidence_set, config=self._budget(max_tokens, mode))
             marks.append(("assemble", time.perf_counter()))
             # ---- 第二轮：Evidence-Gap 定向补检（≤ 1 次，确定性） ----
             gaps, backfill, ranked = self._backfill_gaps(
                 store, query, ranked, pack, limits=limits
             )
             if gaps.triggered:
-                pack = assemble(
-                    store,
-                    query,
-                    ranked,
-                    flows=expansion.flows,
+                evidence_set = replace(
+                    evidence_set,
+                    candidates=tuple(ranked),
                     freshness=store.freshness(),
-                    mode=mode,
-                    config=self._budget(max_tokens, mode),
                     signals=collect_index_signals(store, ranked),
-                    backfill=backfill,
-                    # 本轮的主贪心循环会把预算再填满一次（candidates 含全部候选），
-                    # 若不为补检留出余量，补检循环会在第一行 ``break``——
-                    # 实测 LC-21：首轮留的余量被本轮贪心吃掉，19 个补检候选全部落空。
-                    reserve_backfill=True,
+                    backfill=tuple(backfill),
+                    repair_triggered=True,
                 )
+                pack = build_pack(store, evidence_set, config=self._budget(max_tokens, mode))
         marks.append(("backfill", time.perf_counter()))
         # 分段耗时（观测用；冷启动计时包含最后一次检索）。
         logger.info(
@@ -790,6 +780,7 @@ class Engine:
             candidates=tuple(ranked),
             gap_kinds=gaps.kinds,
             backfilled=len(backfill),
+            evidence_set=evidence_set,
         )
 
     # ------------------------------------------------------------------ Gap 二轮（TASK-109）

@@ -151,6 +151,15 @@
 | R52 | **embedding 来源的切换与配置化**（用户 2026-09-13 拍板）：当前开发期用 Voyage `voyage-4-lite`（200M 免费 token；RPM 2000 / TPM 1600 万），额度用完可切硅基流动或其他 | **接受，并立 TASK-049 做架构整理**：批大小/批 token 预算/并发度/超时/重试/上下文上限均**配置化**且**可按模型给不同值**（三级回落 env > 模型 > 厂商 > 全局）；厂商差异（认证/请求体/响应/错误字段）收进 `ApiTransportSpec`，新增厂商只加 spec。**并发默认 1**（串行）；免费档限流脆弱，并发由用户显式开启 |
 | R53 | **性能目标口径**（用户 2026-09-13 指示）：Voyage 配额 TPM 1600 万，要求“尽量大、用满 80% 官方性能” | **接受为参数选定目标（≈12.8M tok/min）**：但实测单请求吞吐与批上限构成瓶颈（单批 ≤1000 条 / ≤320K token），需**大批 + 并发**组合才能逼近；具体默认值由 TASK-049 **实测标定**，**不得写入未经实测的数字**；并保留“限流时自动退避、不硬刷”的纪律 |
 
+### 3.11 EvidenceSet 分流实施裁定（用户授权，2026-10-11）
+
+- 依据：D-50 与 `docs/plan/retrieval-evidence-search-ask-plan.md` 阶段 A/B。
+- 新增请求内 EvidenceSet 与 `Engine.ask_with_trace` / service 证据入口属于 R33 允许的公开扩展；不变更 CF-07 的 `ask`、CF-04 Candidate、持久化 DDL 或外部 ContextPack JSON。
+- search / ask 共用证据发现与一次有界补检，分别从未裁剪候选组装；ask 不以 SearchPack 为输入。Gap 仍可使用首轮有预算的 probe 判断结构缺口，不宣称补检本身与预算无关。
+- HTTP 与 MCP ask 统一 Deep 配额及 16K 装填；修正 MCP 已使用 16K 数值但未传 Deep 的不一致。search 默认预算与各端点短路/降级状态不变。
+- 最多一次正常回答 LLM 调用；本阶段不引入 partial、claims 协议、工具参数、Watcher 或跨项目总结。
+- 验证：既有检索/组装/HTTP/MCP 回归、独立 ask 路径、较小 SearchPack 不限制 ask 候选、单次召回/补检与零/一次假 LLM 调用。
+
 ## 4. 契约的验证方式（集成保障）
 
 - CF-01：TASK-001 的测试必须真实执行该 SQL 建库；DDL 与测试一起通过才算契约落地。

@@ -1,10 +1,10 @@
 # NOVA 检索优化计划：共享证据底座，差异化 search / ask
 
-- 状态：方向已由用户确认；实施设计待评审；尚未实施。
+- 状态：阶段 A 最小回归基线已记录；阶段 B 已实现、测试与只读复审通过；阶段 C–F 待实施。
 - 更新日期：2026-10-11。
-- 当前实现依据：NOVA commit `b43f89cee658f04a4daa871124a927f38b9ed506`，结合本次工作区只读核对。
+- 实施前基线依据：NOVA commit `b43f89cee658f04a4daa871124a927f38b9ed506`；计划回退点 `7b16ee3`；阶段 B 交付记录见 §12。
 - 外部参考：[CodeGraph 源码调研](codegraph-source-review-2026-10-11.md)，固定 commit，不采用未核验的宣传或收益数字。
-- 范围：沉淀计划、参考依据与后续实施入口；本轮不修改运行代码、工具契约或预算配置。
+- 范围：完整优化计划与分期交付记录；本轮仅实施阶段 B 的证据集合分流及 HTTP/MCP Deep 一致性，未变更外部 schema、预算配置或工具描述。
 
 ## 1. 已确认的方向
 
@@ -20,7 +20,7 @@
 
 这里的“开放式询问”不是通用知识问答；回答仍必须以项目代码和文档为依据。符号、路径、行号是可直接利用的锚点，不是对整句问题进行意图分类的依据。
 
-## 2. 当前实现基线与真实差距
+## 2. 实施前基线与真实差距
 
 | 当前能力 | 源码依据 | 本计划的增量方向 |
 |---|---|---|
@@ -101,7 +101,7 @@ EvidenceSet（内部集合，不等同 Agent 返回包）
                         校验与 AnswerPack 渲染 → Agent
 ```
 
-EvidenceSet 是实施设计候选，不是已经存在的新类型或持久化表。第一版尽量复用 Candidate、Store、关系记录与现有 ContextPack，不引入新图数据库，不保存第二份完整源码。
+EvidenceSet 已在阶段 B 实现为请求内类型，见 [evidence.py](../../core/nova_core/contextpack/evidence.py)。第一版复用 Candidate、Store、Flow、索引信号与现有 ContextPack，不新增持久化表、图数据库或第二份完整源码。下列字段仍是后续增量设计候选，不能视为首版全部已实现。
 
 建议内部记录：
 
@@ -266,11 +266,43 @@ B 是优先实施入口；E 不应阻塞分流和 ask 改善。每阶段独立�
 
 开放问题：EvidenceSet 最小 schema、精确目标预算冲突策略、长函数窗口保真、ask 结构化输出兼容、预算档位、partial 状态、首批框架规则、版本一致性协议、跨项目服务端接口。实施前逐项确定，不把候选字段或方向当成已实现保证。
 
-## 11. 下一次实施从哪里开始
+## 11. 后续实施入口
 
-1. 从本文件与 [CodeGraph 调研](codegraph-source-review-2026-10-11.md) 恢复目标。
-2. 核对 `engine.py`、`assembly.py`、`answer.py`、`routers/query.py` 与当前工具契约的直接相关接口。
-3. 先完成阶段 A/B 的最小设计和回归用例，再写代码；不同时上新语言、Watcher 与多项目总结。
-4. 正式设计和契约变更先登记，核心改动先备份，阶段交付做只读 review。
+1. 从本文件 §12 与 [CodeGraph 调研](codegraph-source-review-2026-10-11.md) 恢复已交付边界，不重复实现阶段 B。
+2. 阶段 C 优先落实工具描述、精确目标的源码预算、调用点窗口及按证据作用分节；阶段 D 在独立 AskEvidence 入口上改进模型输入与输出。
+3. 继续保留固定回归与四个输出快照作为对照；选择策略变化要明确新增正确性要求，不把“更短”当作唯一目标。
+4. 新语言、Watcher、多项目总结独立分期；正式设计和契约变更先登记，核心改动先备份，阶段交付做只读 review。
 
-交付定义：Agent 不需要学习检索内部机制；search 能提供关键实现与真实连接，ask 能消费更宽证据并用一次 LLM 返回精简、可引用、有边界的解释。
+整体交付定义：Agent 不需要学习检索内部机制；search 能提供关键实现与真实连接，ask 能消费更宽证据并用一次 LLM 返回精简、可引用、有边界的解释。
+
+## 12. 阶段 A/B 首批交付记录（2026-10-11）
+
+### 回退基线
+
+- 计划与调研文档先独立提交：`7b16ee3`（`docs: record evidence retrieval plan and CodeGraph source review`）。
+- 核心文件备份：`backups/evidence-split-20261011-2ueaf30y/`，包含开工前文件及确定性输出快照；不加入 Git。
+- 后续代码使用独立 commit，回退首批实现优先 `git revert <阶段B提交>`，不使用会删除用户工作区内容的 `reset --hard`。
+
+### 已实现
+
+- 新增 `contextpack/evidence.py`：EvidenceSet 保存完整排序候选、Flow、新鲜度、IndexSignals、补检候选与触发状态；两个构建器分别生成 Fast / Deep ContextPack。
+- `Engine.ask_with_trace` 独立进入共享发现链路，不调用 `search` 或 `search_with_trace`。旧 `search_with_trace(deep=True)` 保持兼容。
+- 首轮和补检后均从 EvidenceSet 组装；原有一次召回、一次扩展、最多一次 Gap 判定及一轮/两轮组装次数不变。
+- `EngineManager.ask_evidence` 接通 HTTP/MCP；修正 MCP 只传 16K 数值、却使用 Fast 配额的问题。
+- 组装边界复制 Candidate 的 `reasons` / `channel_ranks`，隔离旧 C/C++ 定义代表选择的原地追加；同次副本保留 backfill 与候选的共享身份。
+- 不向 HTTP/MCP 返回内部 EvidenceSet，不改变 CF-03 JSON、CF-07 原有 ask 接口、数据库 schema、14K/16K 档位或单次 LLM 与失败语义。
+
+### 验证证据
+
+- 开工前相关回归：`113 passed / 7 skipped`。
+- 四个确定性输出快照：中文自然语言、小预算明确符号、旧 Deep 入口、无词法命中；前后完整 JSON 与通道 / Gap 元数据一致，仅归一化 `freshness.indexedAt`。
+- 新增 21 个参数展开后的用例：候选保留、独立预算、ask 绕过 search、旧 Deep 兼容、发现/补检次数、补检元数据、非法输入、两入口四种回答分支，以及 C/C++ 候选可变字段隔离。
+- 最终直接相关回归集：`305 passed / 7 skipped`；跳过项来自既有 Gap 测试，不记为通过；一个既有 Starlette/AnyIO 弃用警告。
+- 指定交付 Python 文件 `ruff check` 通过。测试使用确定性 embedding、假 LLM 或 MockTransport，没有调用 NOVA 的真实 embedding / 回答 provider。
+- 已调用独立只读子代理审查。首次发现 C/C++ 原地追加 reason 会污染共享候选，修复并补专项后复审通过；review 不等于模型回答的语义正确性评测。
+
+回归范围：`core/tests/contextpack/`、Gap、分流及直接相关引擎/缓存/索引健康集成；service 的 query、answer、MCP、EngineManager 与模型配置链路。不是全项目测试，也不是生产延迟或付费模型质量基准。
+
+### 尚未完成
+
+阶段 B 交付的是可独立演进的分流基础，不是完整的证据压缩算法。当前两个构建器仍复用原组装策略；尚未修改工具描述、search 章节/窗口策略、ask 结构化证据选择、partial 状态、多语言、动态边界、Watcher 或多项目统一总结。真实 Agent 选择率、P50/P95、语义支持率和全链路 token 成本仍需后续评测，不能从回归通过数推断收益。

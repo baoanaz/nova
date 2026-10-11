@@ -4,7 +4,7 @@
 > 建立日期：2025-09-09。
 > 文档优先级：Demo.md 是原始需求来源，仅供参考；与本目录内容冲突时，以 Background/ 的调研事实和 Module/ 的设计决策为准。设计决策以本文件 §3 为准。
 > 维护规则见 §4。
-> 最后更新：2026-09-10（D-39 拍板 P1；新增 D-44 embedding 双实现、D-45 CJK 分词器）。
+> 最后更新：2026-10-11（新增 D-50：共享 EvidenceSet 与 search / ask 独立组装；阶段 B 已实现）。
 
 ## 1. 文档地图
 
@@ -71,7 +71,7 @@
 | D-07 | 三级配置指纹分层失效（parser 变→重解析；embedding 变→只重嵌） | Module/01 §4.2 | 定稿（待评审） |
 | D-08 | C++ V1 定位"尽力而为 + unresolved 如实标注"，不做两阶段查找/模板实例化 | Module/01 §2.2 | 定稿（待评审） |
 | D-09 | 检索为四路并行召回 + RRF(K=60) 融合 + 图扩展；不做规则引擎 planner | Background/06 §2 | 已细化于 Module/02（部分被 D-16/D-17 修订） |
-| D-10 | ContextPack 为统一返回合同，search_context/ask_project 共用一条检索管线 | Background/06 §0 | 已细化于 Module/02（§4.8） |
+| D-10 | ContextPack 为统一返回合同，search_context/ask_project 共用一条检索管线；2026-10-11 由 D-50 细化为共享证据发现、独立输出组装 | Background/06 §0；D-50 | 已细化于 Module/02（§4.8）；分流见 D-50 |
 | D-11 | AI 总结层可插拔（OpenAI-compatible URL/KEY/MODEL 可配置），首选 deepseek-v4-flash | Background/06 §4 | 已细化于 Module/04（§2 参数表） |
 | D-12 | MCP 面向 agent 暴露少量高层工具（search_context / ask_project 主力） | Background/05 §3 | 已细化于 Module/05（§2.1 schema） |
 | D-13 | MD 文档为一等检索资产：doctype 分级 + 标题链 SpecBlock + spec_references 双向桥（symbol 级外键 + stale 级联）；doctype 加权只作为 rerank 信号，不开独立检索通道 | Module/01 §2.2 | 定稿（待评审） |
@@ -111,6 +111,7 @@
 | D-47 | LLM 上游协议可配且多实现：`AnswerProvider` 接口不变，支持 **openai**（`/v1/chat/completions`，默认）/ **responses**（`/v1/responses`）/ **anthropic**（`/v1/messages`）；服务端默认走 `ANSWER_PROTOCOL`，用户级覆盖走 `user_llm_config.protocol`；并提供连接自检（`POST /api/auth/llm-config/test`，L1 探测 `/v1/models` / L2 真实最小请求）。理由：同一网关的不同模型可能只开放不同协议（实测 2026-09-16：`deepseek-v4-flash` 仅 `ANTHROPIC`/`RESPONSES`），单一 OpenAI 实现会让“配置保存成功但 ask 持续 503”成为静默失灵。否决项：① 只做协议探测不实现新协议（用户仍无可用模型）；② 失败后自动换协议重发（两次计费且答案不可归因）。触发重评：D-11 的模型选型变化、或新增第四种协议 | Module/04 §2；用户确认 2026-09-16 | 定稿（2026-09-16） |
 | D-48 | **二进制分发走 npm 平台子包，不走 GitHub Release 下载**：主包 `nova-client`（仅启动器）+ 6 个平台子包 `nova-client-<os>-<arch>`（各含本平台二进制，作为主包 `optionalDependencies`）；npm 按子包 `os`/`cpu` 字段自动只装本平台那一个，启动器直接执行。理由（实测 2026-09-16）：① Node 默认**不读 `https_proxy`**（只认 `NODE_USE_ENV_PROXY=1`，v20+），代理环境里启动器直连 GitHub 命中共享出口 IP 的 403 rate limit（同一时刻 `curl` 走代理 200、`node` 直连 403），用户看到的是 `MCP server failed to start: connection closed`，极难排查；② 旧形态下 `npm publish` 必须等 Release 五平台资产就绪，人为纪律、错一步即 404。改为子包后**无网络下载步骤、无版本对齐**，用户零配置。否决项：① 给 `run.js` 加自设代理（仍要用户网络可达 GitHub，且 `NODE_USE_ENV_PROXY` 属实验特性）；② 只改文档让人“重试 403”（把设计缺陷当运维问题）；③ 把二进制直接打进主包（包体 ×6，且 npm 无按平台裁剪机制）。触发重评：npm 改变 optionalDependencies 的平台裁剪语义、或出现第二种分发渠道需求 | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
 | D-49 | **“以后都采用平台子包方式”是 nova 的既定分发规范**：今后任何面向用户的**预编译二进制**（客户端、CLI、后续可能的新工具）一律按 D-48 的形态分发——主包仅放启动器/胶水，二进制拆到 `<主包>-<os>-<arch>` 平台子包并列入主包 `optionalDependencies`；平台表以单一脚本的常量表为唯一事实来源，六平台（linux/darwin/win32 × x64/arm64）全量维护，发布顺序固定为**先子包、后主包**；一致性由 `scripts/check-version.sh` + `scripts/check-npm-platforms.js` 在 CI 与发布前守住。理由：D-48 的两个根因（Node 不读代理环境变量导致的下载失败、跨制品版本对齐的人为纪律）对**任何**二进制分发都成立，不是 nova-client 的特例。否决项：① 只把 nova-client 改了、后续新工具重新走下载（同一坑第二次踩）；② 允许“先发部分平台”过渡（缺失平台是**静默**故障——npm 跳过解析不了的可选依赖，用户侧无任何提示） | npm/README.md、docs/handbook/release/README.md；用户确认 2026-09-16 | 定稿（2026-09-16） |
+| D-50 | **共享 EvidenceSet、独立 search / ask 组装**：保留召回、扩展、rerank 与一次确定性 Gap 补检；请求内 EvidenceSet 保存完整排序候选、flows、新鲜度、索引信号与补检来源，不从已裁剪的 search 包重建 ask 输入。HTTP/MCP ask 统一走 Deep 证据入口；首阶段保留 14K/16K 预算、CF-03/CF-05/CF-06 与现有短路/降级语义，不新增 LLM 调用或强意图分类。理由：模型输入与 Agent 返回是不同用途，先解耦再独立优化；否决：复制检索引擎、无限扩大预算、ask 先调用 search、引入新持久化 schema；触发重评：固定回归或成本评测显示退化、需要改变预算或失败状态时 | [计划](../plan/retrieval-evidence-search-ask-plan.md) §5/§9；用户授权按计划实施 2026-10-11 | 阶段 B 已实现（2026-10-11）；预算与输出策略后续独立评审 |
 
 ## 4. 写作纪律（新文档必须遵守）
 
@@ -150,6 +151,7 @@
 | 四层模型 | SourceFile → Symbol → Chunk → Index Views（FTS/向量/图） | Module/01 |
 | 三级指纹 | parser_config_hash / embedding_model / schema_version，各触发不同层级重建 | Module/01 |
 | ContextPack | 检索输出的结构化证据包（snippets+callPaths+missingEvidence+budget） | Background/06 |
+| EvidenceSet | 请求内、未按 Agent 输出预算裁剪的排序候选与关联元数据；不持久化、不代表不可变索引快照 | D-50 |
 | evidenceTier | 证据分层 0-3：exact > keyword > semantic > graph-expanded | Background/06 |
 | RRF | Reciprocal Rank Fusion，K=60，按排名融合多通道 | Background/06 |
 | AnswerProvider | AI 总结层的可插拔接口（OpenAI-compatible） | Background/06 |
