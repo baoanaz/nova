@@ -29,6 +29,7 @@ from nova_core.parsing.base import (
     end_line_of,
     line_of,
 )
+from nova_core.parsing.fastapi_bindings import extract_fastapi_bindings
 from nova_core.types import SymbolDef
 
 _DEFINITION_TYPES = frozenset({"function_definition", "class_definition"})
@@ -50,6 +51,7 @@ class PythonParser(TreeSitterParser):
         self._visit_block(
             root, ctx, out, scope=(), owner=ctx.path, in_class=False, exported=exported
         )
+        extract_fastapi_bindings(root, ctx, out)
 
     # -- 语句块（module / class body / function body 共用） -------------------
 

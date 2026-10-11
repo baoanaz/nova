@@ -790,6 +790,12 @@ class Store:
 
     # ------------------------------------------------------------------ 读路径
 
+    def file_exists(self, path: str) -> bool:
+        """精确检查索引文件，不读取源码盘（只读 ESM 绑定使用）。"""
+        return self._conn.execute(
+            "SELECT 1 FROM files WHERE path = ?", (path,),
+        ).fetchone() is not None
+
     def all_symbols(self) -> list[SymbolRow]:
         """全部符号行（无序；图解析的内存符号索引用，见 ``chunking.resolver._SymbolIndex``）。"""
         return [

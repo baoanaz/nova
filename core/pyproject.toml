@@ -8,10 +8,12 @@ license = "Unlicense"
 # 由 scripts/check_dependency_direction.py 在 CI 强制。
 # 具体版本由各任务（TASK-001..014）落地时锁定到 uv.lock。
 dependencies = [
-    "tree-sitter>=0.23",
+    "tree-sitter>=0.26",     # 已验证库版本 0.26；JS grammar ABI 15
     "tree-sitter-python>=0.23",
     "tree-sitter-c>=0.23",
     "tree-sitter-cpp>=0.23",
+    "tree-sitter-javascript>=0.23,<0.26",
+    "tree-sitter-typescript>=0.23,<0.24",
     "jieba>=0.42",              # D-45：CJK 分词（索引/查询双侧预分词）
     "lancedb>=0.15",            # D-03：per-project 向量库
     "pyarrow>=15",

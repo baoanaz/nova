@@ -168,6 +168,10 @@ D-51：仅修订 CF-06 description 并同步 client 构建期副本，工具名/
 
 D-52：扩展内部模型提示和回验，不扩展 CF-05 外部返回协议。JSON claims 身份/源码可见范围确定性校验，无效 claim 不保留为事实；旧 Markdown 仍按 D-25 兼容，不能宣称它具备 claims 校验。格式失败抛 AnswerResponseError，由原 HTTP/MCP 分支降级，不发修复调用、不引入 partial。紧凑输入仍取独立 Deep 证据，16K 预算不变。范围验真不替代语义支持率评测。
 
+### 3.14 阶段 E 裁定（2026-10-11）
+
+D-53：协调扩展解析 registry 与公共 grammar 缓存键（包名＋getter，修复 TS/TSX 共包冲突）。新增 javascript/typescript/tsx 语言值及 grammar 依赖，不改变 CF-04 类型或既有语言 FQN；新增语言 FQN 为文件路径::词法名，以隔离同名定义。相对 ESM 绑定为有限适配器，不读取源码盘外路径、不猜第三方包或路径别名；歧义和动态边界保留。Flow 不包含弱来源边，仍沿用 CF-03 字段与静态关系语义。首个 FastAPI/APIRouter 独立适配器仅把明确模块级构造／唯一 handler／字面路径关联为 synthesized registers 候选，补相关源码，不推断实际挂载／URL。动态模块 callable 保留 binding_boundary，定位进口不等于稳定调用。新增语法关系种类沿用现有开放文本列，无 DDL 迁移；既有语言符号身份不变。最终 567 passed / 7 skipped，Ruff 与限定独立复审通过；真实模型、延迟和全调查成本未测。
+
 ## 4. 契约的验证方式（集成保障）
 
 - CF-01：TASK-001 的测试必须真实执行该 SQL 建库；DDL 与测试一起通过才算契约落地。

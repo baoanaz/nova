@@ -30,6 +30,9 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
+from nova_core.chunking.esm import LANGUAGES as ESM_LANGUAGES
+from nova_core.chunking.esm import ESMIndex
+from nova_core.parsing.registry import detect_language
 from nova_core.retrieval.fusion import KIND_SPEC, classify_kind
 from nova_core.storage import Store
 from nova_core.types import Candidate, Flow, FlowNode
@@ -86,10 +89,10 @@ def _by_score(candidates: Iterable[Candidate]) -> list[Candidate]:
 
 def _symbol_row(store: Store, fqn: str):
     """按 fqn 精确取符号行（优先带 chunk 的那条）。"""
-    for row in store.exact_symbols(fqn, limit=None):
-        if row.fqn == fqn and row.chunk_id is not None:
-            return row
-    return None
+    rows = [r for r in store.exact_symbols(fqn, limit=None) if r.fqn == fqn]
+    if len(rows) > 1 and any(detect_language(r.file_path or "") in ESM_LANGUAGES for r in rows):
+        return None  # 歧义检查包含无切片行，不能因一个声明没切片就任取另一个
+    return next((r for r in rows if r.chunk_id is not None), None)
 
 
 def _is_entry_point(store: Store, fqn: str, is_exported: bool) -> bool:
@@ -139,6 +142,10 @@ def _calls_neighbours(store: Store, fqn: str, kind: str, limits: ExpansionLimits
     """
     edges = store.edges_for(fqn, kinds=["calls"])
     if kind == "callers":
+        edges.extend(e for e in store.unresolved_edges(["calls"]) if e.target.startswith("js:"))
+    if any(e.target.startswith("js:") for e in edges):
+        edges = ESMIndex(store).edges(list(dict.fromkeys(edges)))
+    if kind == "callers":
         selected = [edge for edge in edges if edge.target == fqn]
         if len(selected) > limits.caller_explosion_threshold:
             selected.sort(key=lambda edge: _caller_sort_key(store, edge.source))
@@ -162,6 +169,8 @@ def _candidate_from_chunk(store: Store, chunk, *, seed: Candidate, provenance: s
     reasons = [f"{GRAPH_REASON_PREFIX}{seed.chunk_id}"]
     if provenance == "synthesized":
         reasons.append(SYNTHESIZED_REASON)
+    elif provenance != "parsed" and provenance != REASON_REEXPORT:
+        reasons.append(f"{provenance} edge")
     if provenance == REASON_REEXPORT:
         # 保留可读来源（G4 的判定依据），同时**仍带 GRAPH_REASON_PREFIX**：
         # 那条前缀是 rerank 的“与 top-1 种子结构相连 +0.5”特征来源。若去掉它，
@@ -262,6 +271,7 @@ def _expand_code_seed(store: Store, seed: Candidate, limits: ExpansionLimits, ad
         #    ``tests/.../test_*.py``），对“实现链路”几乎无贡献。
         #
         # 反向可达性（“谁调用了我”）主要由 grep 与 ``### Flow`` 承担，不靠图扩展配额。
+        _expand_framework_sites(store, seed, add)
         _expand_reexport_sites(store, seed, add)
         for neighbour, provenance in (
             _calls_neighbours(store, fqn, "callees", limits)
@@ -277,6 +287,18 @@ def _expand_code_seed(store: Store, seed: Candidate, limits: ExpansionLimits, ad
                 chunk = store.chunk_by_id(ref.spec_block_id)
                 if chunk is not None:
                     add(_candidate_from_chunk(store, chunk, seed=seed, provenance=ref.provenance))
+
+
+def _expand_framework_sites(store: Store, seed: Candidate, add) -> None:
+    """框架候选只关联本文件的构造上下文，不解释成运行时注册/调用事实。"""
+    if not seed.symbol_fqn or not seed.path:
+        return
+    for edge in store.edges_for(seed.symbol_fqn, kinds=["registers"]):
+        if edge.target != seed.symbol_fqn or edge.source != seed.path or edge.line is None:
+            continue
+        chunk = store.chunk_covering(seed.path, edge.line)
+        if chunk is not None:
+            add(_candidate_from_chunk(store, chunk, seed=seed, provenance=edge.provenance))
 
 
 def _expand_reexport_sites(store: Store, seed: Candidate, add) -> None:
@@ -365,7 +387,9 @@ def _walk_callees(store: Store, fqn: str, max_nodes: int) -> tuple[list[FlowNode
     while len(nodes) < max_nodes:
         neighbours = _calls_neighbours(store, current, "callees", ExpansionLimits())
         usable: list[tuple[str, FlowNode]] = []
-        for target, _provenance in neighbours:
+        for target, provenance in neighbours:
+            if provenance != "parsed":
+                continue  # 弱来源只可作相关候选，不渲染成确定 flow
             if target in visited:
                 continue
             row = _symbol_row(store, target)

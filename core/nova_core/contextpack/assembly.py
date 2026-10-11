@@ -1172,7 +1172,12 @@ def _degrade(
 
         calls = []
         if candidate.symbol_fqn:
-            for edge in store.edges_for(candidate.symbol_fqn, kinds=["calls"]):
+            from nova_core.chunking.esm import ESMIndex
+
+            edges = store.edges_for(candidate.symbol_fqn, kinds=["calls"])
+            if any(e.target.startswith("js:") for e in edges):
+                edges = ESMIndex(store).edges(edges)
+            for edge in edges:
                 if edge.source == candidate.symbol_fqn and edge.target in config.focus_symbols:
                     if edge.line is not None:
                         calls.append(edge.line)

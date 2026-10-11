@@ -42,6 +42,8 @@ def compact_evidence(pack: ContextPack) -> str:
                 blocks.append(f"symbol: {item.symbol}")
             if item.heading_path:
                 blocks.append(f"heading: {item.heading_path}")
+            if any(mark in item.reason for mark in ("synthesized edge", "inferred edge")):
+                blocks.append("relation: inferred/synthesized; unverified binding")
             if item.elided_lines:
                 blocks.append(f"excerpt: {item.elided_lines} lines omitted")
             if item.stale_refs:

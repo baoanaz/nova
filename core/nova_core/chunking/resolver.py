@@ -36,6 +36,8 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from nova_core.chunking.esm import LANGUAGES as ESM_LANGUAGES
+from nova_core.chunking.esm import ESMIndex
 from nova_core.chunking.splitter import spec_block_id
 from nova_core.parsing.registry import detect_language
 from nova_core.storage import (
@@ -146,7 +148,17 @@ def resolve_edges(
     ambiguous: list[AmbiguousRef] = []
     unresolved = 0
     skipped = 0
+    esm: ESMIndex | None = None
     for edge in store.unresolved_edges(kinds):
+        if edge.target.startswith("js:"):
+            # 原绑定不破坏性重定向：查询时按当前索引解析，删除/重导出即可失效。
+            esm = esm or ESMIndex(store)
+            targets = esm.resolve(edge.target, esm.source_file(edge.source), edge.kind)
+            if len(targets) == 1:
+                skipped += 1  # 已验证的只读绑定，不是持久化 retarget
+            else:
+                unresolved += 1
+            continue
         if not _is_symbol_ref(edge.target):
             skipped += 1
             continue
@@ -326,6 +338,9 @@ def _match(
     index: _SymbolIndex, name: str, source_file: str | None, kind: str
 ) -> tuple[SymbolRow, ...]:
     """返回候选符号行（() = 无命中；1 个 = 唯一命中；多个 = 多义）。"""
+    if source_file and detect_language(source_file) in ESM_LANGUAGES:
+        # JS 的动态/遮蔽缺口不能被通用短名猜测重新连接；静态本地边由抽取器给定。
+        return ()
     if not _is_symbol_ref(name):
         return ()
     rows = [row for row in index.by_name(name) if row.fqn == name]
@@ -391,11 +406,11 @@ def _source_file(store: Store, index: _SymbolIndex, source: str) -> str | None:
     """边的 source 侧文件：模块级边直接用文件路径，符号级边查符号归属文件。"""
     if not source:
         return None
-    if detect_language(source) is not None:
-        return source
     for row in index.by_name(source):
         if row.fqn == source and row.file_path:
             return row.file_path
+    if "::" not in source and detect_language(source) is not None:
+        return source
     return None
 
 

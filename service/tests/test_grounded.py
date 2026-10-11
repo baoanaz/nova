@@ -26,7 +26,10 @@ def pack():
 
 
 def test_compact_input_keeps_sources_not_ranking_diagnostics():
-    prompt = build_user_prompt(pack(), "How does run work?")
+    data = pack()
+    data.evidence[0].reason += " + synthesized edge"
+    prompt = build_user_prompt(data, "How does run work?")
+    assert "unverified binding" in prompt
     assert "rerank diagnostic" not in prompt
     assert "1 | def run():" in prompt and "[E2]" in prompt
     assert "src/run.py:1-100" in prompt

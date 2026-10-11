@@ -326,4 +326,14 @@ B 是优先实施入口；E 不应阻塞分流和 ask 改善。每阶段独立�
 - JSON 对象/数组/标量/围栏的格式错误走既有 AnswerResponseError 降级，没有 repair LLM；旧 Markdown provider 仍兼容 D-25（只删无效标记），不宣称它具备结构化 claims 校验。
 - 不新增 partial 或外部协议字段。引擎 answerable 是检索前判定；模型无受支持结论时正文明确证据不足，不虚构结论。结构化引用覆盖率只度量保留 claims 的引用存在性（无有效 claim 为 0），旧 Markdown 度量段落引用；均不是语义支持率，不混为实模质量结果。
 - 定向回归与独立只读复审通过；发现并修复非对象/截断 JSON 错误回退 Markdown 的漏洞。核心备份在 backups/retrieval-stage-d-u_m623ke/，不加入 Git。
-- E/F 待后续独立实施。当前未测真实模型格式成功率、语义支持率、Agent 选择率或总成本，不从测试数推断收益。
+- D 交付时 E/F 待后续独立实施，后续记录见下文。当前未测真实模型格式成功率、语义支持率、Agent 选择率或总成本，不从测试数推断收益。
+
+### E：结构质量与保守绑定（已交付）
+
+- 注册 JS/JSX/MJS/CJS、TS/MTS/CTS 和 TSX；grammar 缓存用包＋getter 隔离。新增 grammar：tree-sitter-javascript 0.25.0、tree-sitter-typescript 0.23.2，安装包元数据许可均为 MIT；其余锁定包版本不变，uv 更新锁格式与工作区排序。当前验证 tree-sitter 0.26.0，依赖下限设为 0.26；JS ABI 15，TS/TSX ABI 14。
+- 新语言符号使用文件命名空间和词法块身份；函数、箭头、类、方法、接口、类型保留源码位置。参数、解构、catch、循环与 var 函数作用域遮蔽，以及赋值／更新／裸循环／模式成员写入保守处理；不推断动态 receiver 或完整运行时类型。
+- 原始相对 ESM 模块／导出身份保留，查询只读当前索引的唯一模块／导出，懒加载候选路径和精确 FQN，不扫描 all_symbols。包／路径别名／模块歧义／循环重导出／失稳 callable 保留边界；删除、改名、重导出修改即时停止旧连接。
+- Python 增加独立 FastAPI/APIRouter 窄适配器：显式 import＋唯一模块级构造＋唯一 handler＋字面路径才生成 synthesized registers 相关候选；同名／重绑／海象／条件／循环／with／删除反例不硬连，动态路径留缺口。只补本文件构造上下文，不声称路由已挂载、实际 URL 或运行时调用；函数工厂、全框架与 JSX 编译调用未适配。
+- Flow 只采用 parsed 调用关系，JS 同身份声明包括无切片行都要判歧义；框架候选与 synthesized/inferred 不进入确定 Flow。紧凑 ask 保留弱关系警示；ESM 焦点窗口使用解析后目标与原始调用行号。
+- 最终直接相关回归：567 passed / 7 skipped；Ruff 通过。独立只读审查发现的遮蔽、mutation、handler 歧义与无切片身份问题均补反例修复，最终限定复审通过。测试不执行真实 embedding／回答 provider，不是全项目或实模语义／成本评测。
+- 核心备份 backups/retrieval-stage-e-6r5g0miv/；文档备份 backups/retrieval-stage-e-docs-03detnjr/。阶段 E 独立提交可 git revert，不覆盖并行 benchmark／profiles 工作。F 仍待独立实施；Rust cargo 尚不可用，未声称客户端测试通过。

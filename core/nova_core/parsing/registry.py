@@ -1,8 +1,8 @@
 """语言识别与解析器注册表（TASK-002 冻结接口）。
 
-- ``detect_language(path) -> str | None``：按扩展名识别 python/c/cpp/markdown；
+- ``detect_language(path) -> str | None``：按扩展名识别语言（含 JS/TS/TSX）；
   未知 → ``None``（调用方走 ``fallback.py`` 兜底）。
-- ``get_parser(language) -> Parser``：四语言懒加载注册表。注册条目一次性写全
+- ``get_parser(language) -> Parser``：多语言懒加载注册表。注册条目一次性写全
   （import 路径 + 类名），模块尚未交付时给出清晰错误；
   TASK-003/004/005 只实现各自模块文件，**不得修改本文件**（并行关键约定）。
 
@@ -32,6 +32,14 @@ EXTENSION_LANGUAGE: dict[str, str] = {
     ".h++": "cpp",
     ".ipp": "cpp",
     ".tpp": "cpp",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".ts": "typescript",
+    ".mts": "typescript",
+    ".cts": "typescript",
+    ".tsx": "tsx",
     ".md": "markdown",
     ".markdown": "markdown",
     ".mdx": "markdown",
@@ -43,6 +51,9 @@ PARSER_ENTRIES: dict[str, tuple[str, str]] = {
     "c": ("nova_core.parsing.c", "CParser"),
     "cpp": ("nova_core.parsing.cpp", "CppParser"),
     "markdown": ("nova_core.parsing.markdown", "MarkdownParser"),
+    "javascript": ("nova_core.parsing.javascript", "JavaScriptParser"),
+    "typescript": ("nova_core.parsing.javascript", "TypeScriptParser"),
+    "tsx": ("nova_core.parsing.javascript", "TSXParser"),
 }
 
 

@@ -166,7 +166,7 @@ class TreeSitterParser:
     #: 是否保留错误恢复树中不受 ERROR/MISSING 区间污染的抽取结果。
     recover_syntax_errors: ClassVar[bool] = False
 
-    _grammar_cache: ClassVar[dict[str, ts.Language]] = {}
+    _grammar_cache: ClassVar[dict[tuple[str, str], ts.Language]] = {}
 
     def __init__(self) -> None:
         # ``ts.Parser`` 不是线程安全的：上传期预取线程与 ingest 主线程可能同时解析，
@@ -175,12 +175,13 @@ class TreeSitterParser:
 
     @classmethod
     def grammar(cls) -> ts.Language:
-        cached = TreeSitterParser._grammar_cache.get(cls.grammar_module)
+        key = (cls.grammar_module, cls.grammar_function)
+        cached = TreeSitterParser._grammar_cache.get(key)
         if cached is None:
             module = importlib.import_module(cls.grammar_module)
             getter = getattr(module, cls.grammar_function)
             cached = ts.Language(getter())
-            TreeSitterParser._grammar_cache[cls.grammar_module] = cached
+            TreeSitterParser._grammar_cache[key] = cached
         return cached
 
     def parser(self) -> ts.Parser:
