@@ -16,10 +16,10 @@
  */
 
 /** MCP stdio 客户端包名（`npm/package.json` 的 `name`）。 */
-export const CLIENT_PACKAGE = "nova-client";
+export const CLIENT_PACKAGE = "@baoanaz/nova-client";
 
 /** 卡牌一的安装命令（全局安装，装完 `nova-client` 进 PATH）。 */
-export const INSTALL_COMMAND = `npm install -g ${CLIENT_PACKAGE}`;
+export const INSTALL_COMMAND = `npm install -g ${CLIENT_PACKAGE}@latest`;
 
 /** AGENTS.md 等指令文件的单个可选样例，控制在 100 字以内。 */
 export const AGENT_PROMPT = "处理代码任务时，优先用 search_context 定位相关实现；需要跨文件解释时用 ask_project。修改前核对证据，任务转向新模块时补充检索，避免凭猜测作答。";
@@ -65,7 +65,7 @@ export const AGENT_TARGETS: AgentTarget[] = [
   {
     id: "pi",
     label: "pi",
-    where: ".mcp.json（命令行在 pi 里执行）",
+    where: "~/.pi/agent/mcp.json",
   },
 ];
 
@@ -98,7 +98,9 @@ export function stdioServer(ctx: SnippetContext): StdioServer {
   return {
     command: "npx",
     args: [
-      CLIENT_PACKAGE,
+      "--yes",
+      "--prefer-online",
+      `${CLIENT_PACKAGE}@latest`,
       "--base-url",
       orPlaceholder(ctx.baseUrl, BASE_URL_PLACEHOLDER),
       "--token",
@@ -130,7 +132,7 @@ export function codexToml(ctx: SnippetContext): string {
     "[mcp_servers.nova]",
     `command = "${server.command}"`,
     `args = [${quoted}]`,
-    "startup_timeout_ms = 60000",
+    "startup_timeout_sec = 60",
   ].join("\n");
 }
 

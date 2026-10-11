@@ -29,8 +29,8 @@ const EMPTY_CTX = { baseUrl: "", token: "" };
 
 describe("卡牌一：下载客户端", () => {
   it("安装命令用的是 npm 上的真实包名", () => {
-    expect(CLIENT_PACKAGE).toBe("nova-client");
-    expect(INSTALL_COMMAND).toBe("npm install -g nova-client");
+    expect(CLIENT_PACKAGE).toBe("@baoanaz/nova-client");
+    expect(INSTALL_COMMAND).toBe("npm install -g @baoanaz/nova-client@latest");
   });
 });
 
@@ -43,7 +43,9 @@ describe("卡牌二：Agent 接入片段", () => {
     const server = stdioServer(EMPTY_CTX);
     expect(server.command).toBe("npx");
     expect(server.args).toEqual([
-      CLIENT_PACKAGE,
+      "--yes",
+      "--prefer-online",
+      `${CLIENT_PACKAGE}@latest`,
       "--base-url",
       BASE_URL_PLACEHOLDER,
       "--token",
@@ -65,7 +67,9 @@ describe("卡牌二：Agent 接入片段", () => {
   it("填了地址与 Key 时占位符被真实值替换", () => {
     const server = stdioServer(CTX);
     expect(server.args).toEqual([
-      CLIENT_PACKAGE,
+      "--yes",
+      "--prefer-online",
+      `${CLIENT_PACKAGE}@latest`,
       "--base-url",
       "https://nova.example.com",
       "--token",
@@ -81,13 +85,13 @@ describe("卡牌二：Agent 接入片段", () => {
     const toml = codexToml(CTX);
     expect(toml).toContain("[mcp_servers.nova]");
     expect(toml).toContain('command = "npx"');
-    expect(toml).toContain("startup_timeout_ms = 60000");
+    expect(toml).toContain("startup_timeout_sec = 60");
     // 字段顺序与用户给的样例一致。
     expect(toml.split("\n").map((line) => line.split(" =")[0])).toEqual([
       "[mcp_servers.nova]",
       "command",
       "args",
-      "startup_timeout_ms",
+      "startup_timeout_sec",
     ]);
     for (const arg of expected) expect(toml).toContain(`"${arg}"`);
 
@@ -112,8 +116,8 @@ describe("卡牌二：Agent 接入片段", () => {
       [
         "[mcp_servers.nova]",
         'command = "npx"',
-        'args = ["nova-client", "--base-url", "http://localhost:5174", "--token", "您的API Key"]',
-        "startup_timeout_ms = 60000",
+        'args = ["--yes", "--prefer-online", "@baoanaz/nova-client@latest", "--base-url", "http://localhost:5174", "--token", "您的API Key"]',
+        "startup_timeout_sec = 60",
       ].join("\n"),
     );
   });
