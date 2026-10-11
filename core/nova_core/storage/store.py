@@ -31,13 +31,14 @@ import json
 import sqlite3
 import time
 from collections.abc import Iterable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
 from nova_core.storage.db import DB_FILENAME, connect, ensure_database, transaction
 from nova_core.text import segment
+from nova_core.timing import StageClock
 from nova_core.types import ChunkDef, FileDelta, Freshness, ParsedFile, UnresolvedRef
 
 __all__ = [
@@ -265,6 +266,7 @@ class Store:
     def __init__(self, conn: sqlite3.Connection, project_dir: Path) -> None:
         self._conn = conn
         self._project_dir = project_dir
+        self._write_clock: StageClock | None = None
 
     # ------------------------------------------------------------------ 生命周期
 
@@ -298,6 +300,18 @@ class Store:
     def project_dir(self) -> Path:
         """项目数据目录（vectors/ 等兄弟目录由后续卡在此目录下建立）。"""
         return self._project_dir
+
+    @contextmanager
+    def measure_writes(self, clock: StageClock) -> Iterator[None]:
+        """只读观测：分段时间归入 ingest 的 clock，退出/异常时恢复原设置。"""
+        previous, self._write_clock = self._write_clock, clock
+        try:
+            yield
+        finally:
+            self._write_clock = previous
+
+    def _write_stage(self, name: str) -> AbstractContextManager[None]:
+        return self._write_clock.stage(name) if self._write_clock is not None else nullcontext()
 
     # ------------------------------------------------------------------ 配置
 
@@ -383,127 +397,136 @@ class Store:
                 )
 
         with transaction(self._conn) as conn:
-            known_file = (
-                conn.execute("SELECT 1 FROM files WHERE path = ?", (file_path,)).fetchone()
-                is not None
-            )
-            if known_file:
-                old_rows = conn.execute(
-                    "SELECT id, content_hash FROM chunks WHERE file_path = ? ORDER BY rowid",
-                    (file_path,),
-                ).fetchall()
-                old_symbols = conn.execute(
-                    "SELECT id, fqn FROM symbols WHERE file_path = ? ORDER BY rowid",
-                    (file_path,),
-                ).fetchall()
-            else:
-                old_rows, old_symbols = [], []
-            old_by_id = {str(r["id"]): str(r["content_hash"]) for r in old_rows}
-            old_hashes = set(old_by_id.values())
+            with self._write_stage("persist_reconcile"):
+                known_file = (
+                    conn.execute("SELECT 1 FROM files WHERE path = ?", (file_path,)).fetchone()
+                    is not None
+                )
+                if known_file:
+                    old_rows = conn.execute(
+                        "SELECT id, content_hash FROM chunks WHERE file_path = ? ORDER BY rowid",
+                        (file_path,),
+                    ).fetchall()
+                    old_symbols = conn.execute(
+                        "SELECT id, fqn FROM symbols WHERE file_path = ? ORDER BY rowid",
+                        (file_path,),
+                    ).fetchall()
+                else:
+                    old_rows, old_symbols = [], []
+                old_by_id = {str(r["id"]): str(r["content_hash"]) for r in old_rows}
+                old_hashes = set(old_by_id.values())
 
-            self._apply_spec_ref_cascade(conn, file_path, old_symbols, parsed)
+                self._apply_spec_ref_cascade(conn, file_path, old_symbols, parsed)
 
-            if known_file:
-                _delete_fts_for_file(conn, file_path)
-                conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
-                conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
-                conn.execute("DELETE FROM spec_blocks WHERE file_path = ?", (file_path,))
-                conn.execute("DELETE FROM unresolved_refs WHERE file_path = ?", (file_path,))
-            old_fqns = {str(r["fqn"]) for r in old_symbols}
-            edge_sources = old_fqns | {s.fqn for s in parsed.symbols} | {
-                e.source_fqn for e in parsed.edges
-            }
-            if edge_sources:
-                conn.executemany(
-                    "DELETE FROM edges WHERE source = ?", [(s,) for s in sorted(edge_sources)]
+                if known_file:
+                    _delete_fts_for_file(conn, file_path)
+                    conn.execute("DELETE FROM chunks WHERE file_path = ?", (file_path,))
+                    conn.execute("DELETE FROM symbols WHERE file_path = ?", (file_path,))
+                    conn.execute("DELETE FROM spec_blocks WHERE file_path = ?", (file_path,))
+                    conn.execute("DELETE FROM unresolved_refs WHERE file_path = ?", (file_path,))
+                old_fqns = {str(r["fqn"]) for r in old_symbols}
+                edge_sources = old_fqns | {s.fqn for s in parsed.symbols} | {
+                    e.source_fqn for e in parsed.edges
+                }
+                if edge_sources:
+                    conn.executemany(
+                        "DELETE FROM edges WHERE source = ?", [(s,) for s in sorted(edge_sources)]
+                    )
+
+                conn.execute(
+                    "INSERT INTO files(path, content_hash, language, generated, branch, commit_id,"
+                    " indexed_at, parse_errors) VALUES(?, ?, ?, ?, NULL, ?, ?, ?) "
+                    "ON CONFLICT(path) DO UPDATE SET"
+                    " content_hash = excluded.content_hash,"
+                    " language = excluded.language,"
+                    " generated = excluded.generated,"
+                    " commit_id = excluded.commit_id,"
+                    " indexed_at = excluded.indexed_at,"
+                    " parse_errors = excluded.parse_errors",
+                    (
+                        file_path,
+                        file_content_hash,
+                        parsed.language,
+                        int(generated),
+                        commit,
+                        int(time.time()),
+                        json.dumps(list(parsed.parse_errors), ensure_ascii=False),
+                    ),
                 )
 
-            conn.execute(
-                "INSERT INTO files(path, content_hash, language, generated, branch, commit_id,"
-                " indexed_at, parse_errors) VALUES(?, ?, ?, ?, NULL, ?, ?, ?) "
-                "ON CONFLICT(path) DO UPDATE SET"
-                " content_hash = excluded.content_hash,"
-                " language = excluded.language,"
-                " generated = excluded.generated,"
-                " commit_id = excluded.commit_id,"
-                " indexed_at = excluded.indexed_at,"
-                " parse_errors = excluded.parse_errors",
-                (
-                    file_path,
-                    file_content_hash,
-                    parsed.language,
-                    int(generated),
-                    commit,
-                    int(time.time()),
-                    json.dumps(list(parsed.parse_errors), ensure_ascii=False),
-                ),
-            )
+            with self._write_stage("persist_chunks"):
+                returning = (
+                    " RETURNING id, rowid" if sqlite3.sqlite_version_info >= (3, 35, 0) else ""
+                )
+                chunk_rows = _insert_rows(
+                    conn,
+                    "INSERT INTO chunks(id, file_path, symbol_fqn, symbol_kind, start_line,"
+                    " end_line, signature, docstring, content, content_hash)",
+                    [(c.id, c.file_path, c.symbol_fqn, c.symbol_kind, c.start_line,
+                      c.end_line, c.signature, c.docstring, c.content, c.content_hash)
+                     for c in new_chunks],
+                    returning=returning,
+                )
+                if not returning:
+                    chunk_rows = conn.execute(
+                        "SELECT id, rowid FROM chunks WHERE file_path = ?", (file_path,),
+                    ).fetchall()
+                # RETURNING order is unspecified: bind FTS rows through chunk identity.
+                rowids = {str(row["id"]): int(row["rowid"]) for row in chunk_rows}
+                chunk_ids = set(rowids)
+            with self._write_stage("persist_fts"):
+                if len(new_chunks) == 1:
+                    _insert_fts_row(conn, rowids[new_chunks[0].id], new_chunks[0], segments[0])
+                else:
+                    _insert_rows(
+                        conn,
+                        "INSERT INTO chunks_fts(rowid, content_seg, signature_seg,"
+                        " docstring_seg, file_path)",
+                        [(rowids[c.id], *seg, c.file_path)
+                         for c, seg in zip(new_chunks, segments, strict=True)],
+                    )
 
-            returning = " RETURNING id, rowid" if sqlite3.sqlite_version_info >= (3, 35, 0) else ""
-            chunk_rows = _insert_rows(
-                conn,
-                "INSERT INTO chunks(id, file_path, symbol_fqn, symbol_kind, start_line,"
-                " end_line, signature, docstring, content, content_hash)",
-                [(c.id, c.file_path, c.symbol_fqn, c.symbol_kind, c.start_line,
-                  c.end_line, c.signature, c.docstring, c.content, c.content_hash)
-                 for c in new_chunks],
-                returning=returning,
-            )
-            if not returning:
-                chunk_rows = conn.execute(
-                    "SELECT id, rowid FROM chunks WHERE file_path = ?", (file_path,),
-                ).fetchall()
-            # RETURNING order is unspecified: bind FTS rows through chunk identity.
-            rowids = {str(row["id"]): int(row["rowid"]) for row in chunk_rows}
-            chunk_ids = set(rowids)
-            if len(new_chunks) == 1:
-                _insert_fts_row(conn, rowids[new_chunks[0].id], new_chunks[0], segments[0])
-            else:
+            with self._write_stage("persist_symbols"):
+                symbol_rows = []
+                for symbol in parsed.symbols:
+                    symbol_id = f"{file_path}:{symbol.fqn}:{symbol.start_line}"
+                    symbol_rows.append((
+                        symbol_id, symbol.name, symbol.fqn, symbol.kind,
+                        symbol_id if symbol_id in chunk_ids else None,
+                        file_path, symbol.start_line, symbol.end_line, int(symbol.is_exported),
+                    ))
                 _insert_rows(
                     conn,
-                    "INSERT INTO chunks_fts(rowid, content_seg, signature_seg,"
-                    " docstring_seg, file_path)",
-                    [(rowids[c.id], *seg, c.file_path)
-                     for c, seg in zip(new_chunks, segments, strict=True)],
+                    "INSERT INTO symbols(id, name, fqn, kind, chunk_id, file_path, start_line,"
+                    " end_line, is_exported)",
+                    symbol_rows,
                 )
 
-            symbol_rows = []
-            for symbol in parsed.symbols:
-                symbol_id = f"{file_path}:{symbol.fqn}:{symbol.start_line}"
-                symbol_rows.append((
-                    symbol_id, symbol.name, symbol.fqn, symbol.kind,
-                    symbol_id if symbol_id in chunk_ids else None,
-                    file_path, symbol.start_line, symbol.end_line, int(symbol.is_exported),
-                ))
-            _insert_rows(
-                conn,
-                "INSERT INTO symbols(id, name, fqn, kind, chunk_id, file_path, start_line,"
-                " end_line, is_exported)",
-                symbol_rows,
-            )
+            with self._write_stage("persist_specs"):
+                _insert_rows(
+                    conn,
+                    "INSERT INTO spec_blocks(id, file_path, doctype, heading, heading_path,"
+                    " heading_level, start_line, end_line, content, code_fences)",
+                    [(
+                        f"{b.path}:{b.heading_path}:{b.start_line}", b.path, b.doctype,
+                        b.heading, b.heading_path, b.level, b.start_line, b.end_line, b.content,
+                        json.dumps([
+                            {"lang": f.lang, "content": f.content, "line": f.line}
+                            for f in b.code_fences
+                        ], ensure_ascii=False),
+                    ) for b in parsed.spec_blocks],
+                )
 
-            _insert_rows(
-                conn,
-                "INSERT INTO spec_blocks(id, file_path, doctype, heading, heading_path,"
-                " heading_level, start_line, end_line, content, code_fences)",
-                [(
-                    f"{b.path}:{b.heading_path}:{b.start_line}", b.path, b.doctype,
-                    b.heading, b.heading_path, b.level, b.start_line, b.end_line, b.content,
-                    json.dumps([
-                        {"lang": f.lang, "content": f.content, "line": f.line}
-                        for f in b.code_fences
-                    ], ensure_ascii=False),
-                ) for b in parsed.spec_blocks],
-            )
+            with self._write_stage("persist_edges"):
+                _insert_rows(
+                    conn,
+                    "INSERT OR IGNORE INTO edges(source, target, kind, line, provenance)",
+                    [(e.source_fqn, e.target_name, e.kind, e.line, e.provenance)
+                     for e in parsed.edges],
+                )
 
-            _insert_rows(
-                conn,
-                "INSERT OR IGNORE INTO edges(source, target, kind, line, provenance)",
-                [(e.source_fqn, e.target_name, e.kind, e.line, e.provenance)
-                 for e in parsed.edges],
-            )
-
-            self._insert_unresolved_rows(conn, parsed.unresolved, file_path, parsed.language)
+            with self._write_stage("persist_unresolved"):
+                self._insert_unresolved_rows(conn, parsed.unresolved, file_path, parsed.language)
 
             return FileDelta(
                 path=file_path,

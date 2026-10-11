@@ -12,6 +12,7 @@ import dataclasses
 import json
 import os
 import resource
+import select
 import subprocess
 import sys
 import time
@@ -80,7 +81,9 @@ def serve(args, provider):
     def ingest(*a, **kw):
         t0 = time.perf_counter()
         report = original(*a, **kw)
-        reports.append({'wall_s': time.perf_counter()-t0, 'report': dataclasses.asdict(report)})
+        end = time.perf_counter()
+        reports.append({'wall_s': end-t0, 'start_s': t0, 'end_s': end,
+                        'report': dataclasses.asdict(report)})
         return report
 
     manager.ingest = ingest
@@ -88,7 +91,9 @@ def serve(args, provider):
     @app.get('/bench/metrics')
     def metrics():
         return {**snapshot(), 'ingests': reports, 'preload_s': preload,
-                'engine_source': sys.modules[Engine.__module__].__file__}
+                'engine_source': sys.modules[Engine.__module__].__file__,
+                'replay_delays_s': {'batch_wave': provider.batch_delay_s,
+                                    'query': provider.query_delay_s}}
 
     uvicorn.run(app, host='127.0.0.1', port=args.port, log_level='warning')
 
@@ -97,11 +102,16 @@ def run_client(args, provider):
     import httpx
 
     root = Path(__file__).resolve().parents[2]
-    server_command = [sys.executable, __file__, '--kind', 'serve', '--out', str(args.out),
-                      '--fixture', str(args.fixture), '--repo', str(args.repo),
-                      '--port', str(args.port)]
+    server_command = [
+        sys.executable, __file__, '--kind', 'serve', '--out', str(args.out),
+        '--fixture', str(args.fixture), '--repo', str(args.repo), '--port', str(args.port),
+        '--replay-batch-delay-s', str(args.replay_batch_delay_s),
+        '--replay-query-delay-s', str(args.replay_query_delay_s),
+    ]
     if args.phase_timings:
         server_command.append('--phase-timings')
+    client = None
+    server_started = time.perf_counter()
     with (args.out / 'service.log').open('w') as log:
         process = subprocess.Popen(server_command, stdout=log, stderr=subprocess.STDOUT)
         try:
@@ -110,45 +120,110 @@ def run_client(args, provider):
                     if process.poll() is not None:
                         raise RuntimeError('Benchmark server exited; see service.log')
                     try:
-                        before = http.get('/bench/metrics').raise_for_status().json()
+                        http.get('/bench/metrics').raise_for_status()
                         break
                     except httpx.ConnectError:
                         time.sleep(.1)
                 else:
                     raise RuntimeError('Benchmark server did not become ready')
-                query = provider.metadata['probe_query']
-                frame = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
-                         'params': {'name': 'search_context',
-                                    'arguments': {'query': query, 'project_root': str(args.repo)}}}
-                t0 = time.perf_counter()
-                result = subprocess.run(
-                    [str(args.client or root / 'client/target/debug/nova-client'),
-                     '--base-url', f'http://127.0.0.1:{args.port}',
-                     '--cache-root', str(args.out / 'client-cache')],
-                    input=json.dumps(frame)+'\n', text=True, capture_output=True, timeout=600,
-                    env={k: v for k, v in os.environ.items()
-                         if k not in ('NOVA_API_TOKEN', 'NOVA_BASE_URL')},
-                )
-                wall = time.perf_counter()-t0
-                (args.out / 'client.jsonl').write_text(result.stdout)
-                (args.out / 'client.log').write_text(result.stderr)
-                response = json.loads(result.stdout)
-                after = http.get('/bench/metrics').raise_for_status().json()
-                payload = {'wall_s': wall, 'server_cpu_s': after['cpu_s']-before['cpu_s'],
-                           # Child processes (upload prefetch worker) are not in RUSAGE_SELF.
-                           'server_children_cpu_s': after.get('children_cpu_s', 0.0)
-                           - before.get('children_cpu_s', 0.0),
-                           'server': after, 'client_exit': result.returncode,
-                           'client_error': response.get('error') or
-                           response.get('result', {}).get('isError', False)}
+                startup_s = time.perf_counter() - server_started
+                initialized_at = time.perf_counter()
+                with (args.out / 'client.log').open('wb') as client_log:
+                    client = subprocess.Popen(
+                        [str(args.client or root / 'client/target/debug/nova-client'),
+                         '--base-url', f'http://127.0.0.1:{args.port}',
+                         '--cache-root', str(args.out / 'client-cache')],
+                        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=client_log,
+                        bufsize=0,
+                        env={k: v for k, v in os.environ.items()
+                             if k not in ('NOVA_API_TOKEN', 'NOVA_BASE_URL')},
+                    )
+                    buffer = b''
+
+                    def send(frame):
+                        pending = memoryview((json.dumps(frame)+'\n').encode())
+                        while pending:
+                            written = client.stdin.write(pending)
+                            if not written:
+                                raise RuntimeError('MCP stdin closed')
+                            pending = pending[written:]
+
+                    def receive(expected_id):
+                        nonlocal buffer
+                        deadline = time.perf_counter() + 600
+                        while True:
+                            while b'\n' not in buffer:
+                                remaining = deadline - time.perf_counter()
+                                if remaining <= 0 or not select.select(
+                                    [client.stdout], [], [], remaining
+                                )[0]:
+                                    raise TimeoutError('MCP response timeout')
+                                data = os.read(client.stdout.fileno(), 65536)
+                                if not data:
+                                    raise RuntimeError('MCP stdout closed')
+                                buffer += data
+                            raw, buffer = buffer.split(b'\n', 1)
+                            response = json.loads(raw)
+                            if response.get('jsonrpc') != '2.0':
+                                raise RuntimeError('Invalid JSON-RPC response')
+                            if 'id' not in response:
+                                continue  # Notifications are not a Tool result.
+                            if response['id'] != expected_id:
+                                raise RuntimeError('MCP response ID mismatch')
+                            if 'result' not in response and 'error' not in response:
+                                raise RuntimeError('Missing MCP result/error')
+                            return response, raw, time.perf_counter()
+
+                    send({'jsonrpc': '2.0', 'id': 10, 'method': 'initialize', 'params': {
+                        'protocolVersion': '2025-11-25', 'capabilities': {},
+                        'clientInfo': {'name': 'nova-offline-probe', 'version': '1'},
+                    }})
+                    initialized, _, _ = receive(10)
+                    if 'error' in initialized:
+                        raise RuntimeError('MCP initialization failed')
+                    send({'jsonrpc': '2.0', 'method': 'notifications/initialized'})
+                    send({'jsonrpc': '2.0', 'id': 11, 'method': 'tools/list'})
+                    listed, _, _ = receive(11)
+                    if not any(t['name'] == 'search_context'
+                               for t in listed.get('result', {}).get('tools', [])):
+                        raise RuntimeError('search_context is not advertised')
+                    init_s = time.perf_counter() - initialized_at
+                    before = http.get('/bench/metrics').raise_for_status().json()
+                    frame = {'jsonrpc': '2.0', 'id': 1, 'method': 'tools/call',
+                             'params': {'name': 'search_context', 'arguments': {
+                                 'query': provider.metadata['probe_query'],
+                                 'project_root': str(args.repo),
+                             }}}
+                    t0 = time.perf_counter()
+                    send(frame)
+                    response, raw, finished = receive(1)
+                    wall = finished - t0
+                    (args.out / 'client.jsonl').write_bytes(raw+b'\n')
+                    after = http.get('/bench/metrics').raise_for_status().json()
+                    # Exit and metric collection are strictly outside Tool timing.
+                    client.stdin.close()
+                    exit_code = client.wait(timeout=15)
+                payload = {
+                    'wall_s': wall, 'tool_started_s': t0, 'tool_finished_s': finished,
+                    'server_startup_s': startup_s, 'mcp_initialization_s': init_s,
+                    'server_cpu_s': after['cpu_s']-before['cpu_s'],
+                    'server_children_cpu_s': after.get('children_cpu_s', 0.0)
+                    - before.get('children_cpu_s', 0.0),
+                    'server': after, 'client_exit': exit_code,
+                    'client_error': response.get('error')
+                    or response.get('result', {}).get('isError', False),
+                }
                 (args.out / 'result.json').write_text(json.dumps(payload, default=str, indent=2))
-                if result.returncode or payload['client_error']:
+                if exit_code or payload['client_error']:
                     raise RuntimeError('Client benchmark failed; see client.jsonl and service.log')
                 print(json.dumps({'wall_s': wall, 'server_cpu_s': payload['server_cpu_s'],
                                   'server_children_cpu_s': payload['server_children_cpu_s'],
                                   'ingests': len(after['ingests']),
                                   'peak_rss_mib': after['peak_rss_mib']}))
         finally:
+            if client is not None and client.poll() is None:
+                client.kill()
+                client.wait()
             process.terminate()
             try:
                 process.wait(timeout=15)
@@ -167,6 +242,8 @@ def main():
     parser.add_argument('--client', type=Path, help='Explicit frozen debug/release binary')
     parser.add_argument('--phase-timings', action='store_true',
                         help='Opt-in aggregate instrumentation; disabled for acceptance runs')
+    parser.add_argument('--replay-batch-delay-s', type=float, default=0.0)
+    parser.add_argument('--replay-query-delay-s', type=float, default=0.0)
     args = parser.parse_args()
     args.out = args.out.resolve()
     args.repo = args.repo.resolve()
@@ -174,7 +251,8 @@ def main():
     if args.kind != 'serve':
         args.out.mkdir(parents=True, exist_ok=False)
     sys.addaudithook(deny_external)
-    provider = ReplayEmbedding(args.fixture)
+    provider = ReplayEmbedding(args.fixture, batch_delay_s=args.replay_batch_delay_s,
+                               query_delay_s=args.replay_query_delay_s)
     if args.phase_timings:
         install_patches(provider, meter)
     if args.kind == 'serve':

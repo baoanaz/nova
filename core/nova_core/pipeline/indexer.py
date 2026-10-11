@@ -337,7 +337,10 @@ class Indexer:
                         self._rebuild_vectors(
                             acc, pipeline, {result.parsed.path for result in indexed}
                         )
-            pipeline.flush_pending()
+                # 整窗原本已在事务提交前处理；尾窗也提前派发，让远程嵌入与 COMMIT 重叠。
+                # 图处理仍必须等 SQLite 整批提交后，失败仍由 pipeline.abort 排水/传播。
+                with clock.stage("flush_pending"):
+                    pipeline.flush_pending()
             # 图解析只依赖已提交的 SQLite 数据，可和向量尾窗的网络/落库重叠。
             with clock.stage("graph"):
                 self._resolve(acc, [result.parsed for result in indexed], clock)
@@ -436,7 +439,7 @@ class Indexer:
                 acc.skip(item.path, prepared.skip_reason)
             return None
         try:
-            with clock.stage("persist"):
+            with clock.stage("persist"), self._store.measure_writes(clock):
                 delta = self._store.apply_file_change(
                     prepared.parsed,
                     prepared.chunks,

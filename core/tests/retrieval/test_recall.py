@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import threading
+from types import SimpleNamespace
+
+import pytest
 from nova_core.retrieval import (
     CHANNEL_BM25,
     CHANNEL_EXACT,
@@ -165,3 +169,142 @@ def test_recall_result_len(store, seed_file, sym, provider, vector_stub) -> None
     _seed_corpus(store, seed_file, sym)
     result = recall(store, "refresh_token", provider=provider, vector_store=vector_stub)
     assert len(result) == len(result.candidates)
+
+
+def test_vector_starts_before_lexical_sql_and_preserves_thread(
+    monkeypatch, store, seed_file, sym, provider, vector_stub
+) -> None:
+    import nova_core.retrieval as retrieval
+
+    _seed_corpus(store, seed_file, sym)
+    started, release, finished = (threading.Event() for _ in range(3))
+    caller = threading.get_ident()
+    original_query, original_explicit = provider.embed_query, retrieval.recall_explicit
+
+    def query(texts):
+        assert threading.get_ident() != caller
+        started.set()
+        try:
+            assert release.wait(3)
+            return original_query(texts)
+        finally:
+            finished.set()
+
+    def explicit(*args, **kwargs):
+        assert threading.get_ident() == caller  # SQLite stays on its owner thread.
+        assert started.wait(3)
+        release.set()
+        return original_explicit(*args, **kwargs)
+
+    monkeypatch.setattr(provider, "embed_query", query)
+    monkeypatch.setattr(retrieval, "recall_explicit", explicit)
+    try:
+        result = recall(store, "refresh_token", provider=provider, vector_store=vector_stub)
+        assert not result.degraded
+    finally:
+        release.set()
+        assert finished.wait(3)
+
+
+def test_vector_timeout_budget_includes_lexical_elapsed(
+    monkeypatch, store, provider, vector_stub
+) -> None:
+    import nova_core.retrieval as retrieval
+
+    started, release, finished = (threading.Event() for _ in range(3))
+    original = provider.embed_query
+
+    def query(texts):
+        started.set()
+        try:
+            assert release.wait(3)
+            return original(texts)
+        finally:
+            finished.set()
+
+    def explicit(*args, **kwargs):
+        assert started.wait(3)
+        return []
+
+    ticks = iter((0.0, 10.0))
+    monkeypatch.setattr(retrieval, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+    monkeypatch.setattr(provider, "embed_query", query)
+    monkeypatch.setattr(retrieval, "recall_explicit", explicit)
+    try:
+        result = recall(
+            store, "token", provider=provider, vector_store=vector_stub,
+            limits=RecallLimits(vector_timeout_s=5.0),
+        )
+        assert result.degraded
+        assert "VectorTimeoutError" in result.degraded_reason
+        assert CHANNEL_VECTOR not in result.channels_used
+    finally:
+        release.set()
+        assert finished.wait(3)
+
+
+def test_parallel_vector_keeps_execution_timeout(
+    monkeypatch, store, provider, vector_stub
+) -> None:
+    import nova_core.retrieval as retrieval
+
+    observed = []
+    original = retrieval.recall_vector
+
+    def vector(*args, **kwargs):
+        observed.append(kwargs["timeout_s"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(retrieval, "recall_vector", vector)
+    result = recall(
+        store, "token", provider=provider, vector_store=vector_stub,
+        limits=RecallLimits(vector_timeout_s=.5),
+    )
+    assert not result.degraded and observed == [.5]
+
+
+def test_no_timeout_preserves_provider_timeout_error(
+    monkeypatch, store, provider, vector_stub
+) -> None:
+    def query(texts):
+        raise TimeoutError("upstream timeout")
+
+    monkeypatch.setattr(provider, "embed_query", query)
+    result = recall(
+        store, "token", provider=provider, vector_store=vector_stub,
+        limits=RecallLimits(vector_timeout_s=None),
+    )
+    assert result.degraded
+    assert result.degraded_reason == (
+        "vector 通道降级：VectorChannelError: query embedding 失败：TimeoutError: upstream timeout"
+    )
+
+
+def test_lexical_failure_does_not_wait_for_vector(
+    monkeypatch, store, provider, vector_stub
+) -> None:
+    import nova_core.retrieval as retrieval
+
+    started, release, finished = (threading.Event() for _ in range(3))
+    original = provider.embed_query
+
+    def query(texts):
+        started.set()
+        try:
+            assert release.wait(3)
+            return original(texts)
+        finally:
+            finished.set()
+
+    def explicit(*args, **kwargs):
+        assert started.wait(3)
+        raise ValueError("lexical failed")
+
+    monkeypatch.setattr(provider, "embed_query", query)
+    monkeypatch.setattr(retrieval, "recall_explicit", explicit)
+    try:
+        with pytest.raises(ValueError, match="lexical failed"):
+            recall(store, "token", provider=provider, vector_store=vector_stub)
+    finally:
+        release.set()
+        assert finished.wait(3)

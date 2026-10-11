@@ -126,8 +126,15 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     conn.execute("BEGIN IMMEDIATE")
     try:
         yield conn
-    except BaseException:
-        conn.execute("ROLLBACK")
-        raise
-    else:
         conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                # 清理也失败时不能复用未知状态连接；不覆盖原始提交/事务体异常。
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
+        raise

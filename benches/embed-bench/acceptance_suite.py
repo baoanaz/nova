@@ -142,6 +142,8 @@ def main():
     parser.add_argument('--modes', default='debug,release')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--rounds', type=int, default=3)
+    parser.add_argument('--replay-batch-delay-s', type=float, default=0.0)
+    parser.add_argument('--replay-query-delay-s', type=float, default=0.0)
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=False)
     env = dict(os.environ, NOVA_REPO=str(args.source),
@@ -161,7 +163,9 @@ def main():
                     commit=subprocess.check_output(
                         ['git', '-C', str(args.source), 'rev-parse', 'HEAD'], text=True).strip(),
                     cache_policy='fresh stores/processes; tracked corpus+fixture fadvise DONTNEED',
-                    timing='client process launch through complete Tool response and client exit',
+                    timing='initialized MCP tools/call encode/send through matching result parsed',
+                    replay_batch_delay_s=args.replay_batch_delay_s,
+                    replay_query_delay_s=args.replay_query_delay_s,
                     instrumentation=False)
     (args.out/'conditions.json').write_text(json.dumps(metadata, indent=2))
     for mode in args.modes.split(','):
@@ -173,7 +177,9 @@ def main():
             started = time.time()
             command = [sys.executable, str(Path(__file__).with_name('sync_probe.py')),
                        '--kind', 'client', '--fixture', str(args.fixture),
-                       '--repo', str(args.repo), '--out', str(out), '--client', str(binary)]
+                       '--repo', str(args.repo), '--out', str(out), '--client', str(binary),
+                       '--replay-batch-delay-s', str(args.replay_batch_delay_s),
+                       '--replay-query-delay-s', str(args.replay_query_delay_s)]
             resources_before = resource_snapshot()
             subprocess.run(command, env=env, check=True)
             resources_after = resource_snapshot()

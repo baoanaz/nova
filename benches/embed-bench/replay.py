@@ -13,7 +13,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import sqlite3
+import time
 from collections.abc import Sequence
 from contextlib import closing
 from pathlib import Path
@@ -32,7 +34,14 @@ class ReplayEmbedding:
     batch_size = 500
     concurrency = 4
 
-    def __init__(self, fixture: Path):
+    def __init__(
+        self, fixture: Path, *, batch_delay_s: float = 0.0, query_delay_s: float = 0.0,
+    ):
+        for delay in (batch_delay_s, query_delay_s):
+            if not math.isfinite(delay) or delay < 0:
+                raise ValueError('Replay delays must be finite and non-negative')
+        self.batch_delay_s = batch_delay_s
+        self.query_delay_s = query_delay_s
         self.fixture = fixture.resolve(strict=True)
         with closing(self._connect()) as db:
             self.metadata = dict(db.execute('SELECT key, value FROM metadata'))
@@ -50,6 +59,14 @@ class ReplayEmbedding:
         return self.embed_array(texts).tolist()
 
     def embed_array(self, texts: Sequence[str]) -> np.ndarray:
+        # Synthetic batch waves, NOT a live API model: each consumer may have up to
+        # concurrency batches in flight. No token quota/retry/network CPU is modeled.
+        if texts and self.batch_delay_s:
+            waves = math.ceil(math.ceil(len(texts) / self.batch_size) / self.concurrency)
+            time.sleep(waves * self.batch_delay_s)
+        return self._lookup_array(texts)
+
+    def _lookup_array(self, texts: Sequence[str]) -> np.ndarray:
         # Mirrors the API provider's base64 path: float32 bytes -> one (n, dim) matrix.
         vectors = []
         db = self._connect()
@@ -74,7 +91,9 @@ class ReplayEmbedding:
 
     def embed_query(self, texts: Sequence[str]) -> list[list[float]]:
         # Benchmark query must be an explicitly exported exact input; no fake fallback.
-        return self.embed(texts)
+        if texts and self.query_delay_s:
+            time.sleep(self.query_delay_s)
+        return self._lookup_array(texts).tolist()
 
     def close(self):
         pass
