@@ -117,22 +117,10 @@ export function DashboardPage() {
             }
           />
           <Row label="身份" value={<TitleBadge account={account} />} />
-          <Row label="类型" value={profile.isLocal ? "本地单用户" : "云端账户"} />
-          <Row label="创建时间" value={formatTime(profile.createdAt)} />
           <Row label="项目数" value={String(profile.projectCount)} />
           <Row
             label="空间上限"
             value={formatQuota(account?.capabilities.quotaBytes ?? 0)}
-          />
-          <Row
-            label="自定义 Key"
-            value={
-              account?.capabilities.canCustomKey ? (
-                <span className="text-success-text">可用（{account.title}特权）</span>
-              ) : (
-                <span className="text-ink-muted">拓荒者专属</span>
-              )
-            }
           />
         </Panel>
 

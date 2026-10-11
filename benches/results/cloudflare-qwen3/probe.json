@@ -1,0 +1,56 @@
+{
+  "model": "@cf/qwen/qwen3-embedding-0.6b",
+  "dataset": "16 synthetic snippets, paired distractors, 32 bilingual queries; not a real-repository quality benchmark",
+  "scenarios": [
+    {
+      "concurrency": 1,
+      "requests": 8,
+      "texts_per_request": 8,
+      "prompt_tokens": 21157,
+      "wall_s": 11.31324362900341,
+      "observed_tokens_per_minute": 112206.54673657232,
+      "observed_requests_per_minute": 42.42815020525492,
+      "latency_p50_s": 1.2214149095234461,
+      "latency_max_s": 2.881675846001599
+    },
+    {
+      "concurrency": 4,
+      "requests": 8,
+      "texts_per_request": 8,
+      "prompt_tokens": 21157,
+      "wall_s": 7.061371663992759,
+      "observed_tokens_per_minute": 179769.60573722632,
+      "observed_requests_per_minute": 67.97546182813304,
+      "latency_p50_s": 2.700179517501965,
+      "latency_max_s": 4.356238675012719
+    }
+  ],
+  "retrieval": {
+    "queries": 32,
+    "candidates": 16,
+    "top1": 0.96875,
+    "recall_at_3": 1.0,
+    "mrr": 0.984375,
+    "misses": [
+      {
+        "query": "多个进程怎样避免同时修改同一索引？",
+        "expected": "lock_process",
+        "top1": "upsert_vectors",
+        "rank": 2
+      }
+    ]
+  },
+  "openai_compatible": {
+    "shape": [
+      1,
+      1024
+    ],
+    "latency_s": 0.311009967001155,
+    "usage": {}
+  },
+  "total_usage": {
+    "prompt_tokens": 43839,
+    "neurons": 47.10885757808803,
+    "requests": 19
+  }
+}

@@ -101,18 +101,16 @@ function navLinks() {
  */
 const NAV_LABELS = [
   "控制台",
-  "项目",
   "接入指南",
   "API Key",
-  "历史记录",
+  "项目",
   "设置",
 ];
 const NAV_HREFS = [
   "/",
-  "/projects",
   "/connect",
   "/keys",
-  "/history",
+  "/projects",
   "/settings",
 ];
 
@@ -124,7 +122,7 @@ function navLinkClass(label: string): string {
 }
 
 describe("主导航（TASK-086 §1 / TASK-088 §F / TASK-100 §需求4）", () => {
-  it("顺序为 控制台 → 项目 → 接入指南 → API Key → 历史记录 → 设置", () => {
+  it("顺序为 控制台 → 接入指南 → API Key → 项目 → 设置", () => {
     renderLayout("/", PUBLIC_ACCOUNT);
 
     expect([...navLinks()].map((link) => link.textContent)).toEqual(NAV_LABELS);

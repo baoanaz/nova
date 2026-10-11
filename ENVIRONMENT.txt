@@ -53,6 +53,18 @@ nova 开发环境安装说明
    npm token 和 SSH 私钥只在发布/访问 Git 时需要，不是运行索引的替代密钥。
    第三方密钥无法通过本地随机生成恢复，需要从原来源恢复或重新签发。
 
+   Cloudflare Workers AI 评测凭据：$HOME/.key/nova/cloudflare.env（当前 VPS 为
+   /root/.key/nova/cloudflare.env），目录 0700、文件 0600。
+   变量名：CLOUDFLARE_ACCOUNT_ID、CLOUDFLARE_API_TOKEN、CLOUDFLARE_EMBED_MODEL。
+   .env.example 的 NOVA_CLOUDFLARE_SECRETS_FILE 仅指向该文件，不自动加载，
+   也不自动改 EMBED_*；仅在授权评测时使用 set -a; source <该路径>; set +a。
+   AI 指引：先检查路径/权限，仅在进程内部读取和传入凭据；不回显文件内容、
+   不把 Key 放进命令行参数/报告/提交，不复制进仓库，不为测试切换生产模型。
+   当前生产 systemd 显式加载 /etc/nova/service.env（0600），不是仓库 .env；
+   它保存当前运行参数与选定凭据。生产环境详情见
+   docs/handbook/deployment/production-status.md。旧开发 .env 仍可能引用
+   /root/.key/zace/secrets.env，不要因默认路径不同而误判为无凭据或覆盖旧文件。
+
    set -a; source .env; set +a 会加载私有文件。
    不配置 ANSWER_* 时，总结功能降级；真实向量索引仍需要 embedding 凭据。
    local-only 性能探针不需要任何真实 API 密钥，也不下载本地 ONNX 模型。
