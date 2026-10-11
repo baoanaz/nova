@@ -1,6 +1,6 @@
 {
   "name": "@baoanaz/nova-client-darwin-arm64",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "description": "Platform binary for @baoanaz/nova-client (darwin/arm64). Installed automatically by @baoanaz/nova-client; do not install directly.",
   "license": "Unlicense",
   "repository": {
