@@ -71,7 +71,7 @@ PLATFORMS = (
     {"suffix": "windows-arm64", "os": "win32", "cpu": "arm64", "binary": "nova-client.exe"},
 )
 
-MAIN_PACKAGE_NAME = "nova-client"
+MAIN_PACKAGE_NAME = "@baoanaz/nova-client"
 
 
 def sub_package_name(suffix: str) -> str:

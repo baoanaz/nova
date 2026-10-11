@@ -22,7 +22,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-NPM_PACKAGE="nova-client"
+NPM_PACKAGE="@baoanaz/nova-client"
 
 die() { echo "✗ $*" >&2; exit 1; }
 

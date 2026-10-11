@@ -27,12 +27,12 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
-const PACKAGE_NAME = "nova-client";
+const PACKAGE_NAME = "@baoanaz/nova-client";
 const BINARY_NAME = process.platform === "win32" ? "nova-client.exe" : "nova-client";
 
 //: 平台子包前缀与平台表。**必须与 `scripts/make-platform-packages.py` 的 `PLATFORMS`
 //: 一一对应**——`scripts/check-npm-platforms.js` 会校验这张表（含子包与 CI 矩阵）。
-const PLATFORM_PACKAGE_PREFIX = "nova-client";
+const PLATFORM_PACKAGE_PREFIX = "@baoanaz/nova-client";
 const PLATFORMS = [
   { platform: "linux", arch: "x64", suffix: "linux-x64" },
   { platform: "linux", arch: "arm64", suffix: "linux-arm64" },
@@ -66,7 +66,7 @@ function fromPlatformPackage() {
   const name = platformPackage();
   if (!name) return null;
   const candidates = [
-    path.resolve(__dirname, "..", name, BINARY_NAME),
+    path.resolve(__dirname, "..", "..", name, BINARY_NAME),
     path.resolve(__dirname, "node_modules", name, BINARY_NAME),
     path.resolve(__dirname, "..", "node_modules", name, BINARY_NAME),
   ];

@@ -1,9 +1,11 @@
-# nova-client
+# @baoanaz/nova-client
+
+npm 包使用 `@baoanaz` 作用域，避免与同名的其他产品冲突；安装后的命令仍叫 `nova-client`。
 
 nova 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责在本地扫描/增量上传代码，
 把检索交给远端 `nova-service`（切片、索引、检索、渲染都在服务端）。
 
-支持 **Claude Code / Codex / pi（经 pi-mcp-adapter）/ Cursor** 等所有支持 stdio 的 MCP 客户端。
+支持 **Claude Code / Codex / pi / Cursor** 等所有支持 stdio 的 MCP 客户端。
 
 本页是安装与接入速查。想了解启动器、平台包和 Rust 二进制的关系，见
 [npm 包学习](https://github.com/baoanaz/nova/blob/main/docs/handbook/getting-started/npm-client.md)；
@@ -14,16 +16,20 @@ nova 的 MCP stdio 客户端：编辑器把它作为子进程拉起，它负责�
 全局安装（装完 `nova-client` 进 `PATH`）：
 
 ```bash
-npm install -g nova-client@latest
+npm install -g @baoanaz/nova-client@latest
 ```
 
 也可以不全局安装，直接用 `npx`（首次运行会从 npm 获取包）：
 
 ```bash
-npx --yes --prefer-online nova-client@latest --base-url http://127.0.0.1:8787 --token "<你的 API Key>"
+npx --yes --prefer-online @baoanaz/nova-client@latest --base-url http://127.0.0.1:8787 --token "<你的 API Key>"
 ```
 
 两种方式都会从已安装的**平台子包**启动 Rust 客户端（stdio），启动器不再从 GitHub 下载二进制。客户端随后连接你配置的 `nova-service`。
+
+MCP 握手完成后自动后台预热，普通 Codex CLI 在 Git 项目中无需额外命令或 Hook。
+非 Git 项目默认只索引 Markdown；工作区定位不确定或处于 Home/系统/插件缓存目录时跳过自动预热。
+预热不会阻塞初始化和心跳，首次检索可能等待尚未完成的索引。
 
 ## 客户端配置
 
@@ -35,7 +41,7 @@ npx --yes --prefer-online nova-client@latest --base-url http://127.0.0.1:8787 --
 claude mcp add-json nova --scope user '{
   "type": "stdio",
   "command": "npx",
-  "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+  "args": ["--yes", "--prefer-online", "@baoanaz/nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
 }'
 ```
 
@@ -46,21 +52,21 @@ claude mcp add-json nova --scope user '{
 ```toml
 [mcp_servers.nova]
 command = "npx"
-args = ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
-startup_timeout_ms = 60000
+args = ["--yes", "--prefer-online", "@baoanaz/nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+startup_timeout_sec = 60
 ```
 
-### pi（通过 pi-mcp-adapter）
+### pi（内置 MCP）
 
-pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
-然后写标准的 `.mcp.json`（项目级）或 `~/.config/mcp/mcp.json`（全局），适配器会自动读取：
+当前 Pi 支持内置 MCP。在 `~/.pi/agent/mcp.json`（用户级）或 `.pi/mcp.json`（项目级）配置；
+项目级配置需要授予项目信任。旧版使用适配器时，请遵循该适配器的配置位置。
 
 ```json
 {
   "mcpServers": {
     "nova": {
       "command": "npx",
-      "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+      "args": ["--yes", "--prefer-online", "@baoanaz/nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
     }
   }
 }
@@ -73,7 +79,7 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
   "mcpServers": {
     "nova": {
       "command": "npx",
-      "args": ["--yes", "--prefer-online", "nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
+      "args": ["--yes", "--prefer-online", "@baoanaz/nova-client@latest", "--base-url", "http://127.0.0.1:8787", "--token", "<你的 API Key>"]
     }
   }
 }
@@ -101,13 +107,13 @@ pi 本身不含 MCP，需先装适配器：`pi install npm:pi-mcp-adapter`。
 它们是主包的 `optionalDependencies`：
 
 ```text
-nova-client                    ← 启动器
-├── nova-client-linux-x64      ← 含 nova-client 二进制
-├── nova-client-linux-arm64
-├── nova-client-darwin-x64     ┐ 两个架构各自独立构建
-├── nova-client-darwin-arm64   ┘
-├── nova-client-windows-x64
-└── nova-client-windows-arm64
+@baoanaz/nova-client                    ← 启动器
+├── @baoanaz/nova-client-linux-x64      ← 含 nova-client 二进制
+├── @baoanaz/nova-client-linux-arm64
+├── @baoanaz/nova-client-darwin-x64     ┐ 两个架构各自独立构建
+├── @baoanaz/nova-client-darwin-arm64   ┘
+├── @baoanaz/nova-client-windows-x64
+└── @baoanaz/nova-client-windows-arm64
 ```
 
 npm 会按子包自己的 `os`/`cpu` 字段**只装本平台那一个**（其余跳过），

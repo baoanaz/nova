@@ -56,7 +56,7 @@ cargo test                     # 33 个单元测试（含跨语言身份/blob �
 exec `-C` 及 `npx` 包装：MCP 子进程 CWD 正确，Nova 无工作区变量也能自动上传并完成
 checkpoint，不需要 SessionStart Hook 或 Agent 主动调用工具。IDE 扩展与 Plugin MCP 未实测，
 不能保证其 CWD 指向用户工作区；有需要时可显式设置 `NOVA_PROJECT_DIR`。新版需先发布才能
-由 `npx nova-client` 使用；本次未执行 npm 发布或服务端部署。
+由 `npx --yes --prefer-online @baoanaz/nova-client@latest` 使用；npm 包名采用作用域以避免同名冲突，二进制仍叫 `nova-client`。
 
 - Git（包括没有 Remote 的 `git init`）及 Linked Worktree：沿用历史项目身份和完整/增量索引，
   复用现有跨项目 Embedding Cache。相同身份的不同可写 checkout 在同缓存根下自动隔离冲突。

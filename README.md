@@ -4,7 +4,7 @@
   <p><strong>NOVA · Workspace Context Engine</strong></p>
   <p>把代码库变成有据可查的上下文，让 Coding Agent 更懂你的项目。</p>
   <p>
-    <a href="https://www.npmjs.com/package/nova-client"><img src="https://img.shields.io/npm/v/nova-client?style=flat-square&amp;color=cf684b" alt="npm version"></a>
+    <a href="https://www.npmjs.com/package/@baoanaz/nova-client"><img src="https://img.shields.io/npm/v/@baoanaz/nova-client?style=flat-square&amp;color=cf684b" alt="npm version"></a>
     <a href="https://github.com/baoanaz/nova/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/baoanaz/nova/ci.yml?branch=main&amp;style=flat-square&amp;label=CI" alt="CI status"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Unlicense-green?style=flat-square" alt="License: Unlicense"></a>
     <a href="https://github.com/baoanaz/nova/stargazers"><img src="https://img.shields.io/github/stars/baoanaz/nova?style=flat-square" alt="GitHub stars"></a>

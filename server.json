@@ -10,7 +10,7 @@
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "nova-client",
+      "identifier": "@baoanaz/nova-client",
       "version": "0.0.8",
       "transport": {
         "type": "stdio"

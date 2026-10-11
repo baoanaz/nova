@@ -54,7 +54,7 @@ if (expectedVersion && main.version !== expectedVersion) {
 
 const optional = main.optionalDependencies || {};
 for (const spec of EXPECTED) {
-  const name = `nova-client-${spec.suffix}`;
+  const name = `@baoanaz/nova-client-${spec.suffix}`;
   const dir = path.join(NPM_DIR, "platforms", spec.suffix);
   if (!optional[name]) {
     problems.push(`主包 optionalDependencies 缺 ${name}`);
@@ -83,7 +83,7 @@ for (const spec of EXPECTED) {
 
 // 反向：optionalDependencies 里不能有表外的平台包。
 for (const name of Object.keys(optional)) {
-  if (!EXPECTED.some((spec) => `nova-client-${spec.suffix}` === name)) {
+  if (!EXPECTED.some((spec) => `@baoanaz/nova-client-${spec.suffix}` === name)) {
     problems.push(`主包 optionalDependencies 里有表外的包：${name}`);
   }
 }
