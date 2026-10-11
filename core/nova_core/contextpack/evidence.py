@@ -51,7 +51,11 @@ def build_ask_evidence(
     store: Store, evidence: EvidenceSet, *, config: BudgetConfig
 ) -> ContextPack:
     """面向总结模型的 Deep 证据；与 search 返回包及预算独立。"""
-    return _build_pack(store, evidence, mode=MODE_DEEP, config=config)
+    active = replace(
+        config, prefer_explicit=True, focus_windows=True,
+        focus_symbols=tuple(c.symbol_fqn for c in evidence.candidates[:10] if c.symbol_fqn),
+    )
+    return _build_pack(store, evidence, mode=MODE_DEEP, config=active)
 
 
 def _build_pack(

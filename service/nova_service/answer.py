@@ -5,8 +5,8 @@
 
 本模块的边界（薄壳纪律，D-34）：
 
-- **不做检索/装填/渲染**：证据来自 core 的 ``ContextPack``，prompt 里的证据正文复用 core 的
-  ``render_evidence_for_prompt``（D-21 的同一 formatter），本模块只做"分组标签 + 提问"；
+- **不做检索/装填**：证据来自独立 Deep ``ContextPack``；D-52 紧凑输入保留原编号源码，
+  结构化输出由 ``grounded`` 确定性选择/渲染，旧 Markdown 保持 D-25 回验；
 - **不做 HTTP 错误→HTTP 响应的映射**：本模块只抛 :class:`AnswerError`（消息已脱敏），
   由 ``routers/query.py`` / ``mcp.py`` 转成 D-26 降级包（**绝不 500**）；
 - **不引入新依赖**：只用已在依赖里的 ``httpx``，不加 openai SDK。
@@ -18,8 +18,8 @@
    日志 message，也不会落盘；
 2. **未配置 = 未配置**：三个必填项任一为空 → :func:`build_provider` 返回 ``None``，
    ``ask`` 走降级包（L5：开源产品冷启动体验），**不在启动期报错**；
-3. **回验是确定性的零成本操作**：只做正则抽取 + 集合比对，不删整句、不改写措辞
-   （Module/04 §5）；``citationCoverage`` 只用于观察分布，不用于惩罚输出。
+3. **回验不调用模型**：结构化 claims 无效时移除整条，身份合法不等于语义已证明；
+   旧 Markdown 只删标记、不改措辞。引用覆盖率是格式观察值，不是语义支持率。
 """
 
 from __future__ import annotations
@@ -37,6 +37,7 @@ from nova_core.contextpack import render_evidence_for_prompt
 from nova_core.types import ContextPack, EvidenceItem, Flow
 
 from nova_service.config import Settings
+from nova_service.grounded import STRUCTURED_INSTRUCTIONS, compact_evidence, render_grounded
 from nova_service.llmprotocol import (
     DEFAULT_PROTOCOL,
     ProtocolShapeError,
@@ -124,8 +125,10 @@ SYSTEM_PROMPT = "\n".join(
         "规则：",
         *SYSTEM_PROMPT_RULES,
         "",
-        "回答模板（**空节自动省略**）：",
+        "服务端渲染模板（空节自动省略；你只返回后述 JSON）：",
         *ANSWER_SECTIONS,
+        "",
+        STRUCTURED_INSTRUCTIONS,
     )
 )
 
@@ -482,7 +485,7 @@ def build_user_prompt(pack: ContextPack, question: str) -> str:
             f"index: {index_status(pack)}",
             "</context_meta>",
             "<evidence>",
-            build_evidence_block(pack),
+            compact_evidence(pack),
             "</evidence>",
         )
     )
@@ -601,6 +604,18 @@ def answer_question(
         temperature=settings.answer_temperature,
     )
     latency_ms = (time.perf_counter() - started) * 1000.0
+    try:
+        grounded = render_grounded(raw, pack)
+    except ValueError as exc:
+        raise AnswerResponseError("结构化回答格式无效") from exc
+    if grounded is not None:
+        return AnswerOutcome(
+            answer=grounded.answer, latency_ms=latency_ms,
+            answer_tokens=estimate_tokens(grounded.answer),
+            valid_citations=len(grounded.references),
+            invalid_citations=grounded.invalid_references,
+            citation_coverage=grounded.coverage,
+        )
     check = verify_citations(raw, pack)
     return AnswerOutcome(
         answer=check.answer,
