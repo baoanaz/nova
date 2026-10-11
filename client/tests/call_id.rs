@@ -74,7 +74,14 @@ fn handle(mut stream: TcpStream, seen: Arc<Mutex<Vec<Seen>>>) {
         call_id: call_id.clone(),
     });
 
-    let payload = response_json(&request_line);
+    let payload = if request_line.contains("/api/sync/batch-upload") {
+        let value: Value = serde_json::from_slice(&body).expect("upload JSON");
+        serde_json::json!({
+            "accepted": value["blobs"].as_array().expect("blobs").iter()
+                .map(|blob| blob["blobHash"].clone()).collect::<Vec<_>>(),
+            "skipped": [], "report": null, "indexingDeferred": true,
+        }).to_string()
+    } else { response_json(&request_line) };
     let header_id = call_id.unwrap_or_else(|| "server-generated".to_string());
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
@@ -89,7 +96,7 @@ fn handle(mut stream: TcpStream, seen: Arc<Mutex<Vec<Seen>>>) {
 /// 按路径给一份形状够用的响应（客户端只解析它要的那几个字段）。
 fn response_json(request_line: &str) -> String {
     if request_line.contains("/api/projects/resolve") {
-        r#"{"projectId":"proj-test"}"#.to_string()
+        r#"{"projectId":"proj-test","routingVersion":1}"#.to_string()
     } else if request_line.contains("/api/sync/batch-upload") {
         r#"{"accepted":[],"skipped":[],"report":{"added":0,"modified":0,"deleted":0,"chunksNew":0,"chunksReused":0,"chunksRemoved":0,"filesParsed":0,"errors":[],"skippedFiles":[]}}"#
             .to_string()
@@ -123,7 +130,7 @@ fn fixture() -> (String, Arc<Mutex<Vec<Seen>>>, tempfile::TempDir) {
 /// 一个包含一个文件的仓库（客户端要求索引非空才发上传）。
 fn repo_dir() -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("temp dir");
-    std::fs::write(dir.path().join("main.py"), "def run():\n    return 1\n").expect("write");
+    std::fs::write(dir.path().join("main.md"), "# run\n    return 1\n").expect("write");
     dir
 }
 

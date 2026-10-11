@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::blobref::{blob_hash, is_binary, sanitize_content, BINARY_RATIO, MAX_FILE_BYTES};
 use crate::ignore::IgnoreRules;
+use crate::policy::FilePolicy;
 
 /// 缓存 schema 版本；不匹配即整体作废（安全阀）。
 const CACHE_VERSION: u32 = 1;
@@ -133,6 +134,9 @@ pub struct IndexManager {
     config_hash: String,
     /// 服务端端点（TASK-100）：与 `IndexData::endpoint` 对账，换后端即作废缓存。
     endpoint: String,
+    file_policy: FilePolicy,
+    exclude_repositories: bool,
+    cancelled: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 impl IndexManager {
@@ -152,7 +156,37 @@ impl IndexManager {
             endpoint: endpoint.to_string(),
             rules,
             config_hash,
+            file_policy: FilePolicy::Full,
+            exclude_repositories: false,
+            cancelled: None,
         }
+    }
+
+    /// Apply the non-Git Markdown boundary without changing Git/default scanning semantics.
+    pub fn with_file_policy(mut self, policy: FilePolicy) -> Self {
+        self.file_policy = policy;
+        if policy == FilePolicy::Markdown {
+            self.config_hash.push_str(":markdown-v1");
+        }
+        self
+    }
+
+    pub fn excluding_repositories(mut self, exclude: bool) -> Self {
+        self.exclude_repositories = exclude;
+        if exclude { self.config_hash.push_str(":outside-git-v1"); }
+        self
+    }
+
+    pub fn with_cancellation(mut self, cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>) -> Self {
+        self.cancelled = Some(cancelled);
+        self
+    }
+
+    fn check_cancelled(&self) -> Result<()> {
+        if self.cancelled.as_ref().is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Acquire)) {
+            return Err(anyhow!("本地扫描已取消，可重试"));
+        }
+        Ok(())
     }
 
     pub fn root(&self) -> &Path {
@@ -179,9 +213,11 @@ impl IndexManager {
     /// sha256 是首次同步客户端侧的主要耗时）；③ 按遍历顺序汇总。结果（`skipped` / `to_upload`
     /// 的顺序、缓存条目）与逐个串行处理完全一致，因此上传分批也与之前相同。
     pub fn scan_streaming(&self, mut on_upload: impl FnMut(&UploadFile)) -> Result<ScanResult> {
-        let previous = self.load()?;
+        // Config changes invalidate hits, but must retain old paths for deletion reconciliation.
+        let previous = self.load_cache(true)?;
+        let cache_compatible = previous.config_hash == self.config_hash;
         let previous_entries = previous.entries;
-        let walked = self.walk();
+        let walked = self.walk()?;
         let workers = std::thread::available_parallelism()
             .map(|count| count.get())
             .unwrap_or(1)
@@ -192,11 +228,17 @@ impl IndexManager {
         let mut cached_files = 0usize;
         let mut skipped = Vec::new();
         for chunk in walked.chunks(SCAN_CHUNK) {
-            let contents = parallel_map(chunk, workers, |item| match item {
-                Walked::File { relative, path, .. } => Some(read_content(relative, path)),
-                Walked::Skip(_) => None,
+            self.check_cancelled()?;
+            let contents = parallel_map(chunk, workers, |item| {
+                if self.check_cancelled().is_err() { return None; }
+                match item {
+                    Walked::File { relative, path, .. } => Some(read_content(relative, path)),
+                    Walked::Skip(_) => None,
+                }
             });
+            self.check_cancelled()?;
             for (item, content) in chunk.iter().zip(contents) {
+                self.check_cancelled()?;
                 let (relative, size, mtime) = match item {
                     Walked::Skip(path) => {
                         skipped.push(path.clone());
@@ -222,7 +264,7 @@ impl IndexManager {
                     blob_hash: hash.clone(),
                 };
                 // 已验证缓存命中：mtime+size 快路径 ≈ 且 **内容 hash 一致**才算命中。
-                let verified_hit = previous_entries
+                let verified_hit = cache_compatible && previous_entries
                     .get(relative)
                     .is_some_and(|cached| cached.blob_hash == hash);
                 if verified_hit {
@@ -260,6 +302,7 @@ impl IndexManager {
             deleted.len()
         );
 
+        self.check_cancelled()?;
         Ok(ScanResult {
             to_upload,
             cached_files,
@@ -280,10 +323,13 @@ impl IndexManager {
     /// 第 0 层白名单（强制包含）> `.novaignore` > `.gitignore` > 内置目录剪枝。前两层的遍历由
     /// `walker()` 完成；第 0 层由 `allowlist_walk()` 追加，因此这里迭代两者的**并集**，并用
     /// `seen` 按路径去重（既未被忽略又命中白名单的文件会同时出现在两个 walker 里）。
-    fn walk(&self) -> Vec<Walked> {
+    fn walk(&self) -> Result<Vec<Walked>> {
         let mut walked = Vec::new();
         let mut seen: HashSet<String> = HashSet::new();
-        for entry in self.rules.walk_union() {
+        let mut bytes = 0;
+        for (visited, entry) in self.rules.walk_union_pruned(self.exclude_repositories).enumerate() {
+            self.check_cancelled()?;
+            self.file_policy.check_limits(visited + 1, walked.len(), bytes)?;
             let entry = match entry {
                 Ok(entry) => entry,
                 Err(_) => continue,
@@ -295,7 +341,7 @@ impl IndexManager {
             let Some(relative) = relative_path(&self.root, path) else {
                 continue;
             };
-            if !seen.insert(relative.clone()) {
+            if !self.file_policy.accepts(&relative) || !seen.insert(relative.clone()) {
                 continue;
             }
             let metadata = match entry.metadata() {
@@ -316,6 +362,8 @@ impl IndexManager {
                 }));
                 continue;
             }
+            bytes += size;
+            self.file_policy.check_limits(0, walked.len() + 1, bytes)?;
             walked.push(Walked::File {
                 relative,
                 path: path.to_path_buf(),
@@ -323,7 +371,7 @@ impl IndexManager {
                 mtime: mtime_of(&metadata),
             });
         }
-        walked
+        Ok(walked)
     }
 
     /// 应用服务端裁决：**只有全部 blob 被接受且未被跳过**的文件才保留在索引里。
@@ -374,6 +422,10 @@ impl IndexManager {
 
     /// 读缓存（缺失/损坏/版本或指纹不符 → 空索引）。
     pub fn load(&self) -> Result<IndexData> {
+        self.load_cache(false)
+    }
+
+    fn load_cache(&self, reconcile_config: bool) -> Result<IndexData> {
         let path = self.cache_file();
         let Ok(metadata) = std::fs::metadata(&path) else {
             return Ok(IndexData::default());
@@ -388,7 +440,7 @@ impl IndexManager {
             return Ok(IndexData::default());
         };
         if data.version == CACHE_VERSION
-            && data.config_hash == self.config_hash
+            && (reconcile_config || data.config_hash == self.config_hash)
             && data.project_id == self.project_id
             // TASK-100：缓存必须自证属于**同一个服务端**（否则两合后端交替使用时
             // 会错认"内容已上传"——它其实只传给了另一台）。
@@ -552,6 +604,40 @@ mod tests {
             cache.to_path_buf(),
             "http://127.0.0.1:1",
         )
+    }
+
+    #[test]
+    fn scan_cooperatively_stops_without_publishing_after_cancellation() -> Result<()> {
+        let project = tempfile::tempdir()?;
+        let cache = tempfile::tempdir()?;
+        for name in ["a.md", "b.md"] { std::fs::write(project.path().join(name), "# doc\n")?; }
+        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let manager = manager(project.path(), cache.path()).with_cancellation(cancelled.clone());
+        let mut uploads = 0;
+        let result = manager.scan_streaming(|_| {
+            uploads += 1;
+            cancelled.store(true, std::sync::atomic::Ordering::Release);
+        });
+        assert!(result.is_err());
+        assert_eq!(uploads, 1);
+        assert!(manager.load()?.entries.is_empty());
+        Ok(())
+    }
+
+    #[test]
+    fn changed_file_policy_keeps_previous_paths_for_deletion() -> Result<()> {
+        let project = tempfile::tempdir()?;
+        let cache = tempfile::tempdir()?;
+        std::fs::write(project.path().join("main.py"), "def run(): pass\n")?;
+        std::fs::write(project.path().join("guide.md"), "# guide\n")?;
+        let full = manager(project.path(), cache.path());
+        full.commit(&full.scan()?.index)?;
+        let docs = manager(project.path(), cache.path()).with_file_policy(FilePolicy::Markdown);
+        assert!(docs.load()?.entries.is_empty(), "config changed, verified cache is invalid");
+        let scan = docs.scan()?;
+        assert_eq!(scan.deleted, vec!["main.py"]);
+        assert_eq!(scan.to_upload.len(), 1);
+        Ok(())
     }
 
     #[test]

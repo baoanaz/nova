@@ -19,9 +19,10 @@ use std::time::Instant;
 
 use serde_json::{json, Value};
 
-use crate::identity::repo_identity;
+use crate::identity::RepoIdentity;
 use crate::index::{require_non_empty, IndexManager};
-use crate::remote::{validate_project_root, CallContext, RemoteClient, UploadItem};
+use crate::remote::{CallContext, RemoteClient, UploadItem};
+use crate::warmup::{Coordinator, Settings, SyncResult};
 
 /// `max_tokens` 的可接受上限（服务端 `MAX_MAX_TOKENS`，运行时兜底）。
 ///
@@ -133,19 +134,39 @@ struct SessionState {
 }
 
 /// 工具层（一个进程一个实例；服务端地址 + 可选 token）。
+#[derive(Clone)]
 pub struct ToolLayer {
-    remote: RemoteClient,
+    remote: Arc<RemoteClient>,
     cache_root: PathBuf,
-    sessions: Mutex<HashMap<String, SessionState>>,
+    sessions: Arc<Mutex<HashMap<String, SessionState>>>,
+    coordinator: Arc<Coordinator>,
+    warmup_settings: Settings,
 }
 
 impl ToolLayer {
     pub fn new(remote: RemoteClient, cache_root: PathBuf) -> Self {
         Self {
-            remote,
+            remote: Arc::new(remote),
             cache_root,
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Mutex::new(HashMap::new())),
+            coordinator: Arc::new(Coordinator::default()),
+            warmup_settings: Settings::default(),
         }
+    }
+
+    /// Prewarm exactly the same sync pipeline as a tool call, without issuing a query.
+    pub async fn warmup(&self, project_root: &str) -> Result<(), ToolError> {
+        let remote = self.remote.for_call(CallContext::new());
+        eprintln!("nova-client: callId={} tool=auto_warmup", remote.call_id());
+        let parts = self.sync_workspace(&remote, project_root).await?;
+        let failures: Vec<String> = parts.into_iter().filter_map(|(label, result)| {
+            result.err().map(|error| format!("{label}: {error:?}"))
+        }).collect();
+        if failures.is_empty() { Ok(()) } else { Err(ToolError::Failed(failures.join("\n"))) }
+    }
+
+    pub(crate) fn shutdown(&self) {
+        self.coordinator.shutdown();
     }
 
     /// 执行一个工具调用。
@@ -198,14 +219,7 @@ impl ToolLayer {
         query: &str,
         max_tokens: i64,
     ) -> Result<String, ToolError> {
-        let (project_id, checkpoint_id) = self.sync_project(remote, project_root).await?;
-        let started = Instant::now();
-        let result = remote
-            .search(&project_id, query, max_tokens, checkpoint_id.as_deref())
-            .await
-            .map_err(|error| ToolError::Failed(format!("检索失败：{error:#}")));
-        eprintln!("nova-client: 检索耗时 {}ms", started.elapsed().as_millis());
-        result
+        self.query_workspace(remote, project_root, query, max_tokens, false).await
     }
 
     async fn ask(
@@ -215,11 +229,99 @@ impl ToolLayer {
         question: &str,
         _max_tokens: i64,
     ) -> Result<String, ToolError> {
-        let (project_id, checkpoint_id) = self.sync_project(remote, project_root).await?;
-        remote
-            .ask(&project_id, question, checkpoint_id.as_deref())
-            .await
-            .map_err(|error| ToolError::Failed(format!("提问失败：{error:#}")))
+        self.query_workspace(remote, project_root, question, DEFAULT_MAX_TOKENS, true).await
+    }
+
+    async fn sync_workspace(
+        &self, remote: &RemoteClient, project_root: &str,
+    ) -> Result<Vec<(String, Result<SyncResult, ToolError>)>, ToolError> {
+        let root = project_root.to_string();
+        let cache = self.cache_root.clone();
+        let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _cancel = crate::warmup::CancellationGuard(cancelled.clone());
+        let deadline = tokio::time::Instant::now() + self.warmup_settings.timeout;
+        let work = async {
+        let parts = tokio::task::spawn_blocking(move || crate::workspace::plan_with_cancel(&root, &cache, &cancelled))
+            .await.map_err(|error| ToolError::Failed(format!("工作区规划失败：{error}")))?
+            .map_err(|error| ToolError::InvalidArguments(format!("工作区校验失败：{error:#}")))?;
+        let permits = Arc::new(tokio::sync::Semaphore::new(4));
+        let mut jobs = tokio::task::JoinSet::new();
+        let settings = self.warmup_settings;
+        for (order, part) in parts.into_iter().enumerate() {
+            let layer = self.clone();
+            let remote = remote.for_call(remote.call_context());
+            let permits = permits.clone();
+            jobs.spawn(async move {
+                let _permit = permits.acquire_owned().await;
+                let mut settings = settings;
+                settings.timeout = deadline.saturating_duration_since(tokio::time::Instant::now());
+                let result = layer.sync_project(&remote, &part.root.to_string_lossy(), settings).await;
+                (order, part.label, result)
+            });
+        }
+        let mut outcomes = Vec::new();
+        while let Some(job) = jobs.join_next().await {
+            outcomes.push(job.map_err(|error| ToolError::Failed(format!("工作区同步任务中断：{error}")))?);
+        }
+        outcomes.sort_by_key(|(order, _, _)| *order);
+        Ok(outcomes.into_iter().map(|(_, label, result)| (label, result)).collect())
+        };
+        tokio::time::timeout_at(deadline, work).await
+            .map_err(|_| ToolError::Failed("工作区预热/同步总超时（含规划与准备），可重试".into()))?
+    }
+
+    async fn query_workspace(
+        &self, remote: &RemoteClient, project_root: &str, query: &str, max_tokens: i64, deep: bool,
+    ) -> Result<String, ToolError> {
+        let parts = self.sync_workspace(remote, project_root).await?;
+        let single = parts.len() == 1;
+        let active = parts.iter().filter(|(_, result)| result.as_ref().is_ok_and(|sync| !sync.empty)).count();
+        let budget = if single { max_tokens } else { (max_tokens / active.max(1) as i64).max(512) };
+        // Do not multiply paid answer-model calls across a mixed workspace. Single-project ask
+        // stays unchanged; multi-project ask degrades transparently to fused search evidence.
+        let ask_directly = deep && active == 1;
+        let started = Instant::now();
+        let mut jobs = tokio::task::JoinSet::new();
+        let mut sections = Vec::new();
+        let mut successes = 0;
+        for (order, (label, result)) in parts.into_iter().enumerate() {
+            match result {
+                Ok(sync) if !sync.empty => {
+                    let remote = remote.for_call(remote.call_context());
+                    let query = query.to_string();
+                    jobs.spawn(async move {
+                        let result = if ask_directly {
+                            remote.ask(&sync.project_id, &query, sync.checkpoint_id.as_deref()).await
+                        } else {
+                            remote.search(&sync.project_id, &query, budget, sync.checkpoint_id.as_deref()).await
+                        };
+                        (order, label, result)
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => sections.push((order, format!("## 覆盖缺口：{label}\n\n{error:?}"))),
+            }
+        }
+        while let Some(job) = jobs.join_next().await {
+            let (order, label, result) = job.map_err(|error| ToolError::Failed(format!("检索任务中断：{error}")))?;
+            match result {
+                Ok(text) => {
+                    successes += 1;
+                    sections.push((order, if single { text } else { format!("## 来源：{label}\n\n{text}") }));
+                }
+                Err(error) => sections.push((order, format!("## 覆盖缺口：{label}\n\n检索失败：{error:#}"))),
+            }
+        }
+        sections.sort_by_key(|(order, _)| *order);
+        let text = sections.into_iter().map(|(_, text)| text).collect::<Vec<_>>().join("\n\n");
+        eprintln!("nova-client: 检索耗时 {}ms projects={active} succeeded={successes}", started.elapsed().as_millis());
+        if successes == 0 {
+            return Err(ToolError::Failed(if text.is_empty() { "工作区没有可检索内容（非 Git 默认仅索引 Markdown）".into() } else { text }));
+        }
+        if deep && active > 1 {
+            return Ok(format!("混合工作区回答降级：以下为按项目融合的检索证据，来源分别标注；为避免多次总结模型调用，未生成跨项目统一结论。\n\n{text}"));
+        }
+        Ok(text)
     }
 
     /// 懒同步编排（D-27）：每次 tool call 保证工作区新鲜，返回 `(projectId, checkpointId)`。
@@ -233,14 +335,27 @@ impl ToolLayer {
         &self,
         remote: &RemoteClient,
         project_root: &str,
-    ) -> Result<(String, Option<String>), ToolError> {
-        let root = validate_project_root(project_root)
-            .map_err(|error| ToolError::invalid(error.to_string()))?;
-        let identity = repo_identity(&root);
+        settings: Settings,
+    ) -> Result<SyncResult, ToolError> {
+        self.coordinator.ensure(
+            self.clone(), remote.for_call(remote.call_context()), project_root.to_string(),
+            self.cache_root.clone(), settings,
+        ).await
+    }
+
+    /// Existing incremental pipeline. Only the coordinator may call this while owning its lock.
+    pub(crate) async fn sync_project_once(
+        &self,
+        remote: &RemoteClient,
+        root: &std::path::Path,
+        identity: &RepoIdentity,
+        policy: &crate::policy::WorkspacePolicy,
+        cancelled: Arc<std::sync::atomic::AtomicBool>,
+    ) -> Result<SyncResult, ToolError> {
         let started = Instant::now();
 
         let project_id = remote
-            .resolve_project(&identity.identity_key, &identity.display_name)
+            .resolve_project_scoped(&identity.identity_key, &identity.display_name, policy.route.as_ref())
             .await
             .map_err(|error| {
                 ToolError::Failed(format!(
@@ -251,24 +366,29 @@ impl ToolLayer {
         let resolved = started.elapsed();
 
         // TASK-100：把服务端端点传给缓存（缓存目录按端点分片，且字段自证）。
-        let manager = IndexManager::new(
-            root.clone(),
-            project_id.clone(),
-            self.cache_root.clone(),
-            remote.base_url(),
-        );
+        let root = root.to_path_buf();
+        let scan_project_id = project_id.clone();
+        let cache_root = self.cache_root.clone();
+        let endpoint = remote.base_url().to_string();
+        let file_policy = policy.files;
+        let exclude_repositories = policy.exclude_repositories();
         // 扫描（阻塞线程池里并行读取 / hash）与上传（异步、多批在途）同时进行：
         // 每确定一个待上传文件就经通道交给上传端，不必等全部扫描结束。
         let (sender, receiver) = tokio::sync::mpsc::channel::<UploadItem>(UPLOAD_QUEUE_FILES);
         let scanning = tokio::task::spawn_blocking(move || {
             let scan_started = Instant::now();
+            let manager = IndexManager::new(root, scan_project_id, cache_root, &endpoint)
+                .with_file_policy(file_policy).excluding_repositories(exclude_repositories)
+                .with_cancellation(cancelled.clone());
             let result = manager.scan_streaming(|file| {
                 // 上传端已失败退出时发送会失败：继续扫描即可，错误由上传端结果报告。
-                let _ = sender.blocking_send(UploadItem {
+                if sender.blocking_send(UploadItem {
                     path: file.path.clone(),
                     content: file.content.clone(),
                     blob_hash: file.blob_hash.clone(),
-                });
+                }).is_err() {
+                    cancelled.store(true, std::sync::atomic::Ordering::Release);
+                }
             });
             (manager, result, scan_started.elapsed())
         });
@@ -280,9 +400,11 @@ impl ToolLayer {
         let (scanned, (uploaded, upload_elapsed)) = tokio::join!(scanning, uploading);
         let (manager, scan, scan_elapsed) = scanned
             .map_err(|error| ToolError::Failed(format!("本地扫描失败：{error}")))?;
-        let mut scan = scan.map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
-        require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
         let outcome = uploaded.map_err(|error| ToolError::Failed(format!("上传失败：{error:#}")))?;
+        let mut scan = scan.map_err(|error| ToolError::Failed(format!("本地扫描失败：{error:#}")))?;
+        if scan.index.entries.is_empty() && scan.deleted.is_empty() && file_policy == crate::policy::FilePolicy::Full {
+            require_non_empty(&scan.index).map_err(|error| ToolError::Failed(error.to_string()))?;
+        }
 
         let mut deferred_confirmed = false;
         if !scan.to_upload.is_empty() {
@@ -333,6 +455,10 @@ impl ToolLayer {
                 .map_err(|error| ToolError::Failed(format!("缓存写入失败：{error:#}")))?;
         }
 
+        if scan.index.entries.is_empty() {
+            self.store_session(&project_id, SessionState::default());
+            return Ok(SyncResult { project_id, checkpoint_id: None, empty: true });
+        }
         let scope: Arc<Vec<String>> = Arc::new(scan.index.all_blob_hashes());
         let previous = self.session(&project_id);
         let checkpoint_id = match previous.checkpoint_id.clone() {
@@ -365,7 +491,7 @@ impl ToolLayer {
             started.elapsed().as_millis(),
             outcome.batches,
         );
-        Ok((project_id, checkpoint_id))
+        Ok(SyncResult { project_id, checkpoint_id, empty: false })
     }
 
     fn session(&self, project_id: &str) -> SessionState {

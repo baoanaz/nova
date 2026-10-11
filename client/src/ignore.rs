@@ -314,6 +314,13 @@ impl IgnoreRules {
     /// 下钻是**名字定向 + 有深度上限**的：被忽略的目录只有"直接子项里有人命中白名单"
     /// 才进入，且连续下钻层数受 `lookthrough_depth` 封顶；内置目录名/模式从不下钻（§A-4）。
     pub fn allowlist_walk(&self, allowlist: Allowlist) -> ignore::Walk {
+        self.allowlist_walk_pruned(allowlist, false, None)
+    }
+
+    fn allowlist_walk_pruned(
+        &self, allowlist: Allowlist, exclude_repositories: bool,
+        discovered: Option<std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>>,
+    ) -> ignore::Walk {
         let root = self.root.clone();
         let probe_root = root.clone();
         ignore::WalkBuilder::new(&root)
@@ -333,6 +340,7 @@ impl IgnoreRules {
                 if is_builtin_dir_name(&name) {
                     return false; // 内置目录名/模式：从不下钻（卡内 §A-4）
                 }
+                if exclude_repositories && repository_boundary(entry, &discovered) { return false; }
                 let relative = relative_path(&probe_root, entry.path());
                 // `DirEntry::is_dir()` 是 crate 私有方法，只能用 `file_type()` 判（与 `scan()` 同口径）。
                 let is_dir = entry.file_type().is_some_and(|kind| kind.is_dir());
@@ -359,11 +367,40 @@ impl IgnoreRules {
         self.walker().chain(self.allowlist_walk(allowlist))
     }
 
+    pub fn walk_union_pruned(&self, exclude_repositories: bool) -> std::iter::Chain<ignore::Walk, ignore::Walk> {
+        self.walker_pruned(exclude_repositories, None)
+            .chain(self.allowlist_walk_pruned(self.allowlist(), exclude_repositories, None))
+    }
+
+    /// Discover nested Git roots without traversing their contents. Same ignore/allowlist rules.
+    pub fn repository_roots(&self, cancelled: &std::sync::atomic::AtomicBool) -> anyhow::Result<Vec<std::path::PathBuf>> {
+        let discovered = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let walker = self.walker_pruned(true, Some(discovered.clone()))
+            .chain(self.allowlist_walk_pruned(self.allowlist(), true, Some(discovered.clone())));
+        for (visited, entry) in walker.enumerate() {
+            if cancelled.load(std::sync::atomic::Ordering::Acquire) { anyhow::bail!("工作区发现已取消"); }
+            if visited >= 10_000 { anyhow::bail!("工作区发现超出 10000 项上限，请缩小 project_root"); }
+            entry?;
+        }
+        let mut roots = discovered.lock().map_err(|_| anyhow::anyhow!("工作区发现状态不可用"))?.clone();
+        roots.sort();
+        roots.dedup();
+        if roots.len() > 16 { anyhow::bail!("工作区包含超过 16 个 Git 项目，请缩小 project_root"); }
+        Ok(roots)
+    }
+
     /// 构建遍历器：`.novaignore` > `.gitignore`（`ignore` crate）+ 内置目录剪枝。
     ///
     /// 内置层用 `filter_entry` 剪枝（整目录跳过，省 IO）；内置层**不**交给 `ignore` crate，
     /// 以便跳过时能如实记录原因（R43）。
     pub fn walker(&self) -> ignore::Walk {
+        self.walker_pruned(false, None)
+    }
+
+    fn walker_pruned(
+        &self, exclude_repositories: bool,
+        discovered: Option<std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>>,
+    ) -> ignore::Walk {
         let dirs = DEFAULT_SKIP_DIRS;
         let patterns = DEFAULT_SKIP_DIR_PATTERNS;
         ignore::WalkBuilder::new(&self.root)
@@ -383,6 +420,7 @@ impl IgnoreRules {
                 }
                 let name = entry.file_name().to_string_lossy().into_owned();
                 !dirs.contains(&name.as_str())
+                    && !(exclude_repositories && repository_boundary(entry, &discovered))
                     && !patterns
                         .iter()
                         .any(|pattern| wildcard_match(pattern, &name))
@@ -451,6 +489,20 @@ fn has_allowlisted_child(allowlist: &Allowlist, path: &Path) -> bool {
     entries.flatten().any(|entry| {
         allowlist.matches_name(&entry.file_name().to_string_lossy())
     })
+}
+
+fn repository_boundary(
+    entry: &DirEntry,
+    discovered: &Option<std::sync::Arc<std::sync::Mutex<Vec<std::path::PathBuf>>>>,
+) -> bool {
+    if entry.depth() == 0 || !entry.file_type().is_some_and(|kind| kind.is_dir()) {
+        return false;
+    }
+    if entry.path().join(".git").symlink_metadata().is_err() { return false; }
+    if let Some(roots) = discovered {
+        if let Ok(mut roots) = roots.lock() { roots.push(entry.path().to_path_buf()); }
+    }
+    true
 }
 
 /// 单个 `*` 通配匹配（模式里只用到 `prefix-*` 形态）。

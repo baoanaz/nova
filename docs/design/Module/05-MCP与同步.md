@@ -7,6 +7,8 @@
 > 修订记录：2025-09-09 v1 — 覆盖初版（外部 AI 思考稿），吸收其懒同步/checkpoint/两工具边界/schema 简单化（见 §10 对照）；补充 project identity 解析、.gitignore 补齐、freshness 语义、首同步断点续传、分层超时矩阵。
 > 修订记录：2026-09-09 v2 — 本地缓存字段遵循 Module/01 D-43：contentHash 使用文件 content hash，blobHashes 使用同步 blob hash。
 
+> **当前实施方案**：见 [MCP 异步预热与工作区智能索引](../auto-warmup-workspace.md)。该文记录最终确认的 Git/Worktree 分支索引、仓库外 Markdown、混合检索与跨进程预热方案，覆盖本文旧的串行请求及多 harness 最终一致设想。
+
 ## 0. 组件定位与产品边界
 
 ```text

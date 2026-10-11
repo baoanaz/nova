@@ -206,19 +206,46 @@ impl RemoteClient {
         &self.base_url
     }
 
+    pub(crate) fn call_context(&self) -> CallContext {
+        self.call.clone()
+    }
+
+    /// Opaque credential/endpoint partition for local warmup results; never log tokens.
+    pub(crate) fn coordination_scope(&self) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hash = Sha256::new();
+        hash.update(self.base_url.as_bytes());
+        hash.update(b"\0");
+        hash.update(self.token.as_deref().unwrap_or("").as_bytes());
+        hex::encode(hash.finalize())
+    }
+
     /// `POST /api/projects/resolve` → `projectId`（D-29 身份，幂等）。
     pub async fn resolve_project(&self, identity_key: &str, display_name: &str) -> Result<String> {
-        let payload = serde_json::json!({
+        self.resolve_project_scoped(identity_key, display_name, None).await
+    }
+
+    pub(crate) async fn resolve_project_scoped(
+        &self, identity_key: &str, display_name: &str, scope: Option<&crate::policy::RouteScope>,
+    ) -> Result<String> {
+        let mut payload = serde_json::json!({
             "identityKey": identity_key,
             "displayName": display_name,
         });
+        if let Some(scope) = scope {
+            payload["clientScope"] = serde_json::to_value(scope)?;
+        }
         let response = self
             .request(
                 self.general.post(self.url("/api/projects/resolve")),
                 &payload,
             )
             .await?;
-        let body: ResolveResponse = response.json().await.context("resolve 响应不是合法 JSON")?;
+        let value: serde_json::Value = response.json().await.context("resolve 响应不是合法 JSON")?;
+        if scope.is_some() && value["routingVersion"].as_u64() != Some(1) {
+            bail!("服务端不支持用户/设备工作区隔离，请升级 nova-service 后重试（未上传任何文件）");
+        }
+        let body: ResolveResponse = serde_json::from_value(value)?;
         if body.project_id.is_empty() {
             bail!("resolve 返回了空的 projectId");
         }

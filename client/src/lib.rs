@@ -29,9 +29,13 @@ pub mod blobref;
 pub mod identity;
 pub mod ignore;
 pub mod index;
+pub mod policy;
 pub mod protocol;
 pub mod remote;
 pub mod tools;
+mod warmup;
+mod workspace;
+mod workspace_resolver;
 
 use anyhow::Result;
 

@@ -30,13 +30,18 @@ struct Args {
     cache_root: Option<std::path::PathBuf>,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args = Args::parse();
     let cache_root = args
         .cache_root
         .unwrap_or_else(nova_client::default_cache_root);
-    if let Err(error) = nova_client::run(&args.base_url, args.token, cache_root).await {
+    let runtime = tokio::runtime::Builder::new_multi_thread().enable_all().build()
+        .expect("failed to start MCP runtime");
+    let result = runtime.block_on(nova_client::run(&args.base_url, args.token, cache_root));
+    // Dropped async workers cannot publish cache/index results; don't wait forever for a local
+    // filesystem scan in spawn_blocking when the Agent has already disconnected.
+    runtime.shutdown_timeout(std::time::Duration::from_secs(1));
+    if let Err(error) = result {
         // stdout 只出 JSON-RPC 帧；诊断一律 stderr。
         eprintln!("nova-client: {error:#}");
         std::process::exit(1);

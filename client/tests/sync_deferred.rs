@@ -89,17 +89,17 @@ fn failed_index_never_queries_and_retry_uses_cached_upload() {
     let repo = tempfile::tempdir().unwrap();
     let cache = tempfile::tempdir().unwrap();
     let source = "def run():\n    return 1\n";
-    std::fs::write(repo.path().join("main.py"), source).unwrap();
-    let hash = nova_client::blobref::blob_hash("main.py", source.as_bytes());
+    std::fs::write(repo.path().join("main.md"), source).unwrap();
+    let hash = nova_client::blobref::blob_hash("main.md", source.as_bytes());
     let (url, handle) = server(vec![
-        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p","routingVersion":1})),
         ("POST /api/sync/batch-upload ", 200,
          json!({"accepted":[hash],"skipped":[],"report":null,"indexingDeferred":true})),
         ("POST /api/sync/flush ", 200, json!({})),
         ("GET /api/sync/status/p ", 200,
          json!({"pendingJobs":1,"indexProgress":{"state":"failed","error":"provider unavailable"}})),
         // Retry must flush again even when there are no new local changes.
-        ("POST /api/projects/resolve ", 200, json!({"projectId":"p"})),
+        ("POST /api/projects/resolve ", 200, json!({"projectId":"p","routingVersion":1})),
         ("POST /api/sync/flush ", 200, json!({})),
         ("GET /api/sync/status/p ", 200, ready()),
         ("POST /api/sync/checkpoint ", 200, json!({"checkpointId":"cp_test"})),

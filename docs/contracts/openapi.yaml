@@ -171,8 +171,22 @@ paths:
       tags: [projects]
       summary: 按 identityKey（D-29）幂等解析/创建项目
       requestBody:
-        content: { application/json: { schema: { type: object, required: [identityKey], properties: { identityKey: { type: string }, displayName: { type: string } } } } }
-      responses: { '200': { description: '{ projectId, created }' } }
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identityKey]
+              properties:
+                identityKey: { type: string }
+                displayName: { type: string }
+                clientScope:
+                  type: object
+                  description: 可选用户/设备工作区路由；用户取认证上下文，基础 D-29 算法不变
+                  required: [deviceKey, workspaceKey]
+                  properties:
+                    deviceKey: { type: string, pattern: '^[0-9a-f]{64}$' }
+                    workspaceKey: { type: string, pattern: '^[0-9a-f]{64}$' }
+      responses: { '200': { description: '{ projectId, created, routingVersion?: 1 }（仅 clientScope 请求确认路由能力）' } }
   /api/projects:
     get:
       tags: [projects]

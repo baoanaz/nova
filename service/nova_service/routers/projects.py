@@ -18,6 +18,8 @@ handler 一律用**同步 def**：core 是阻塞式实现，FastAPI 会把它放
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Any
 
 from fastapi import APIRouter, Request, Response
@@ -39,11 +41,19 @@ MAX_DISPLAY_NAME = 200
 MAX_ROOT_CHARS = 4096
 
 
+class ClientScope(BaseModel):
+    """Optional client routing layer; never changes the D-29 identity algorithm."""
+
+    deviceKey: str = Field(pattern=r"^[0-9a-f]{64}$")
+    workspaceKey: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ResolveRequest(BaseModel):
     """``POST /api/projects/resolve`` 的请求体（CF-05）。"""
 
     identityKey: str = Field(min_length=1, max_length=MAX_IDENTITY_KEY)
     displayName: str = Field(default="", max_length=MAX_DISPLAY_NAME)
+    clientScope: ClientScope | None = None
 
 
 class AttachRequest(BaseModel):
@@ -70,10 +80,25 @@ def resolve_project(payload: ResolveRequest, request: Request) -> dict[str, Any]
     identity_key = payload.identityKey.strip()
     if not identity_key:
         raise ApiError("invalid_identity_key", "identityKey 不能为空白字符串", 400)
+    if payload.clientScope is not None:
+        # Account comes from authentication, not request JSON. Devices and checkouts with the
+        # same absolute path must not silently mutate each other's indexes.
+        user_id = getattr(getattr(request.state, "nova_user", None), "id", None)
+        if user_id is None and not get_settings(request).local_mode:
+            raise ApiError("authentication_required", "工作区隔离需要认证用户", 401)
+        material = json.dumps(
+            ["nova-client-scope-v1", str(user_id) if user_id is not None else "local",
+             identity_key, payload.clientScope.deviceKey, payload.clientScope.workspaceKey],
+            ensure_ascii=False, separators=(",", ":"),
+        )
+        identity_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
     manager = get_engine_manager(request)
     handle = manager.resolve_project(identity_key, payload.displayName.strip())
     _claim_project(request, handle.project_id, payload.displayName.strip())
-    return {"projectId": handle.project_id, "created": handle.created}
+    result = {"projectId": handle.project_id, "created": handle.created}
+    if payload.clientScope is not None:
+        result["routingVersion"] = 1
+    return result
 
 
 def _claim_project(request: Request, project_id: str, display_name: str) -> None:
