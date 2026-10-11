@@ -45,7 +45,7 @@
 .nova-github { display: flex; align-items: center; gap: .75rem; }
 .nova-landing-nav a:hover, .nova-landing-nav button:hover { color: rgb(var(--nova-accent-text)); }
 .nova-landing-nav button { min-height: 2.75rem; }
-.nova-landing-hero { color: rgb(var(--nova-text)); background: rgb(var(--nova-hero) / 0.35); margin-top: auto; padding: min(48svh, 30rem) 1.5rem 2.2rem; text-align: center; }
+.nova-landing-hero { color: rgb(var(--nova-text)); background: transparent; margin-top: auto; padding: min(48svh, 30rem) 1.5rem 2.2rem; text-align: center; }
 .nova-landing-hero h1 { margin: 0 auto; max-width: 38rem; }
 .nova-landing-hero h1 img { display: block; width: 100%; height: auto; }
 .nova-landing-hero > p { margin: -.1rem 0 1.25rem; font-size: clamp(1rem, 1.4vw, 1.4rem); line-height: 1.4; }
