@@ -41,6 +41,8 @@
 | [设计索引](design/INDEX.md) | 详细设计与决策来源 |
 | [契约变更流程](contracts/PROCESS.md) | API、MCP 和数据结构的一致性约束 |
 | [路线图](plan/roadmap.md) | 后续工作方向 |
+| [检索与 search / ask 优化计划](plan/retrieval-evidence-search-ask-plan.md) | 共享证据集合、双工具交付差异、单次 LLM 与分期实施门槛（尚未实施） |
+| [CodeGraph 源码调研](plan/codegraph-source-review-2026-10-11.md) | 固定 commit 的结构解析、关系发现、源码组织与新鲜度借鉴清单 |
 | [任务索引](tasks/README.md) | 活跃任务与实施记录 |
 | [开发交接](../HANDOFF.md) | 当前开发上下文；具体状态以对应日期和代码为准 |
 
