@@ -486,6 +486,16 @@ impl RemoteClient {
         Ok(body.into_text())
     }
 
+    /// One server-side synthesis, never one paid call per project.
+    pub async fn ask_workspace(&self, projects: &[String], question: &str) -> Result<String> {
+        let payload = serde_json::json!({"projectIds": projects, "question": question});
+        let response = self.request(
+            self.general.post(self.url("/api/query/ask-workspace")), &payload,
+        ).await?;
+        let body: AskResponse = response.json().await.context("workspace ask 响应不是合法 JSON")?;
+        Ok(body.into_text())
+    }
+
     fn url(&self, path: &str) -> String {
         format!("{}{path}", self.base_url)
     }

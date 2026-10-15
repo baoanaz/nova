@@ -277,9 +277,28 @@ impl ToolLayer {
         let single = parts.len() == 1;
         let active = parts.iter().filter(|(_, result)| result.as_ref().is_ok_and(|sync| !sync.empty)).count();
         let budget = if single { max_tokens } else { (max_tokens / active.max(1) as i64).max(512) };
-        // Do not multiply paid answer-model calls across a mixed workspace. Single-project ask
-        // stays unchanged; multi-project ask degrades transparently to fused search evidence.
-        let ask_directly = deep && active == 1;
+        if deep && active > 0 {
+            let projects: Vec<_> = parts.iter().filter_map(|(_, result)| {
+                result.as_ref().ok().filter(|sync| !sync.empty)
+                    .map(|sync| sync.project_id.clone())
+            }).collect();
+            let response = if active == 1 {
+                let sync = parts.iter().find_map(|(_, result)|
+                    result.as_ref().ok().filter(|sync| !sync.empty)).expect("one active project");
+                remote.ask(&sync.project_id, query, sync.checkpoint_id.as_deref()).await
+            } else {
+                remote.ask_workspace(&projects, query).await
+            };
+            match response {
+                Ok(text) => {
+                    let gaps: Vec<_> = parts.iter().filter_map(|(label, result)| {
+                        result.as_ref().err().map(|error| format!("## 覆盖缺口：{label}\n{error:?}"))
+                    }).collect();
+                    return Ok(if gaps.is_empty() { text } else { format!("{text}\n\n{}", gaps.join("\n\n")) });
+                }
+                Err(_) => eprintln!("nova-client: unified_ask=unavailable fallback=search_only"),
+            }
+        }
         let started = Instant::now();
         let mut jobs = tokio::task::JoinSet::new();
         let mut sections = Vec::new();
@@ -290,11 +309,8 @@ impl ToolLayer {
                     let remote = remote.for_call(remote.call_context());
                     let query = query.to_string();
                     jobs.spawn(async move {
-                        let result = if ask_directly {
-                            remote.ask(&sync.project_id, &query, sync.checkpoint_id.as_deref()).await
-                        } else {
-                            remote.search(&sync.project_id, &query, budget, sync.checkpoint_id.as_deref()).await
-                        };
+                        let result = remote.search(&sync.project_id, &query, budget,
+                            sync.checkpoint_id.as_deref()).await;
                         (order, label, result)
                     });
                 }
@@ -318,8 +334,8 @@ impl ToolLayer {
         if successes == 0 {
             return Err(ToolError::Failed(if text.is_empty() { "工作区没有可检索内容（非 Git 默认仅索引 Markdown）".into() } else { text }));
         }
-        if deep && active > 1 {
-            return Ok(format!("混合工作区回答降级：以下为按项目融合的检索证据，来源分别标注；为避免多次总结模型调用，未生成跨项目统一结论。\n\n{text}"));
+        if deep {
+            return Ok(format!("统一回答不可用，降级为检索证据；未追加总结模型调用。\n\n{text}"));
         }
         Ok(text)
     }
@@ -337,10 +353,15 @@ impl ToolLayer {
         project_root: &str,
         settings: Settings,
     ) -> Result<SyncResult, ToolError> {
-        self.coordinator.ensure(
+        let result = self.coordinator.ensure(
             self.clone(), remote.for_call(remote.call_context()), project_root.to_string(),
             self.cache_root.clone(), settings,
-        ).await
+        ).await?;
+        if let Some(root) = &result.root {
+            self.coordinator.start_watcher(self.clone(), remote.for_call(CallContext::new()),
+                root.clone(), self.cache_root.clone(), settings);
+        }
+        Ok(result)
     }
 
     /// Existing incremental pipeline. Only the coordinator may call this while owning its lock.
@@ -375,9 +396,10 @@ impl ToolLayer {
         // 扫描（阻塞线程池里并行读取 / hash）与上传（异步、多批在途）同时进行：
         // 每确定一个待上传文件就经通道交给上传端，不必等全部扫描结束。
         let (sender, receiver) = tokio::sync::mpsc::channel::<UploadItem>(UPLOAD_QUEUE_FILES);
+        let scan_root = root.clone();
         let scanning = tokio::task::spawn_blocking(move || {
             let scan_started = Instant::now();
-            let manager = IndexManager::new(root, scan_project_id, cache_root, &endpoint)
+            let manager = IndexManager::new(scan_root, scan_project_id, cache_root, &endpoint)
                 .with_file_policy(file_policy).excluding_repositories(exclude_repositories)
                 .with_cancellation(cancelled.clone());
             let result = manager.scan_streaming(|file| {
@@ -457,7 +479,7 @@ impl ToolLayer {
 
         if scan.index.entries.is_empty() {
             self.store_session(&project_id, SessionState::default());
-            return Ok(SyncResult { project_id, checkpoint_id: None, empty: true });
+            return Ok(SyncResult { project_id, checkpoint_id: None, empty: true, root: Some(root.to_path_buf()) });
         }
         let scope: Arc<Vec<String>> = Arc::new(scan.index.all_blob_hashes());
         let previous = self.session(&project_id);
@@ -491,7 +513,7 @@ impl ToolLayer {
             started.elapsed().as_millis(),
             outcome.batches,
         );
-        Ok(SyncResult { project_id, checkpoint_id, empty: false })
+        Ok(SyncResult { project_id, checkpoint_id, empty: false, root: Some(root.to_path_buf()) })
     }
 
     fn session(&self, project_id: &str) -> SessionState {

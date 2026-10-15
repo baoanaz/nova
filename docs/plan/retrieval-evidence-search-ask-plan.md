@@ -336,4 +336,14 @@ B 是优先实施入口；E 不应阻塞分流和 ask 改善。每阶段独立�
 - Python 增加独立 FastAPI/APIRouter 窄适配器：显式 import＋唯一模块级构造＋唯一 handler＋字面路径才生成 synthesized registers 相关候选；同名／重绑／海象／条件／循环／with／删除反例不硬连，动态路径留缺口。只补本文件构造上下文，不声称路由已挂载、实际 URL 或运行时调用；函数工厂、全框架与 JSX 编译调用未适配。
 - Flow 只采用 parsed 调用关系，JS 同身份声明包括无切片行都要判歧义；框架候选与 synthesized/inferred 不进入确定 Flow。紧凑 ask 保留弱关系警示；ESM 焦点窗口使用解析后目标与原始调用行号。
 - 最终直接相关回归：567 passed / 7 skipped；Ruff 通过。独立只读审查发现的遮蔽、mutation、handler 歧义与无切片身份问题均补反例修复，最终限定复审通过。测试不执行真实 embedding／回答 provider，不是全项目或实模语义／成本评测。
-- 核心备份 backups/retrieval-stage-e-6r5g0miv/；文档备份 backups/retrieval-stage-e-docs-03detnjr/。阶段 E 独立提交可 git revert，不覆盖并行 benchmark／profiles 工作。F 仍待独立实施；Rust cargo 尚不可用，未声称客户端测试通过。
+- 核心备份 backups/retrieval-stage-e-6r5g0miv/；文档备份 backups/retrieval-stage-e-docs-03detnjr/。阶段 E 独立提交可 git revert，不覆盖并行 benchmark／profiles 工作。E 交付时 F 仍待实施；当时 Rust cargo 不可用，未声称客户端测试通过。
+
+### F：工作区统一总结与有界后台同步（代码交接，尚未完整验收）
+
+- 新增 service `/api/query/ask-workspace`：项目去重、逐项授权后按各项目当前索引检索，统一 E/F 编号、来源映射与 16K 总预算，正常只总结一次。不可用项目列缺口，不拖垮其余项目；单项目仍使用原 ask 接口。
+- 用户最新裁定：取消客户端新鲜度核验、贡献 SHA-256 读盘、版本握手及查询快照协议。没有增量更新就使用目前存储，不新增核验门禁；workspace endpoint 不主动本地重扫。旧单项目既有同步逻辑未改。
+- 取消 4 个项目前台硬上限、重复项目拒绝及 Watcher 额外 30 秒超时。后台最多 4 根是资源名额，不限制前台请求；Watcher 默认关闭，NOVA_WATCH=1 开启，复用协调器和 OS 领导锁，退出时取消。原忽略与项目权限不放宽。
+- 客户端统一总结不可用时回退纯检索，不对各项目分别追加总结调用。构造上下文和同名符号不解释为跨项目运行时关系。
+- 仅按用户要求做小规模功能测试与局部 Ruff，不做最终大规模回归、真实 embedding/模型 benchmark。新增测试覆盖单次总结、权限隔离、存储证据返回、共享对象隔离、预算收口、五项目/去重、单项失败与无重扫。
+- 下一位 AI 优先：在 Rust >=1.89 环境编译并小测 client/src/{remote,tools,warmup}.rs；核对 Watcher 领导锁/退出/失败降级，以及共享协调器超时后阻塞缓存写任务的锁生命周期。后者为只读 review 提示，尚未修复/验证，不把 F 标记为完整验收。
+- 指定 xiugou/gpt-6.1-sol medium 只读审查已执行；其要求取消 workspace 重扫已修。用户要求立即交接，未再扩范围审计。核心备份 backups/retrieval-stage-f-dpmz_xkg/；不提交并行 README、benchmark 或 profiles 变更。

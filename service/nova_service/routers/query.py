@@ -61,7 +61,7 @@ from typing import Any
 from fastapi import APIRouter, Request
 from nova_core.contextpack import render_markdown
 from nova_core.types import ContextPack
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from nova_service import audit
@@ -79,6 +79,7 @@ from nova_service.metadb import MetaDB
 from nova_service.packmeta import evidence_summary, pack_meta
 from nova_service.quota import append_warning, warning_for
 from nova_service.runtime import EngineManager
+from nova_service.workspace import combine_evidence
 
 router = APIRouter(tags=["query"])
 
@@ -143,6 +144,11 @@ class AskRequest(BaseModel):
 
     projectId: str | None = None
     checkpointId: str | None = None
+    question: str = ""
+
+
+class WorkspaceAskRequest(BaseModel):
+    projectIds: list[str] = Field(min_length=1)
     question: str = ""
 
 
@@ -302,6 +308,77 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
             "evidenceSummary": evidence_summary(pack),
             "meta": meta,
         }
+
+
+@router.post("/api/query/ask-workspace")
+async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[str, Any]:
+    """先逐项授权，统一 16K Deep 证据，一次总结；失败项不给内容或名称。"""
+    question = _require_query(payload.question, field="question", code="invalid_question")
+    projects = list(dict.fromkeys(payload.projectIds))
+    manager = get_engine_manager(request)
+    with _audited(request, mode=audit.MODE_ASK, query=question) as ctx:
+        authorized, gaps = [], []
+        for index, project in enumerate(projects, 1):
+            label = f"P{index}"
+            if len(project) != 16 or any(c not in "0123456789abcdef" for c in project):
+                gaps.append(f"{label}: 项目不可用")
+                continue
+            try:
+                require_project_id(request, project)
+            except ApiError:
+                gaps.append(f"{label}: 项目不可用（不存在或无权限）")
+            else:
+                authorized.append((label, project))
+        parts = []
+        quota = max(512, (ASK_MAX_TOKENS - 1024) // max(1, len(authorized)))
+        with _timed() as elapsed:
+            ctx["elapsed"] = elapsed
+            for label, project in authorized:
+                try:
+                    await run_in_threadpool(_require_index, manager, project)
+                    trace = await run_in_threadpool(manager.ask_evidence, project, question, quota)
+                except Exception as exc:  # noqa: BLE001 - 单项失败不泄露异常或阻断其他项目
+                    logger.warning("workspace %s retrieval failed: %s", label,
+                                   redact_text(type(exc).__name__))
+                    gaps.append(f"{label}: 检索不可用，未包含该项目证据")
+                    continue
+                if trace.degraded:
+                    gaps.append(f"{label}: 检索通道降级，覆盖可能不完整")
+                parts.append((label, project, trace.pack))
+        pack, origins = combine_evidence(question, parts, gaps)
+        ctx["pack"] = pack
+        if parts:
+            ctx["projectId"] = parts[0][1]
+        meta = pack_meta(pack, project_id="workspace", degraded=True,
+                         reason=DEGRADED_NOTICE)
+        meta["sources"] = origins
+        meta["coverageGaps"] = gaps
+        ctx["degraded"] = True
+        if not pack.answerable:
+            ctx["answerStatus"] = audit.STATUS_INSUFFICIENT
+            return _insufficient_package(pack, meta)
+        provider = _ask_provider(request)
+        if provider is None:
+            ctx["answerStatus"] = audit.STATUS_DEGRADED
+            return _degraded_response(pack, meta, notice=DEGRADED_NOTICE, reason=DEGRADED_NOTICE)
+        try:
+            outcome = await run_in_threadpool(
+                answer_question, provider=provider, settings=get_settings(request),
+                pack=pack, question=question,
+            )
+        except AnswerError:
+            ctx["answerStatus"] = audit.STATUS_DEGRADED
+            return _degraded_response(
+                pack, meta, notice=LLM_FAILED_NOTICE, reason=LLM_FAILED_NOTICE,
+            )
+        _write_llm_observations(ctx, provider, outcome)
+        ctx["answerText"] = outcome.answer
+        ctx["answerStatus"] = audit.STATUS_ANSWERED
+        ctx["degraded"] = False
+        meta.update(degraded=False, degradedReason=None, llmModel=ctx.get("answerModel"))
+        coverage = "\n\n## 覆盖缺口\n" + "\n".join(gaps) if gaps else ""
+        return {"status": "answered", "answer": outcome.answer + coverage,
+                "evidenceSummary": evidence_summary(pack), "meta": meta}
 
 
 def _ask_provider(request: Request) -> Any:

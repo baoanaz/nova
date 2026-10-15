@@ -28,6 +28,8 @@ pub(crate) struct SyncResult {
     pub project_id: String,
     pub checkpoint_id: Option<String>,
     pub empty: bool,
+    #[serde(default)]
+    pub root: Option<PathBuf>,
 }
 type Outcome = Result<SyncResult, String>;
 type Receiver = watch::Receiver<Option<Outcome>>;
@@ -60,6 +62,7 @@ struct Task {
 #[derive(Default)]
 pub(crate) struct Coordinator {
     tasks: Mutex<HashMap<String, Task>>,
+    watchers: Mutex<HashMap<String, AbortHandle>>,
     closed: AtomicBool,
 }
 
@@ -171,8 +174,53 @@ impl Coordinator {
         }).await.map_err(|_| ToolError::Failed("等待后台同步超时，可稍后重试".into()))?
     }
 
+    pub fn start_watcher(
+        self: &Arc<Self>, layer: ToolLayer, remote: RemoteClient, root: PathBuf,
+        cache_root: PathBuf, settings: Settings,
+    ) {
+        if std::env::var("NOVA_WATCH").as_deref() != Ok("1") { return; }
+        let key = digest(format!("{}\0{}\0{}", remote.base_url(),
+            remote.coordination_scope(), root.display()).as_bytes());
+        let Ok(mut watchers) = self.watchers.lock() else { return; };
+        if self.closed.load(Ordering::Acquire) || watchers.contains_key(&key) { return; }
+        if watchers.len() >= 4 {
+            eprintln!("nova-client: watcher=root_limit (max=4); lazy sync remains enabled");
+            return;
+        }
+        let lock = cache_root.join("warmup-v1").join(format!("watch-{key}.lock"));
+        let coordinator = Arc::clone(self);
+        let task = tokio::spawn(async move {
+            // Followers only wait on an OS lock; no duplicate scans or uploads.
+            let Ok((_leader, _)) = acquire(lock).await else {
+                eprintln!("nova-client: watcher=leader_lock_failed; lazy sync remains enabled");
+                return;
+            };
+            let seconds = std::env::var("NOVA_WATCH_INTERVAL_SECS").ok()
+                .and_then(|s| s.parse::<u64>().ok()).unwrap_or(30).clamp(5, 3600);
+            let interval = Duration::from_secs(seconds);
+            let mut delay = interval;
+            loop {
+                tokio::time::sleep(delay).await;
+                if coordinator.closed.load(Ordering::Acquire) { break; }
+                let result = coordinator.ensure(layer.clone(), remote.for_call(
+                    crate::remote::CallContext::new()), root.to_string_lossy().into_owned(),
+                    cache_root.clone(), settings).await;
+                if result.is_err() {
+                    eprintln!("nova-client: watcher=sync_failed; lazy sync remains enabled");
+                    delay = (delay * 2).min(Duration::from_secs(seconds.max(300)));
+                } else {
+                    delay = interval;
+                }
+            }
+        });
+        watchers.insert(key, task.abort_handle());
+    }
+
     pub fn shutdown(&self) {
         self.closed.store(true, Ordering::Release);
+        if let Ok(mut watchers) = self.watchers.lock() {
+            for (_, watcher) in watchers.drain() { watcher.abort(); }
+        }
         if let Ok(mut tasks) = self.tasks.lock() {
             for (_, task) in tasks.drain() {
                 task.abort.abort();
