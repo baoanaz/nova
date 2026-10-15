@@ -123,6 +123,10 @@ class EngineManager:
         #: 同时进行的上传路径索引（embedding 是 CPU/内存/外部 API 三重压力）。2C2G 机器上无上限并发
         #: 只会让所有人一起变慢甚至被 OOM 杀掉；超出的任务在这里排队，不丢弃。
         self._index_slots = threading.BoundedSemaphore(2)
+        #: 查询路径预热（默认关闭，由 ``__main__`` 的长驻服务显式开启；测试与库用法不受影响）。
+        self._warm_enabled = False
+        self._warming: set[str] = set()
+        self._last_warm: dict[str, float] = {}
         #: 最近一次 provider 故障摘要（脱敏）；成功后清空。见 provider_health。
         self._provider_error: str | None = None
         #: 本地模式（TASK-034）：projectId → 已绑定的仓库根 / 后台索引任务 / 上次重扫时刻。
@@ -135,6 +139,81 @@ class EngineManager:
         #: flush 时 ingest 直接取用。``NOVA_UPLOAD_PREFETCH=0`` 关闭；引擎已注入的不覆盖。
         if engine.prefetcher is None:
             engine.set_prefetcher(UploadPrefetcher.from_env())
+
+    def enable_warmup(self, enabled: bool = True) -> None:
+        """开启/关闭查询路径预热（长驻服务启动时调用）。"""
+        self._warm_enabled = enabled
+
+    def warm_provider(self) -> bool:
+        """预热 embedding provider；失败只记日志（返回 ``False``）。"""
+        try:
+            self._engine.warm_provider()
+        except Exception as exc:  # noqa: BLE001 - 预热失败不得影响服务
+            logger.warning(
+                "embedding provider 预热失败（首次查询时再建立）：%s", redact_text(str(exc))
+            )
+            return False
+        return True
+
+    def warm_project(self, project_id: str, *, wait_s: float = 0.0) -> bool:
+        """预热一个项目的查询路径（页缓存 + LanceDB 初始化；不调用 embedding API、不写数据）。
+
+        取项目锁：项目正在索引/删除时 ``wait_s <= 0`` 直接跳过，``wait_s > 0`` 最多等这么久
+        （索引完成后的预热要等索引线程放锁）；删除期间不会在持锁时重建目录——拿到锁后会再确认项目
+        仍然存在。失败只记日志。
+        """
+        lock = self._lock_for(project_id)
+        acquired = lock.acquire(timeout=wait_s) if wait_s > 0 else lock.acquire(blocking=False)
+        if not acquired:
+            return False
+        try:
+            if project_id in self._deleting or not self.project_exists(project_id):
+                return False
+            started = time.perf_counter()
+            warmed = self._engine.warm_project(project_id)
+            if warmed:
+                logger.info(
+                    "项目查询路径已预热：%s（%.0f ms）",
+                    project_id, (time.perf_counter() - started) * 1000,
+                )
+            return warmed
+        except Exception as exc:  # noqa: BLE001 - 预热失败不得影响服务
+            logger.warning("项目预热失败：%s → %s", project_id, redact_text(str(exc)))
+            return False
+        finally:
+            lock.release()
+
+    def warm_async(self, project_id: str) -> None:
+        """索引完成后在后台预热（同一项目 30 秒内最多一次；未开启预热时无操作）。"""
+        if not self._warm_enabled:
+            return
+        now = time.monotonic()
+        with self._locks_guard:
+            if project_id in self._warming or now - self._last_warm.get(project_id, -1e9) < 30.0:
+                return
+            self._warming.add(project_id)
+            self._last_warm[project_id] = now
+
+        def run() -> None:
+            try:
+                self.warm_project(project_id, wait_s=60.0)
+            finally:
+                with self._locks_guard:
+                    self._warming.discard(project_id)
+
+        threading.Thread(target=run, name=f"nova-warm-{project_id[:6]}", daemon=True).start()
+
+    def warm_recent(self, limit: int = 5) -> int:
+        """启动后预热最近有索引更新的若干项目（按 ``index.db`` 修改时间），返回成功个数。"""
+        candidates: list[tuple[float, str]] = []
+        for project_id in self.project_ids():
+            try:
+                db_file = self._engine.project_dir(project_id) / DB_FILENAME
+                candidates.append((db_file.stat().st_mtime, project_id))
+            except OSError:
+                continue
+        candidates.sort(reverse=True)
+        return sum(1 for _mtime, pid in candidates[: max(0, limit)] if self.warm_project(pid))
 
     def set_index_concurrency(self, limit: int) -> None:
         """设置并发索引上限（启动时调用一次；``limit < 1`` 按 1 处理）。"""
@@ -430,7 +509,9 @@ class EngineManager:
                 elapsed_ms=(time.perf_counter() - started_perf) * 1000,
                 report=report,
             )
-            return report
+        # 锁外后台预热：用户的下一次提问不必承担冷读（不阻塞索引完成信号）。
+        self.warm_async(project_id)
+        return report
 
     def sync_status(self, project_id: str, *, progress_only: bool = False) -> dict[str, Any]:
         """默认返回完整统计；就绪度轮询只读 worker 快照，避免反复开库/遍历 blob。"""

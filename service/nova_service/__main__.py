@@ -176,6 +176,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_snippets(settings.port, host=settings.host), flush=True)
     app = create_app(settings)  # 先建 app：它配置日志，预加载的耗时日志才可见
     _preload()
+    _start_query_warmup(app, recent=True)
     uvicorn.run(
         app,
         host=settings.host,
@@ -226,6 +227,7 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
         print(f"[错误] {exc}", file=sys.stderr)
         return 2
     _print_ready(settings, attached, indexed=not args.no_index)
+    _start_query_warmup(app, recent=False)
     uvicorn.run(
         app,
         host=settings.host,
@@ -234,6 +236,30 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
         access_log=False,
     )
     return 0
+
+
+def _start_query_warmup(app: object, *, recent: bool) -> None:
+    """后台预热查询路径：embedding provider 建连、最近活跃项目的索引文件进页缓存。
+
+    在**后台线程**里做，不延迟监听；任何失败只记日志。预热不产生 embedding 费用以外的外部调用
+    （provider 只发一次约一个 token 的请求；项目预热不请求 embedding）。
+    ``NOVA_WARMUP=0`` 可关闭；开启后，每次索引完成还会异步预热该项目
+    （见 ``EngineManager.warm_async``）。
+    """
+    if os.environ.get("NOVA_WARMUP", "").strip().lower() in ("0", "false", "no", "off"):
+        return
+    import threading
+
+    def run() -> None:
+        from nova_service.mcp import manager_for_app
+
+        manager = manager_for_app(app)  # type: ignore[arg-type]
+        manager.enable_warmup()
+        manager.warm_provider()
+        if recent:
+            manager.warm_recent(int(os.environ.get("NOVA_WARM_RECENT", "5") or 5))
+
+    threading.Thread(target=run, name="nova-warmup", daemon=True).start()
 
 
 def _is_loopback(host: str) -> bool:

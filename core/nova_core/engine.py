@@ -87,7 +87,7 @@ from nova_core.retrieval.gap import (
 )
 from nova_core.retrieval.rerank import collect_signals, rerank
 from nova_core.retrieval.vector import QueryEmbeddingCache, embed_query
-from nova_core.storage import Store
+from nova_core.storage import DB_FILENAME, Store
 from nova_core.storage.readcache import ReadCachedStore
 from nova_core.types import (
     AskResult,
@@ -1103,6 +1103,34 @@ class Engine:
         temporary.replace(path)
 
     # ------------------------------------------------------------------ 内部
+
+    def warm_provider(self) -> None:
+        """预热 embedding provider：API 模式付掉 DNS/TLS/建连，本地模式加载模型。
+
+        只发一次极小的 ``embed_query``（约一个 token），之后的真实查询复用同一连接/已加载的模型。
+        失败由调用方记日志；不影响任何后续查询（真正用到时仍按原路径构造并如实报错）。
+        """
+        self.provider.embed_query(["nova warmup"])
+
+    def warm_project(self, project_id: str) -> bool:
+        """预热某项目的**查询路径**：把索引文件读进系统页缓存、做掉 LanceDB 的一次性初始化。
+
+        **不产生任何 embedding 请求、不写任何数据**：向量表用固定单位向量探测，SQLite 只做计数/
+        FTS 探测。项目尚未建库返回 ``False``（不创建目录，避免"复活"已删除的项目）。
+        """
+        directory = self.project_dir(project_id)
+        if not (directory / DB_FILENAME).is_file():
+            return False
+        dim = self.provider.profile.dim
+        with Store.open(directory) as store:
+            store.counts()
+            store.freshness()
+            store.fts_search("warm", limit=1)
+        with VectorStore.open(directory, dim) as vectors:
+            probe = [0.0] * dim
+            probe[0] = 1.0
+            vectors.search(probe, top_k=1)
+        return True
 
     def _start_query_embedding(self, query: str) -> Future[list[float]] | None:
         """在打开索引之前就发起 query embedding；provider 不可用时返回 ``None``。
