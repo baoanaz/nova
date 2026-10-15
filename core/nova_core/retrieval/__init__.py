@@ -26,7 +26,7 @@ result.degraded     # 向量通道不可用/超时时为 True（Module/02 §5 �
 from __future__ import annotations
 
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, field
 
@@ -159,6 +159,7 @@ def recall(
     vector_store: VectorStoreLike | None = None,
     limits: RecallLimits | None = None,
     cache: QueryEmbeddingCache | None = None,
+    query_vector: Future[list[float]] | None = None,
 ) -> RecallResult:
     """General 路径三路召回 + RRF 融合（本卡主入口）。
 
@@ -186,6 +187,7 @@ def recall(
         future = pool.submit(
             recall_vector, provider, vector_store, query,
             limit=active.vector, cache=query_cache, timeout_s=active.vector_timeout_s,
+            query_vector=query_vector,
         )
     try:
         channels: dict[str, list[Candidate]] = {}

@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import itertools
+import os
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -37,6 +38,8 @@ SCHEMA_VERSION = "1"
 """index.db schema 版本；写入 ``index_config.schema_version``，启动时校验。"""
 
 DB_FILENAME = "index.db"
+#: 连接默认的 mmap 窗口（MiB）；0 = 不启用。
+DEFAULT_MMAP_MB = 256
 """项目目录内的库文件名（Module/01 §3.3：``{project_id}/index.db``）。"""
 
 _savepoint_seq = itertools.count()
@@ -66,7 +69,24 @@ def connect(db_path: str | Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode = WAL")
     conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA busy_timeout = 5000")
+    # 读优化：每次查询都是新连接，页缓存是冷的。mmap 让热点页直接映射（只占虚拟地址，
+    # 常驻内存仍由 OS 页缓存管理）；排序/临时 B-tree 放内存。不改变任何查询结果。
+    # ``NOVA_SQLITE_MMAP_MB=0`` 可关闭（个别网络/9p 文件系统上 mmap 不可靠时用）。
+    mmap_bytes = _mmap_bytes()
+    if mmap_bytes > 0:
+        conn.execute(f"PRAGMA mmap_size = {mmap_bytes}")
+    conn.execute("PRAGMA cache_size = -16384")  # 16 MiB / 连接
+    conn.execute("PRAGMA temp_store = MEMORY")
     return conn
+
+
+def _mmap_bytes() -> int:
+    raw = os.environ.get("NOVA_SQLITE_MMAP_MB", "").strip()
+    try:
+        megabytes = int(raw) if raw else DEFAULT_MMAP_MB
+    except ValueError:
+        megabytes = DEFAULT_MMAP_MB
+    return max(0, megabytes) * 1024 * 1024
 
 
 def _is_initialized(conn: sqlite3.Connection) -> bool:

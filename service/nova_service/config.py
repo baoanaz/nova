@@ -177,7 +177,7 @@ EMBED_TPM_ENV = "EMBED_TPM"
 EMBED_RPM_ENV = "EMBED_RPM"
 #: 三个必填项的默认值（未配置任一 → ``answer_configured`` 为 False，``ask`` 走降级包）。
 DEFAULT_ANSWER_TIMEOUT_S = 60.0
-DEFAULT_ANSWER_MAX_TOKENS = 3072
+DEFAULT_ANSWER_MAX_TOKENS = 1536
 DEFAULT_ANSWER_TEMPERATURE = 0.2
 #: 默认懒重扫间隔（秒）：本地模式下检索前最多每 2s 扫一次（Module/05 §3.6 的 freshness 语义）。
 DEFAULT_LOCAL_RESCAN_INTERVAL_S = 2.0

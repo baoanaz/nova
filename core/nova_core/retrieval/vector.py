@@ -17,7 +17,7 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Sequence
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Protocol
 
@@ -185,8 +185,13 @@ def recall_vector(
     limit: int = 50,
     cache: QueryEmbeddingCache | None = None,
     timeout_s: float | None = None,
+    query_vector: Future[list[float]] | None = None,
 ) -> list[Candidate]:
     """向量召回：``embed_query`` → ``vector_store.search(top_k)`` → 排名候选（tier 2）。
+
+    ``query_vector``：调用方**已提前发起**的 query embedding（``Future``）。query embedding 是
+    网络往返，不依赖任何索引句柄，引擎在打开 Store/向量库**之前**就让它开跑，二者重叠；
+    这里只等结果。未给时行为与以往完全一致。
 
     超时/异常统一抛 :class:`VectorChannelError`（含超时子类），不在此降级——降级决策与
     ``degraded`` 标记由 ``recall`` 主编排负责（单一降级点，便于测试与解释）。
@@ -195,7 +200,11 @@ def recall_vector(
         return []
 
     def _run() -> list[VectorHit]:
-        vector = embed_query(provider, query, cache)
+        vector = (
+            query_vector.result()
+            if query_vector is not None
+            else embed_query(provider, query, cache)
+        )
         try:
             return list(vector_store.search(vector, top_k=limit))
         except VectorChannelError:

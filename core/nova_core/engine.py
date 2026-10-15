@@ -44,6 +44,7 @@ import subprocess
 import time
 import uuid
 from collections.abc import Iterator, Mapping
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -85,8 +86,9 @@ from nova_core.retrieval.gap import (
     plan_gaps,
 )
 from nova_core.retrieval.rerank import collect_signals, rerank
-from nova_core.retrieval.vector import QueryEmbeddingCache
+from nova_core.retrieval.vector import QueryEmbeddingCache, embed_query
 from nova_core.storage import Store
+from nova_core.storage.readcache import ReadCachedStore
 from nova_core.types import (
     AskResult,
     BlobInput,
@@ -714,8 +716,12 @@ class Engine:
         limits = DEEP_GAP_LIMITS if deep else GapLimits()
         mode = MODE_DEEP if deep else MODE_FAST
         marks = [("start", time.perf_counter())]
-        with self._open_project(project_id) as (store, vectors, provider):
+        # query embedding 是网络往返且不依赖索引句柄：先让它开跑，与下面打开 Store/向量库重叠。
+        query_vector = self._start_query_embedding(query)
+        with self._open_project(project_id) as (raw_store, vectors, provider):
             marks.append(("open", time.perf_counter()))
+            # 本次查询内的只读记忆代理（输出与不缓存逐字一致，见 storage.readcache）。
+            store = ReadCachedStore(raw_store)
             recalled = recall(
                 store,
                 query,
@@ -723,6 +729,7 @@ class Engine:
                 vector_store=vectors,
                 limits=self._limits,
                 cache=self.query_cache,
+                query_vector=query_vector,
             )
             vector_gap = _vector_index_gap(store, vectors)
             # P1-1 / P1-5：索引状态（building/failed/对账不一致）同样要体现在降级上。
@@ -1096,6 +1103,24 @@ class Engine:
         temporary.replace(path)
 
     # ------------------------------------------------------------------ 内部
+
+    def _start_query_embedding(self, query: str) -> Future[list[float]] | None:
+        """在打开索引之前就发起 query embedding；provider 不可用时返回 ``None``。
+
+        返回 ``None`` 不吞错：随后 ``_open_project`` 会按原路径取 ``self.provider`` 并如实抛出
+        同一个 ``EngineError``，向量通道降级逻辑也保持不变（失败体现在 Future 的异常里，
+        由 ``recall_vector`` 在原位置翻译成可降级的通道错误）。
+        """
+        try:
+            provider = self.provider
+        except Exception:  # noqa: BLE001 - 交给 _open_project 以原样报错
+            return None
+        self._bind_query_cache_identity(provider)
+        pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nova-qembed")
+        try:
+            return pool.submit(embed_query, provider, query, self.query_cache)
+        finally:
+            pool.shutdown(wait=False)
 
     def _budget(self, max_tokens: int, mode: str = MODE_FAST) -> BudgetConfig:
         """装填预算：调用方给的 ``max_tokens`` 优先，否则用该 mode 的默认档位。
