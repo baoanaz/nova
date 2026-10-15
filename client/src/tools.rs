@@ -277,6 +277,7 @@ impl ToolLayer {
         let single = parts.len() == 1;
         let active = parts.iter().filter(|(_, result)| result.as_ref().is_ok_and(|sync| !sync.empty)).count();
         let budget = if single { max_tokens } else { (max_tokens / active.max(1) as i64).max(512) };
+        let mut ask_error: Option<String> = None;
         if deep && active > 0 {
             let projects: Vec<_> = parts.iter().filter_map(|(_, result)| {
                 result.as_ref().ok().filter(|sync| !sync.empty)
@@ -296,7 +297,10 @@ impl ToolLayer {
                     }).collect();
                     return Ok(if gaps.is_empty() { text } else { format!("{text}\n\n{}", gaps.join("\n\n")) });
                 }
-                Err(_) => eprintln!("nova-client: unified_ask=unavailable fallback=search_only"),
+                Err(error) => {
+                    eprintln!("nova-client: unified_ask=unavailable fallback=search_only reason={error:#}");
+                    ask_error = Some(format!("{error:#}"));
+                }
             }
         }
         let started = Instant::now();
@@ -335,7 +339,10 @@ impl ToolLayer {
             return Err(ToolError::Failed(if text.is_empty() { "工作区没有可检索内容（非 Git 默认仅索引 Markdown）".into() } else { text }));
         }
         if deep {
-            return Ok(format!("统一回答不可用，降级为检索证据；未追加总结模型调用。\n\n{text}"));
+            // 不声称"未调用总结模型"：问答请求可能已在服务端完成调用（例如客户端先超时），
+            // 此处只如实说明本次返回的是检索证据以及失败原因。
+            let reason = ask_error.map(|error| format!("（原因：{error}）")).unwrap_or_default();
+            return Ok(format!("总结回答未能完成{reason}，已降级为检索证据；可稍后重试。\n\n{text}"));
         }
         Ok(text)
     }

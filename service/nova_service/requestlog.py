@@ -230,7 +230,8 @@ def lookup_all(
     if not request_id:
         return []
     matched = [
-        entry for entry in read_entries(log_path, max_files=max_files)
+        entry
+        for entry in read_entries(log_path, max_files=max_files, request_id=request_id)
         if entry.request_id == request_id
     ]
     if not matched:
@@ -246,7 +247,9 @@ def lookup_all(
     return matched[: max(1, int(limit))]
 
 
-def read_entries(path: str | Path, *, max_files: int = 32) -> list[RequestLogEntry]:
+def read_entries(
+    path: str | Path, *, max_files: int = 32, request_id: str | None = None
+) -> list[RequestLogEntry]:
     """读日志家族并返回**按时间倒序**的条目（新的在前；无法解析的行直接跳过）。
 
     ``max_files`` 是允许读取的最大轮转编号；只接受 ``.1`` 到 ``.max_files``，避免异常残留的
@@ -260,7 +263,7 @@ def read_entries(path: str | Path, *, max_files: int = 32) -> list[RequestLogEnt
     files += [candidate for candidate in backups if _backup_order(candidate) <= max_backup]
     entries: list[RequestLogEntry] = []
     for candidate in files:
-        entries.extend(_read_file(candidate))
+        entries.extend(_read_file(candidate, request_id))
     return entries
 
 
@@ -270,12 +273,24 @@ def _backup_order(candidate: Path) -> int:
     return int(suffix) if suffix.isdigit() else 1 << 30
 
 
-def _read_file(path: Path) -> list[RequestLogEntry]:
+def _read_file(path: Path, request_id: str | None = None) -> list[RequestLogEntry]:
+    """流式逐行读取：内存只与**命中条数**相关，而不是与日志文件大小相关。
+
+    ``request_id`` 给定时先做子串预过滤再 JSON 解析——按 trace id 查询时日志窗口最大可达
+    数十 MiB（单文件 8 MiB × 轮转份数），整文件读入再解析会让一次 404 探测也吃掉数十 MiB 内存。
+    """
+    entries: list[RequestLogEntry] = []
     try:
-        text = path.read_text(encoding="utf-8", errors="replace")
+        with path.open(encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                if request_id is not None and request_id not in line:
+                    continue
+                entry = _parse_line(line)
+                if entry is not None:
+                    entries.append(entry)
     except OSError:  # 权限/竞态：当作空文件（查不到就是查不到，不 500）
-        return []
-    return [entry for entry in (_parse_line(line) for line in text.splitlines()) if entry]
+        return entries
+    return entries
 
 
 def _parse_line(line: str) -> RequestLogEntry | None:

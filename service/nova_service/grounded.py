@@ -78,16 +78,18 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _list(obj: dict[str, Any], name: str, limit: int) -> list[Any]:
+    """取列表字段。**超出上限就截断**、类型不对就当空：这些只是模型输出的形状偏差，
+    不影响"每条结论都有真实引用"这条真正的安全线；整段丢弃会让用户拿不到本可用的答案。"""
     value = obj.get(name, [])
-    if not isinstance(value, list) or len(value) > limit:
-        raise ValueError("invalid structured answer list")
-    return value
+    return value[:limit] if isinstance(value, list) else []
 
 
-def _text(value: Any, limit: int) -> str:
-    if not isinstance(value, str) or not value.strip() or len(value) > limit:
-        raise ValueError("invalid structured answer text")
-    return value.strip()
+def _text(value: Any, limit: int) -> str | None:
+    """取文本：非字符串/空白 → ``None``（调用方跳过该条）；过长 → 截断。"""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
 def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
@@ -110,8 +112,8 @@ def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
         if not explicit:
             return None
         raise ValueError("invalid structured JSON") from exc
-    if not isinstance(obj, dict) or "claims" not in obj:
-        raise ValueError("missing claims")
+    if not isinstance(obj, dict) or not isinstance(obj.get("claims"), list):
+        raise ValueError("missing claims")  # 核心字段缺失/类型错：无从构造答案，才整体降级
     items = {e.id: e for e in (*pack.evidence, *pack.docs)}
     flows = {f.id: f for f in pack.flows}
     known = set(items) | set(flows)
@@ -120,11 +122,13 @@ def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
     rejected = invalid = 0
     for claim in _list(obj, "claims", 8):
         if not isinstance(claim, dict):
-            raise ValueError("invalid claim")
+            rejected += 1
+            continue
         body = _text(claim.get("text"), 800)
         refs = _list(claim, "references", 8)
-        if any(not isinstance(ref, str) for ref in refs):
-            raise ValueError("invalid reference type")
+        if body is None or any(not isinstance(ref, str) for ref in refs):
+            rejected += 1
+            continue
         bad = [ref for ref in refs if ref not in known]
         embedded = _CITATION.findall(body)
         if not refs or bad or any(ref not in refs for ref in embedded):
@@ -133,7 +137,7 @@ def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
             continue
         kind = claim.get("kind", "fact")
         if kind not in ("fact", "inference"):
-            raise ValueError("invalid claim kind")
+            kind = "inference"  # 未知类别按更保守的"推断"呈现，不丢弃有引用的结论
         body = _CITATION.sub("", body).strip()
         prefix = "Inference: " if kind == "inference" else ""
         claims.append(f"- {prefix}{body} " + " ".join(f"[{r}]" for r in dict.fromkeys(refs)))
@@ -142,19 +146,22 @@ def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
         r for r in cited if r in items
     ))[:3]
     selected_flows = _list(obj, "flow_ids", 2)
-    if any(not isinstance(ref, str) for ref in (*selected, *selected_flows)):
-        raise ValueError("invalid selection type")
     # 不能靠选择一个真实证据来给无效/被拒绝的结论制造引用。
-    selected = list(dict.fromkeys(r for r in selected if r in items and r in cited))
-    selected_flows = list(dict.fromkeys(r for r in selected_flows if r in flows and r in cited))
-    gaps = [_text(gap, 400) for gap in _list(obj, "gaps", 6)]
+    selected = list(dict.fromkeys(
+        r for r in selected if isinstance(r, str) and r in items and r in cited
+    ))
+    selected_flows = list(dict.fromkeys(
+        r for r in selected_flows if isinstance(r, str) and r in flows and r in cited
+    ))
+    gaps = [text for text in (_text(gap, 400) for gap in _list(obj, "gaps", 6)) if text]
     if rejected:
         gaps.append(f"证据不足：移除 {rejected} 条缺少或包含无效引用的结论。")
     snippets: dict[str, list[str]] = {}
     bad_ranges = 0
     for source_range in _list(obj, "source_ranges", 3):
         if not isinstance(source_range, dict):
-            raise ValueError("invalid source range")
+            bad_ranges += 1
+            continue
         ref, a, b = (source_range.get(k) for k in ("id", "start", "end"))
         if (not isinstance(ref, str) or ref not in selected
                 or type(a) is not int or type(b) is not int or a < 1 or not 0 <= b-a < 8):

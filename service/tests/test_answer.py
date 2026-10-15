@@ -825,6 +825,30 @@ def test_provider_respects_retry_after_with_cap() -> None:
     assert slept and max(slept) <= answer_module.MAX_RETRY_AFTER
 
 
+def test_provider_total_budget_stops_retries(monkeypatch: pytest.MonkeyPatch) -> None:
+    """重试与退避共用一个总预算 ``timeout_s``：预算耗尽后不再发起新的尝试。"""
+    attempts: list[int] = []
+    clock = [1000.0]
+    monkeypatch.setattr(answer_module.time, "monotonic", lambda: clock[0])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        clock[0] += 40.0  # 每次尝试耗时 40s；总预算 60s
+        return httpx.Response(503, text="overloaded")
+
+    provider = HttpAnswerProvider(
+        base_url=FAKE_BASE_URL,
+        api_key=FAKE_SK_KEY,
+        model="m",
+        timeout_s=60.0,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _: None,
+    )
+    with pytest.raises(AnswerUnavailableError):
+        provider.complete(system="s", user="u", max_tokens=8, temperature=0.0)
+    assert len(attempts) == 2, "第 2 次后预算已耗尽（80s > 60s），不再有第 3 次"
+
+
 def test_provider_for_app_caches_by_settings_identity(
     ask_env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:

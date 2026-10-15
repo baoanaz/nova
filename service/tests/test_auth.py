@@ -323,6 +323,56 @@ def test_healthz_reports_required_when_remote(cloud) -> None:
     assert cloud.client.get("/healthz").json()["auth"] == "required"
 
 
+def test_healthz_hides_details_from_anonymous_and_ordinary_users(
+    cloud, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """云端 ``/healthz`` 匿名/普通用户只得存活信息：无数据目录、无他人项目，``deep`` 不触发探测。
+
+    backlog A2：此前匿名即可枚举全站 projectId，且 ``?deep=1`` 会让服务发一次真实 embedding 请求。
+    """
+    from nova_service.routers import ops
+
+    probes: list[int] = []
+    monkeypatch.setattr(
+        ops, "_probe_embedding_provider", lambda: probes.append(1) or {"ok": True}
+    )
+    # 先造一个项目，保证"泄露"若存在是看得见的。
+    cloud.client.post("/api/auth/bootstrap", json={"name": "root", "password": PASSWORD})
+    cloud.client.post("/api/projects/resolve", json={"identityKey": "healthz-probe"})
+    cloud.client.cookies.clear()
+
+    anonymous = cloud.client.get("/healthz?deep=1")
+    assert anonymous.status_code == 200
+    body = anonymous.json()
+    assert body["status"] == "ok" and body["auth"] == "required"
+    assert "dataRoot" not in body and "projects" not in body
+    assert body["core"] == {"importable": True}
+    assert probes == [], "匿名 deep 探测不得触发 embedding 请求"
+
+    # 普通用户同样看不到（用邀请码注册一个非管理员）。
+    registered = cloud.client.post(
+        "/api/auth/register",
+        json={"name": "plain", "password": PASSWORD, "inviteCode": _invite(cloud)},
+    )
+    assert registered.status_code == 201
+    ordinary = cloud.client.get("/healthz?deep=1").json()
+    assert "dataRoot" not in ordinary and "projects" not in ordinary
+    assert probes == []
+
+
+def test_healthz_shows_details_to_admin(cloud, monkeypatch: pytest.MonkeyPatch) -> None:
+    """管理员（带凭据）仍能拿到完整的 ``/healthz``，含 ``deep`` 探测结果。"""
+    from nova_service.routers import ops
+
+    monkeypatch.setattr(ops, "_probe_embedding_provider", lambda: {"ok": True, "dim": 8})
+    cloud.client.post("/api/auth/bootstrap", json={"name": "root", "password": PASSWORD})
+    resolved = cloud.client.post("/api/projects/resolve", json={"identityKey": "healthz-admin"})
+    body = cloud.client.get("/healthz?deep=1").json()
+    assert body["dataRoot"] == str(cloud.settings.data_root)
+    assert [item["projectId"] for item in body["projects"]] == [resolved.json()["projectId"]]
+    assert body["core"]["dim"] == 8
+
+
 def test_public_paths_do_not_require_credentials(cloud) -> None:
     """免鉴权路径清单：探活、部署形态、注册/初始化可达（**返回业务码而非被中间件拦下**）。
 

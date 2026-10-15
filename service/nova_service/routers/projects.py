@@ -26,7 +26,12 @@ from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from nova_service.deps import get_engine_manager, get_settings, require_project_id
+from nova_service.deps import (
+    get_engine_manager,
+    get_settings,
+    require_project_id,
+    user_scoped_identity_key,
+)
 from nova_service.errors import ApiError
 from nova_service.indexer import LocalRootError
 from nova_service.metadb import MetaDB
@@ -93,6 +98,14 @@ def resolve_project(payload: ResolveRequest, request: Request) -> dict[str, Any]
         )
         identity_key = hashlib.sha256(material.encode("utf-8")).hexdigest()
     manager = get_engine_manager(request)
+    if payload.clientScope is None:
+        account = getattr(getattr(request.state, "nova_user", None), "id", None)
+        if account is not None:
+            # 云端账户：同一仓库的不同用户各有独立项目（见 ``user_scoped_identity_key``）。
+            db = getattr(request.app.state, "meta_db", None)
+            identity_key = user_scoped_identity_key(
+                manager, db if isinstance(db, MetaDB) else None, str(account), identity_key
+            )
     handle = manager.resolve_project(identity_key, payload.displayName.strip())
     _claim_project(request, handle.project_id, payload.displayName.strip())
     result = {"projectId": handle.project_id, "created": handle.created}
@@ -193,11 +206,12 @@ def list_projects(request: Request) -> list[dict[str, Any]]:
     TASK-061 §C：**只返回当前用户的项目**（不是 ``EngineManager.list_projects()`` 的全量）。
     本地模式（无 ``nova_user``，R34）保持全量口径。
     """
-    listed = get_engine_manager(request).list_projects()
+    manager = get_engine_manager(request)
     owned = _owned_ids(request)
     if owned is None:
-        return listed
-    return [item for item in listed if str(item["projectId"]) in owned]
+        return manager.list_projects()
+    # 只描述该用户的项目：全量列出再过滤会为别的租户的每个项目做一次磁盘求和。
+    return manager.list_projects(only=owned)
 
 
 def _owned_ids(request: Request) -> set[str] | None:

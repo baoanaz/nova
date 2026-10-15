@@ -289,11 +289,11 @@ def visible_project_ids(
     为什么复用同一口径而不是各写一份：用量统计若把别人的项目算进来，告警数字就是假的
     （DoD 的"多用户隔离：A 的用量不计入 B 的额度"正是钉这一点）。
     """
-    all_ids = [str(item["projectId"]) for item in manager.list_projects()]
     if db is None or user_id is None:
-        return all_ids
-    owned = set(db.list_projects(user_id))
-    return [project_id for project_id in all_ids if project_id in owned]
+        return list(manager.project_ids())
+    # 只取该用户的归属集合再逐个确认目录在——**不要**先列全站再过滤：全量枚举（含逐项目磁盘求和）
+    # 的代价随全站项目数增长，而与发起查询的用户无关（实测 40 个项目时每次检索 +300 ms）。
+    return [pid for pid in db.list_projects(user_id) if manager.project_exists(pid)]
 
 
 def check_quota(

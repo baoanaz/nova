@@ -1215,6 +1215,13 @@ class MetaDB:
             )
         return True, user_id
 
+    def project_owner(self, project_id: str) -> str | None:
+        """项目的归属者 user_id；未登记归属 → ``None``。"""
+        row = self._connect().execute(
+            "SELECT user_id FROM projects WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        return None if row is None else str(row["user_id"])
+
     def owns_project(self, user_id: str, project_id: str) -> bool:
         row = self._connect().execute(
             "SELECT 1 FROM projects WHERE project_id = ? AND user_id = ?", (project_id, user_id)

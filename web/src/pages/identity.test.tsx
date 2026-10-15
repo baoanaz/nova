@@ -237,12 +237,11 @@ describe("控制台账户卡（账户页已合并进来；TASK-110）", () => {
     expect(await screen.findByRole("heading", { name: "账户资料" })).toBeInTheDocument();
     expect(screen.getByText("#012")).toBeInTheDocument();
     expect(screen.getByTestId("title-badge")).toHaveTextContent("拓荒者 #027");
-    // 特权与额度也在同一张卡里（用户要求"合并进控制台"）。
-    expect(screen.getByText(/可用（拓荒者特权）/)).toBeInTheDocument();
+    // 额度也在同一张卡里（用户要求"合并进控制台"）。仪表盘简化后不再渲染"特权"文案行。
     expect(screen.getByText("1.00 GiB")).toBeInTheDocument();
   });
 
-  it("公测用户显示 旅人 与 拓荒者专属", async () => {
+  it("公测用户显示 旅人 与公测额度", async () => {
     stubRoutes({
       "/api/auth/me": PUBLIC_ACCOUNT,
       "/api/account/overview": OVERVIEW,
@@ -252,7 +251,6 @@ describe("控制台账户卡（账户页已合并进来；TASK-110）", () => {
 
     await screen.findByRole("heading", { name: "账户资料" });
     expect(screen.getByTestId("title-badge")).toHaveTextContent("旅人");
-    expect(screen.getByText("拓荒者专属")).toBeInTheDocument();
     expect(screen.getByText("500.0 MiB")).toBeInTheDocument();
   });
 });

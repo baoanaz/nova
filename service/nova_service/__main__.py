@@ -104,6 +104,11 @@ def build_parser() -> argparse.ArgumentParser:
                 action="store_true",
                 help="只绑定不起后台索引（调试用；之后可 POST /api/projects/{id}/rescan）",
             )
+            sub.add_argument(
+                "--allow-remote",
+                action="store_true",
+                help="允许 local 模式监听非回环地址（无鉴权，仅在可信网络内使用）",
+            )
     return parser
 
 
@@ -190,6 +195,14 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
     from nova_service.metadb import MetaDB
     from nova_service.runtime import EngineManager
 
+    if not _is_loopback(settings.host) and not args.allow_remote:
+        print(
+            f"[错误] local 模式没有账户与鉴权，且可通过 attach 索引服务器上的任意目录；"
+            f"拒绝监听非回环地址 {settings.host}。需要对外服务请改用 `serve`"
+            "（完整账户与鉴权），或明确知晓风险后加 --allow-remote。",
+            file=sys.stderr,
+        )
+        return 2
     settings = replace(settings, local_mode=True)
     app = create_app(settings)
     if args.reload:  # reload 需 import string：绑仓库/索引无法在 reload 子进程里保留
@@ -221,6 +234,18 @@ def _run_local(args: argparse.Namespace, _base: Settings, settings: Settings) ->
         access_log=False,
     )
     return 0
+
+
+def _is_loopback(host: str) -> bool:
+    """``host`` 是否只会被本机访问（``localhost`` / ``127.0.0.0/8`` / ``::1``）。"""
+    import ipaddress
+
+    if host.strip().lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip().strip("[]")).is_loopback
+    except ValueError:
+        return False
 
 
 def _print_ready(settings: Settings, attached: AttachResult, *, indexed: bool) -> None:

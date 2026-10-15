@@ -114,3 +114,58 @@ def test_structured_call_keeps_code_literal_and_legacy_markdown_still_works():
     answer = answer_question(provider=legacy, settings=Settings(), pack=pack(), question="q")
     assert answer.answer == "## Answer\n保留 Markdown [E1]"
     assert len(legacy.calls) == 1
+
+
+def _pack_with_ids(count: int = 5):
+    """一个带 ``count`` 条真实证据的包（E1..En），用于容忍度测试。"""
+    from nova_core.types import Budget, ContextPack, EvidenceItem, Freshness
+
+    items = [
+        EvidenceItem(
+            id=f"E{index}", type="code", path=f"src/m{index}.py", content=f"1 | x{index} = 1",
+            score=1.0, evidence_tier=1, reason="exact", lines=(1, 1),
+        )
+        for index in range(1, count + 1)
+    ]
+    return ContextPack(
+        "q", "deep", True, "medium", Freshness(), evidence=items, budget=Budget(0, 1, False, 0)
+    )
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda o: o.update(evidence_ids=["E1", "E2", "E3", "E4"]),
+        lambda o: o.update(claims=[o["claims"][0]] * 9),
+        lambda o: o["claims"][0].update(kind="opinion"),
+        lambda o: o.update(gaps=["g"] * 7),
+        lambda o: o["claims"][0].update(text="x" * 900),
+        lambda o: o.update(flow_ids=["F1", "F2", "F3"]),
+        lambda o: o.update(source_ranges="nope"),
+        lambda o: o.update(gaps=[1, None, "ok"]),
+    ],
+    ids=["evidence>3", "claims>8", "kind", "gaps>6", "text>800", "flows>2",
+         "ranges-type", "gaps-type"],
+)
+def test_shape_deviations_are_tolerated_not_fatal(mutate) -> None:
+    """模型输出的**形状偏差**（超上限、类型/类别不对）只截断/降级，不丢弃整份有引用的答案。"""
+    obj = {
+        "claims": [{"text": "结论", "references": ["E1"], "kind": "fact"}],
+        "evidence_ids": ["E1"], "flow_ids": [], "source_ranges": [], "gaps": [],
+    }
+    mutate(obj)
+    result = render_grounded(json.dumps(obj, ensure_ascii=False), _pack_with_ids())
+    assert result is not None and "[E1]" in result.answer
+
+
+def test_invalid_references_are_still_rejected_per_claim() -> None:
+    """真正的安全线不放松：引用了不存在的证据 id 的结论被移除，其余结论保留。"""
+    obj = {
+        "claims": [
+            {"text": "有据", "references": ["E1"]},
+            {"text": "幻觉", "references": ["E99"]},
+        ],
+    }
+    result = render_grounded(json.dumps(obj), _pack_with_ids())
+    assert "有据" in result.answer and "幻觉" not in result.answer
+    assert result.invalid_references == 1

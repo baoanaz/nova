@@ -78,6 +78,7 @@ from nova_service.logging import get_logger, redact_text
 from nova_service.metadb import MetaDB
 from nova_service.packmeta import evidence_summary, pack_meta
 from nova_service.quota import append_warning, warning_for
+from nova_service.ratelimit import enforce_ask_rate
 from nova_service.runtime import EngineManager
 from nova_service.workspace import combine_evidence
 
@@ -115,7 +116,7 @@ DEGRADED_NOTICE = (
 )
 #: 已配置但调用失败（超时/网络/5xx/密钥无效/响应形状不对）时的前置说明（Module/04 §6）。
 LLM_FAILED_NOTICE = (
-    "总结模型暂时不可用（已重试）；以下为检索与组装结果（含 Missing Evidence），"
+    "总结模型暂时不可用或返回了无法使用的结果；以下为检索与组装结果（含 Missing Evidence），"
     "可直接作为上下文使用。"
 )
 
@@ -209,10 +210,13 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
     """
     manager = get_engine_manager(request)
     with _audited(request, mode=audit.MODE_ASK, query=payload.question) as ctx:
-        project_id = require_project_id(request, payload.projectId)
+        # 本 handler 是 ``async def``：凡是碰 SQLite/磁盘的步骤（归属校验、索引非空判定、存储告警、
+        # provider 解析）都放进线程池，否则一次慢磁盘就会卡住整个事件循环上的全部用户。
+        project_id = await run_in_threadpool(require_project_id, request, payload.projectId)
         ctx["projectId"] = project_id
         question = _require_query(payload.question, field="question", code="invalid_question")
-        _require_index(manager, project_id)
+        _enforce_ask_rate(request)
+        await run_in_threadpool(_require_index, manager, project_id)
 
         with _timed() as elapsed:
             ctx["elapsed"] = elapsed
@@ -241,7 +245,7 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
         ctx["confidence"] = pack.confidence
         # TASK-094 §B3：四条分支（证据不足 / 未配置 / 调用失败 / 成功）都带告警——
         # 用户报"内存满了"时不该因为恰好走了降级分支而看不到提醒。
-        warning = _storage_warning(request, manager, project_id)
+        warning = await run_in_threadpool(_storage_warning, request, manager, project_id)
         # D-24 优先：证据不足时**不调 LLM**（省一次调用，也避免模型在弱证据上硬编）。
         # 审计如实记 degraded=true（本路径不含 LLM 总结）。
         if insufficient:
@@ -251,7 +255,7 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
             ctx["answerStatus"] = audit.STATUS_INSUFFICIENT
             return _insufficient_package(pack, meta, warning=warning)
 
-        provider = _ask_provider(request)
+        provider = await run_in_threadpool(_ask_provider, request)
         if provider is None:
             # L5：未配置不报错（也不是 500）——降级包 + 告诉管理员该配什么。
             ctx["degraded"] = True
@@ -317,6 +321,7 @@ async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[
     projects = list(dict.fromkeys(payload.projectIds))
     manager = get_engine_manager(request)
     with _audited(request, mode=audit.MODE_ASK, query=question) as ctx:
+        _enforce_ask_rate(request)
         authorized, gaps = [], []
         for index, project in enumerate(projects, 1):
             label = f"P{index}"
@@ -324,7 +329,7 @@ async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[
                 gaps.append(f"{label}: 项目不可用")
                 continue
             try:
-                require_project_id(request, project)
+                await run_in_threadpool(require_project_id, request, project)
             except ApiError:
                 gaps.append(f"{label}: 项目不可用（不存在或无权限）")
             else:
@@ -357,7 +362,7 @@ async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[
         if not pack.answerable:
             ctx["answerStatus"] = audit.STATUS_INSUFFICIENT
             return _insufficient_package(pack, meta)
-        provider = _ask_provider(request)
+        provider = await run_in_threadpool(_ask_provider, request)
         if provider is None:
             ctx["answerStatus"] = audit.STATUS_DEGRADED
             return _degraded_response(pack, meta, notice=DEGRADED_NOTICE, reason=DEGRADED_NOTICE)
@@ -379,6 +384,11 @@ async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[
         coverage = "\n\n## 覆盖缺口\n" + "\n".join(gaps) if gaps else ""
         return {"status": "answered", "answer": outcome.answer + coverage,
                 "evidenceSummary": evidence_summary(pack), "meta": meta}
+
+
+def _enforce_ask_rate(request: Request) -> None:
+    """按用户限制 ``ask`` 频率（每次 ask 可能触发一次付费 LLM 调用）；本地模式不限。"""
+    enforce_ask_rate(getattr(request.app.state, "ask_limiter", None), _user_id(request))
 
 
 def _ask_provider(request: Request) -> Any:
@@ -717,8 +727,7 @@ def _require_index(manager: EngineManager, project_id: str) -> None:
     不靠"故障记忆"提前拒绝——记忆可能是陈旧的，会阻断已经恢复后的检索）。
     索引进行中（TASK-034 的后台索引）落到第三岔，其 message 带进度（D-30 诚实性）。
     """
-    status = manager.sync_status(project_id)
-    if status["chunks"] > 0:
+    if manager.chunk_count(project_id) > 0:
         return
 
     ok, reason = manager.provider_health()

@@ -25,11 +25,46 @@ impl FilePolicy {
     }
 
     pub(crate) fn check_limits(self, walked: usize, files: usize, bytes: u64) -> Result<()> {
-        if self == Self::Markdown && (walked > 10_000 || files > 500 || bytes > 16 * 1024 * 1024) {
-            bail!("非 Git Markdown 扫描超出安全上限（遍历 10000 项 / 500 文件 / 16 MiB），请指定更小的 project_root");
+        if self != Self::Markdown {
+            return Ok(());
+        }
+        let limits = ScanLimits::get();
+        if walked > limits.visited || files > limits.files || bytes > limits.bytes {
+            bail!(
+                "非 Git Markdown 扫描超出安全上限（遍历 {} 项 / {} 文件 / {} MiB）：请指定更小的 project_root，\
+                 或用 NOVA_MARKDOWN_MAX_VISITED / NOVA_MARKDOWN_MAX_FILES / NOVA_MARKDOWN_MAX_MB 调高",
+                limits.visited, limits.files, limits.bytes / (1024 * 1024)
+            );
         }
         Ok(())
     }
+}
+
+/// 非 Git Markdown 扫描的安全上限。
+///
+/// 超限**整体报错**而不是截断：遍历顺序不保证稳定，按"前 N 个"截断会让每次同步选中的文件集合
+/// 不同，进而对服务端产生反复的新增/删除。因此默认值取宽（足以覆盖常见文档库），并允许用环境变量调整。
+pub(crate) struct ScanLimits {
+    pub visited: usize,
+    pub files: usize,
+    pub bytes: u64,
+}
+
+impl ScanLimits {
+    pub(crate) fn get() -> &'static Self {
+        static LIMITS: std::sync::OnceLock<ScanLimits> = std::sync::OnceLock::new();
+        LIMITS.get_or_init(|| Self {
+            visited: env_limit("NOVA_MARKDOWN_MAX_VISITED", 50_000),
+            files: env_limit("NOVA_MARKDOWN_MAX_FILES", 2_000),
+            bytes: env_limit("NOVA_MARKDOWN_MAX_MB", 64) as u64 * 1024 * 1024,
+        })
+    }
+}
+
+/// 读取正整数环境变量；缺失/非法/为 0 → 默认值。
+pub(crate) fn env_limit(name: &str, default: usize) -> usize {
+    std::env::var(name).ok().and_then(|value| value.trim().parse::<usize>().ok())
+        .filter(|value| *value > 0).unwrap_or(default)
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -196,9 +231,13 @@ mod tests {
         assert_eq!(policy.files, FilePolicy::Markdown);
         for path in ["x.md", "notes.MARKDOWN", "AGENTS.md"] { assert!(policy.files.accepts(path)); }
         for path in ["x.py", "x.mdx", "secret.txt", "token.env", "README"] { assert!(!policy.files.accepts(path)); }
-        assert!(policy.files.check_limits(10, 501, 1).is_err());
-        assert!(policy.files.check_limits(10_001, 1, 1).is_err());
-        assert!(policy.files.check_limits(10, 1, 17 * 1024 * 1024).is_err());
+        assert!(policy.files.check_limits(10, 500, 1).is_ok(), "旧上限 500 文件现在放行");
+        assert!(policy.files.check_limits(10, 2_001, 1).is_err());
+        assert!(policy.files.check_limits(50_001, 1, 1).is_err());
+        assert!(policy.files.check_limits(10, 1, 65 * 1024 * 1024).is_err());
+        let error = policy.files.check_limits(10, 2_001, 1).unwrap_err().to_string();
+        assert!(error.contains("NOVA_MARKDOWN_MAX_FILES"), "报错要说明如何调整：{error}");
+        assert!(FilePolicy::Full.check_limits(usize::MAX, usize::MAX, u64::MAX).is_ok());
     }
 
     #[test]

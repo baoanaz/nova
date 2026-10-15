@@ -25,6 +25,7 @@ answerable=False → confidence 一律 low（不用中等把握掩盖不可回�
 from __future__ import annotations
 
 from nova_core.contextpack import BudgetConfig, assemble
+from nova_core.contextpack.assembly import collect_index_signals
 from nova_core.types import SpecBlockDef
 
 NOISE_PATH = "docs/记忆系统调研.md"
@@ -180,3 +181,53 @@ def test_corroborated_top_candidate_is_answerable_even_in_tied_pool(store, seed_
     pack = assemble(store, "令牌过期后在哪里刷新", candidates, config=CONFIG)
 
     assert pack.answerable is True
+
+
+def test_docs_only_index_is_exempt_from_code_structure_requirement(
+    store, seed_file, cand
+) -> None:
+    """纯文档索引（非 Git 目录默认只索引 Markdown）：没有任何代码切片可供"共识含代码结构"。
+
+    跨文件真共识仍然成立 → 可答；否则这类工作区的 ``ask`` 恒返回证据不足。
+    """
+    docs = (("docs/a.md", "部署 > 步骤", 10), ("docs/b.md", "部署 > 变量", 20))
+    for path, heading, start in docs:
+        seed_file(
+            store, path=path, language="markdown", spec_blocks=[_spec(path, heading, start=start)]
+        )
+    candidates = [
+        cand("docs/a.md", "部署 > 步骤", 10, score=4.08, kind="spec",
+             channels={"bm25": 1, "vector": 1}),
+        cand("docs/b.md", "部署 > 变量", 20, score=4.00, kind="spec",
+             channels={"bm25": 2, "vector": 2}),
+    ]
+
+    signals = collect_index_signals(store, candidates)  # 引擎路径就是这样把索引侧信号交给组装器的
+    assert signals.has_code is False
+    pack = assemble(store, "怎么部署？", candidates, config=CONFIG, signals=signals)
+
+    assert pack.answerable is True
+
+
+def test_code_index_still_requires_structured_code_in_consensus(
+    store, seed_file, sym, cand
+) -> None:
+    """索引里**有**代码时，TASK-106 的约束不放松：纯文档共识（README/配置样板）仍不可答。"""
+    seed_file(store, path="src/unrelated.py", symbols=[sym("f", "f")])
+    docs = (("docs/a.md", "部署 > 步骤", 10), ("docs/b.md", "部署 > 变量", 20))
+    for path, heading, start in docs:
+        seed_file(
+            store, path=path, language="markdown", spec_blocks=[_spec(path, heading, start=start)]
+        )
+    candidates = [
+        cand("docs/a.md", "部署 > 步骤", 10, score=4.08, kind="spec",
+             channels={"bm25": 1, "vector": 1}),
+        cand("docs/b.md", "部署 > 变量", 20, score=4.00, kind="spec",
+             channels={"bm25": 2, "vector": 2}),
+    ]
+
+    signals = collect_index_signals(store, candidates)
+    assert signals.has_code is True
+    pack = assemble(store, "Qdrant 实现在哪？", candidates, config=CONFIG, signals=signals)
+
+    assert pack.answerable is False

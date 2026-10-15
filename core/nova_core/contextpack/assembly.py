@@ -417,6 +417,9 @@ class IndexSignals:
     stale_doc_refs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     unresolved_count: int = 0
     unresolved_symbols: tuple[str, ...] = ()
+    #: 索引里是否有结构化代码切片。默认 ``True``（手工构造信号的调用方行为不变）；
+    #: 纯文档索引为 ``False``，此时可答性判定不再要求命中含代码结构（否则永远不可答）。
+    has_code: bool = True
 
 
 #: 可作为"符号名"的标识符形态；unresolved 的 reference_name 常是表达式
@@ -448,6 +451,7 @@ def collect_index_signals(store: Store, candidates: Sequence[Candidate]) -> Inde
         stale_doc_refs=stale,
         unresolved_count=len(unresolved),
         unresolved_symbols=tuple(symbols),
+        has_code=store.has_code_chunks(),
     )
 
 
@@ -1085,7 +1089,8 @@ def assemble(
         ),
     )
     pack.answerable, pack.confidence = _assess(
-        pool, evidence, docs, structural_result=structural_result, graph_boundary=graph_boundary
+        pool, evidence, docs, structural_result=structural_result, graph_boundary=graph_boundary,
+        has_code=index_signals.has_code,
     )
     pack.missing_evidence = _missing_evidence(
         pack,
@@ -1390,6 +1395,7 @@ def _assess(
     *,
     structural_result: bool,
     graph_boundary: bool,
+    has_code: bool = True,
 ) -> tuple[bool, str]:
     """answerable / confidence 确定性判定（Module/03 §4.4 + R22/TASK-022 收紧）。
 
@@ -1401,6 +1407,9 @@ def _assess(
       ② 共识候选覆盖 ≥2 个不同文件，且共识最高分 ≥ `CONSENSUS_SCORE_RATIO` × 候选池分数中位数
       （存在显著强于池中位的共识）——堵住"文档密集仓库里文档天然双通道命中"；
     - `answerable=False` 时 `confidence` 一律 `low`（不用中等把握掩盖不可回答）。
+    - **纯文档索引豁免**（``has_code=False``）：索引里根本没有代码切片时（非 Git 目录默认只索引
+      Markdown），"共识必须含代码结构"永远不可能满足，等于该类工作区的 ``ask`` 恒不可答。
+      此时只保留跨文件共识等其余条件，不再要求结构化代码。
     - **共识必须含可读代码结构**（TASK-106）：双通道共识本身仍可能全部落在文档或
       文件前导段上。真实反例：问"仓库里 Qdrant 向量库的实现在哪"（该能力**不存在**），
       README 与 ``.env.example`` 同时被 BM25/Vector 命中 → 旧规则判可答。现在要求共识
@@ -1416,7 +1425,7 @@ def _assess(
         or (median > 0.0 and _consensus_peak(pool) >= CONSENSUS_SCORE_RATIO * median)
     )
     answerable = explicit_hits >= 1 or inferred_hits >= 1 or structural_result or corroborated
-    if answerable and not structural_result and not _has_structured_code(pool):
+    if has_code and answerable and not structural_result and not _has_structured_code(pool):
         # 旧规则的全部依据都是“文本相似”，没有任何可读代码结构时不足以支撑回答
         # （文档 + import 前导段也会双通道共识）。显式符号命中仍视为强依据。
         answerable = explicit_hits >= 1 or inferred_hits >= 1 or structural_result

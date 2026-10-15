@@ -450,7 +450,10 @@ def test_ask_project_short_circuits_when_evidence_insufficient(
 def test_blocking_core_call_runs_in_threadpool(
     mcp_env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """core 调用必须经线程池（``run_in_threadpool``），不得在事件循环里直接跑（卡内纪律）。"""
+    """core 调用必须经线程池（``run_in_threadpool``），不得在事件循环里直接跑（卡内纪律）。
+
+    身份解析（起 git 子进程 + 读 SQLite）与索引非空判定（开项目库）同样会阻塞，也必须在线程池里。
+    """
     threaded: list[str] = []
     real = mcp_module.run_in_threadpool
 
@@ -460,7 +463,7 @@ def test_blocking_core_call_runs_in_threadpool(
 
     monkeypatch.setattr(mcp_module, "run_in_threadpool", spy)
     _search(mcp_env, TARGET_SYMBOL)
-    assert threaded == ["_search_text"]
+    assert threaded == ["_project_id_for", "_require_index", "_search_text"]
 
 
 def test_rescan_hook_is_used_when_interval_enabled(

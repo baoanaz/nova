@@ -355,7 +355,8 @@ def list_projects(
     manager = get_engine_manager(request)
     owners = _project_owners(db)
     payload: list[dict[str, Any]] = []
-    for item in manager.list_projects():
+    only = db.list_projects(userId) if userId is not None else None
+    for item in manager.list_projects(only=only):
         project_id = str(item["projectId"])
         owner_id = owners.get(project_id)
         if userId is not None and owner_id != userId:
@@ -446,12 +447,10 @@ def stats(
     db = _db(request)
     manager = get_engine_manager(request)
     window = max(1, min(int(days), 3650))
-    all_listed = manager.list_projects()
     if userId is None:
-        listed = all_listed
+        listed = manager.list_projects()
     else:
-        owned = set(db.list_projects(userId))
-        listed = [item for item in all_listed if str(item["projectId"]) in owned]
+        listed = manager.list_projects(only=db.list_projects(userId))
     project_ids = [str(item["projectId"]) for item in listed]
     overview = account_overview(
         user_name="(all)",

@@ -192,6 +192,9 @@ tools/call search_context → isError=True
 - **鉴权是全局不变量**：逐个路由挂 `Depends` 靠人工维护，漏一个就是越权面
   （TASK-051 A1 的 `auth: enabled` 自述就曾在骗人）；
 - **免鉴权白名单**（`PUBLIC_PATHS`）：`/healthz`、`/api/meta`、`/api/auth/{login,register,bootstrap,logout}`；
+  其中匿名访问 `/healthz` 只返回存活信息，数据目录、项目进度与 `?deep=1` 探测仅管理员（带凭据）可见；
+  登录对同一 (来源 IP, 账户名) 5 分钟内失败 8 次后返回 429；`ask` 默认每用户每分钟 30 次
+  （`NOVA_ASK_RATE_PER_MIN`，0 = 不限），并发索引上限 `NOVA_MAX_CONCURRENT_INDEX`（默认 2）；
   **其余全部要求凭据**；
 - **凭据两种**：`Authorization: Bearer <API Key>`（客户端用）或 session cookie（浏览器用）；
 - **显式 local 命令完全放行**：行为与 M2a 一致（R34），普通 serve 不会进入该模式；

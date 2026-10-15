@@ -248,6 +248,8 @@ class HttpJsonProvider:
             timeout=httpx.Timeout(timeout_s, connect=connect_timeout_s)
         )
         self._owns_client = client is None
+        self._timeout_s = float(timeout_s)
+        self._connect_timeout_s = float(connect_timeout_s)
         self._max_retries = max(0, int(max_retries))
         self._backoff_base = max(0.0, float(backoff_base))
         self._sleep = sleep
@@ -282,9 +284,21 @@ class HttpJsonProvider:
             temperature=temperature,
         )
         last_error: AnswerError | None = None
+        # 整次调用（含重试与退避）共用一个总预算 ``timeout_s``：此前是"每次尝试 timeout_s × 3 次"，
+        # 最坏远超客户端的等待上限，客户端放弃后服务端仍在继续调用并计费。
+        deadline = time.monotonic() + self._timeout_s
         for attempt in range(self._max_retries + 1):
+            remaining = deadline - time.monotonic()
+            if attempt > 0 and remaining <= 0:
+                break
+            budget = max(remaining, 1.0)
             try:
-                response = self._client.post(self._endpoint, json=payload, headers=headers)
+                response = self._client.post(
+                    self._endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=httpx.Timeout(budget, connect=min(self._connect_timeout_s, budget)),
+                )
             except httpx.TimeoutException as exc:
                 detail = _redact(type(exc).__name__, self._api_key)
                 last_error = AnswerUnavailableError(
@@ -314,7 +328,8 @@ class HttpJsonProvider:
                         f"总结模型返回 HTTP {response.status_code}"
                         f"（协议 {self._protocol}）{suffix}"
                     )
-                    self._sleep_backoff(attempt, response)
+                    if not self._sleep_backoff(attempt, response, deadline):
+                        break
                     continue
                 if response.status_code >= 400:
                     raise AnswerResponseError(
@@ -322,13 +337,19 @@ class HttpJsonProvider:
                         f"（{_redact(_short(response.text), self._api_key)}）"
                     )
                 return self._extract_content(response)
-            self._sleep_backoff(attempt, None)
+            if not self._sleep_backoff(attempt, None, deadline):
+                break
         raise last_error or AnswerUnavailableError("总结模型不可用（原因未知）")
 
-    def _sleep_backoff(self, attempt: int, response: httpx.Response | None) -> None:
-        """指数退避 + ``Retry-After``（有上限；最后一次失败后不再睡）。"""
+    def _sleep_backoff(
+        self, attempt: int, response: httpx.Response | None, deadline: float
+    ) -> bool:
+        """指数退避 + ``Retry-After``（有上限；最后一次失败后不再睡）。
+
+        返回是否还应继续重试：重试次数用尽，或睡完会越过总预算 ``deadline`` 时返回 ``False``。
+        """
         if attempt >= self._max_retries:
-            return
+            return False
         delay = self._backoff_base * (2**attempt)
         if response is not None:
             retry_after = response.headers.get("retry-after")
@@ -337,8 +358,11 @@ class HttpJsonProvider:
                     delay = max(delay, min(float(retry_after), MAX_RETRY_AFTER))
                 except ValueError:
                     pass
+        if time.monotonic() + delay >= deadline:
+            return False
         if delay > 0:
             self._sleep(delay)
+        return True
 
     def _extract_content(self, response: httpx.Response) -> str:
         """按协议抽答案文本；形状不对/空白 → :class:`AnswerResponseError`。

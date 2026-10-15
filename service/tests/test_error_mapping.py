@@ -269,10 +269,10 @@ def test_storage_error_maps_to_507(
 ) -> None:
     """磁盘/权限类 ``OSError`` → 507 ``storage_error``（code 具体，不吞成通用 500）。"""
 
-    def boom(self: EngineManager, project_id: str) -> dict:
+    def boom(self: EngineManager, project_id: str) -> int:
         raise PermissionError(f"[Errno 13] Permission denied: '{project_id}/index.db'")
 
-    monkeypatch.setattr(EngineManager, "sync_status", boom)
+    monkeypatch.setattr(EngineManager, "chunk_count", boom)
     response = client.post(
         "/api/query/search", json={"projectId": project_id, "query": TARGET_SYMBOL}
     )
@@ -287,10 +287,10 @@ def test_unexpected_exception_still_500_internal_error(
 ) -> None:
     """回归：错误映射不得吞掉兜底——非依赖类异常仍是 500 ``internal_error``。"""
 
-    def boom(self: EngineManager, project_id: str) -> dict:
+    def boom(self: EngineManager, project_id: str) -> int:
         raise RuntimeError("boom-secret-detail")
 
-    monkeypatch.setattr(EngineManager, "sync_status", boom)
+    monkeypatch.setattr(EngineManager, "chunk_count", boom)
     response = client.post(
         "/api/query/search", json={"projectId": project_id, "query": TARGET_SYMBOL}
     )

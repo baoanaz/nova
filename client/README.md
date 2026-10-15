@@ -67,6 +67,11 @@ checkpoint，不需要 SessionStart Hook 或 Agent 主动调用工具。IDE 扩�
 配置：`NOVA_AUTO_WARMUP=off` 关闭初始化预热；`NOVA_NON_GIT_INDEX=full` 显式启用非 Git
 代码索引；`NOVA_WARMUP_TIMEOUT_SECS` 默认 600、`NOVA_WARMUP_READY_TTL_SECS` 默认 60。
 `NOVA_DEVICE_ID` 可覆盖设备标识；`NOVA_WORKSPACE_ISOLATION=1` 可强制隔离 Git checkout。
+非 Git Markdown 扫描的安全上限可用 `NOVA_MARKDOWN_MAX_FILES`（默认 2000）、`NOVA_MARKDOWN_MAX_MB`（64）、
+`NOVA_MARKDOWN_MAX_VISITED`（50000）调整；多项目容器发现可用 `NOVA_DISCOVERY_MAX_ITEMS`（50000）、
+`NOVA_WORKSPACE_MAX_REPOS`（32）调整。幂等请求（resolve/上传/flush/状态轮询/检索）对瞬时失败自动重试；
+`ask_project` 只在连接失败时重试，避免重复触发总结模型。
+云端账户的同一仓库在服务端按用户隔离（每人独立索引），无需 `NOVA_WORKSPACE_ISOLATION`。
 跨进程任务共享要求相同 `NOVA_CLIENT_CACHE`；文档/隔离路由要求服务端支持 `clientScope`。
 构建需 Rust 1.89+（标准库文件锁），MCP 两个工具的参数不变。
 

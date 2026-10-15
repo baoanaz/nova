@@ -32,7 +32,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TypeVar
@@ -120,6 +120,9 @@ class EngineManager:
         self._locks: dict[str, threading.RLock] = {}
         self._locks_guard = threading.Lock()
         self._deleting: set[str] = set()
+        #: 同时进行的上传路径索引（embedding 是 CPU/内存/外部 API 三重压力）。2C2G 机器上无上限并发
+        #: 只会让所有人一起变慢甚至被 OOM 杀掉；超出的任务在这里排队，不丢弃。
+        self._index_slots = threading.BoundedSemaphore(2)
         #: 最近一次 provider 故障摘要（脱敏）；成功后清空。见 provider_health。
         self._provider_error: str | None = None
         #: 本地模式（TASK-034）：projectId → 已绑定的仓库根 / 后台索引任务 / 上次重扫时刻。
@@ -132,6 +135,10 @@ class EngineManager:
         #: flush 时 ingest 直接取用。``NOVA_UPLOAD_PREFETCH=0`` 关闭；引擎已注入的不覆盖。
         if engine.prefetcher is None:
             engine.set_prefetcher(UploadPrefetcher.from_env())
+
+    def set_index_concurrency(self, limit: int) -> None:
+        """设置并发索引上限（启动时调用一次；``limit < 1`` 按 1 处理）。"""
+        self._index_slots = threading.BoundedSemaphore(max(1, int(limit)))
 
     @classmethod
     def open(
@@ -191,21 +198,37 @@ class EngineManager:
     def project_exists(self, project_id: str) -> bool:
         return self.project_meta(project_id) is not None
 
-    def list_projects(self) -> list[dict[str, Any]]:
-        """列出 ``{data_root}/projects/*/project.json`` 的摘要。
+    def project_ids(self) -> list[str]:
+        """数据根下全部项目的 id（**轻量**：只看 ``project.json`` 在不在，不解析、不遍历项目目录）。
 
-        本地模式（M2a）返回全部；M2c 才按 user 过滤。
+        配额/归属/可见性判定只需要 id，不需要 :meth:`describe_project` 的逐项目磁盘求和——
+        后者的代价随**全站项目总量**增长，而与发起请求的用户无关。
         """
         projects_root = self._data_root / "projects"
         if not projects_root.is_dir():
             return []
+        return [
+            directory.name
+            for directory in sorted(projects_root.iterdir())
+            if (directory / PROJECT_META_FILENAME).is_file()
+        ]
+
+    def list_projects(self, only: Collection[str] | None = None) -> list[dict[str, Any]]:
+        """列出 ``{data_root}/projects/*/project.json`` 的摘要。
+
+        ``only``：只描述这些 projectId（按用户过滤时传其归属集合）。**必须在这里过滤**而不是
+        取回全量再丢弃：每个摘要都含 ``diskBytes``（递归求和），全量列出的成本随全站项目数增长。
+        不存在/非法 id 静默跳过；本地模式（无账户）不传 ``only``，返回全部。
+        """
+        if only is None:
+            candidates = self.project_ids()
+        else:
+            candidates = sorted(only)
         found: list[dict[str, Any]] = []
-        for directory in sorted(projects_root.iterdir()):
-            if not directory.is_dir():
-                continue
-            meta = self.project_meta(directory.name)
+        for project_id in candidates:
+            meta = self.project_meta(project_id)
             if meta is not None:
-                found.append(self.describe_project(directory.name, meta))
+                found.append(self.describe_project(project_id, meta))
         return sorted(found, key=lambda item: (-item["createdAt"], item["projectId"]))
 
     def describe_project(
@@ -385,9 +408,10 @@ class EngineManager:
             source = self.blob_source(project_id)
             # TASK-035 §C：调 core 的公开 ``apply_changes``（不再跨包调 ``Engine._ingest``）。
             try:
-                report = self._observe_provider(
-                    lambda: self._engine.apply_changes(project_id, changes, source=source)
-                )
+                with self._index_slots:
+                    report = self._observe_provider(
+                        lambda: self._engine.apply_changes(project_id, changes, source=source)
+                    )
             except Exception as exc:
                 # 失败也要留痕（否则"失败次数"恒为 0），但**不能让记帐改变索引结果**：
                 # 原异常照旧向上抛（HTTP 层映射 503/500 的逻辑不变）。
@@ -442,6 +466,15 @@ class EngineManager:
             "blobs": {"count": blob_count, "bytes": blob_bytes},
             "checkpoints": len(state.checkpoints),
         }
+
+    def chunk_count(self, project_id: str) -> int:
+        """项目库里的 chunk 总数（查询前的"索引是否非空"判定）。
+
+        **只开一次项目库取计数**：不读同步账本、不遍历 ``blobs/``。此前每次 search/ask 都先调
+        完整的 :meth:`sync_status`（含 blob 目录递归 stat），仅为了判断 ``chunks > 0``，
+        其代价随仓库文件数线性增长。
+        """
+        return int(self._engine.sync_status(project_id).chunks)
 
     def search(
         self, project_id: str, query: str, max_tokens: int = 10_000, *, deep: bool = False

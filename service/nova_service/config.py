@@ -29,6 +29,10 @@ from nova_service.llmprotocol import normalize_protocol
 
 __all__ = [
     "ADMIN_NAME_ENV",
+    "ASK_RATE_PER_MIN_ENV",
+    "DEFAULT_ASK_RATE_PER_MIN",
+    "DEFAULT_MAX_CONCURRENT_INDEX",
+    "MAX_CONCURRENT_INDEX_ENV",
     "ANSWER_API_KEY_ENV",
     "ANSWER_BASE_URL_ENV",
     "ANSWER_MAX_TOKENS_ENV",
@@ -116,9 +120,17 @@ STORAGE_WARN_RATIO_ENV = "NOVA_STORAGE_WARN_RATIO"
 #: 首个管理员的账户名（TASK-110 §7.1：按名字指定，而不是靠“最早创建者”）。
 #:
 #: 为什么做成配置：这是**部署级**信息（谁是负责人随环境变），写死在代码里等于把某台机器的人员
-#: 情况烧进产品。默认值 ``xuwenzheng`` 是本项目当前的实际部署者（卡内 §7.1 已拍板）。
+#: 情况烧进产品。**默认为空**（不按名字提权）：此前默认值是作者本人的账户名，任何自部署者只要
+#: 没改这个配置，注册同名账户的人就会在下次启动时被提为管理员。首个管理员由 bootstrap 授予；
+#: 需要按名字提权的部署显式设置本变量。
 ADMIN_NAME_ENV = "NOVA_ADMIN_NAME"
-DEFAULT_ADMIN_NAME = "xuwenzheng"
+DEFAULT_ADMIN_NAME = ""
+#: ``ask`` 每个用户每分钟的上限（0 = 不限）。用服务端默认 LLM key 时成本由部署者承担。
+ASK_RATE_PER_MIN_ENV = "NOVA_ASK_RATE_PER_MIN"
+DEFAULT_ASK_RATE_PER_MIN = 30
+#: 同时进行的索引（embedding）任务数上限；2C2G 的机器上并发更多只会互相拖垮。
+MAX_CONCURRENT_INDEX_ENV = "NOVA_MAX_CONCURRENT_INDEX"
+DEFAULT_MAX_CONCURRENT_INDEX = 2
 #: 默认单项目上限：500 MiB。
 DEFAULT_STORAGE_LIMIT_PER_PROJECT_BYTES = 500 * 1024 * 1024
 #: 默认单用户上限：2 GiB（40G VPS 约容纳 20 个活跃用户）。
@@ -225,6 +237,8 @@ class Settings:
     embed_rpm: int | None = None
     #: 首个管理员的名字（TASK-110 §7.1）：迁移 / 启动时把它提为 ``role='admin'``。
     admin_name: str = DEFAULT_ADMIN_NAME
+    ask_rate_per_min: int = DEFAULT_ASK_RATE_PER_MIN
+    max_concurrent_index: int = DEFAULT_MAX_CONCURRENT_INDEX
     version: str = __version__
 
     @property
@@ -344,6 +358,16 @@ class Settings:
             embed_tpm=_as_optional_int(source.get(EMBED_TPM_ENV), EMBED_TPM_ENV),
             embed_rpm=_as_optional_int(source.get(EMBED_RPM_ENV), EMBED_RPM_ENV),
             admin_name=(source.get(ADMIN_NAME_ENV) or "").strip() or DEFAULT_ADMIN_NAME,
+            ask_rate_per_min=_as_non_negative_int(
+                source.get(ASK_RATE_PER_MIN_ENV),
+                ASK_RATE_PER_MIN_ENV,
+                default=DEFAULT_ASK_RATE_PER_MIN,
+            ),
+            max_concurrent_index=_as_int(
+                source.get(MAX_CONCURRENT_INDEX_ENV),
+                MAX_CONCURRENT_INDEX_ENV,
+                default=DEFAULT_MAX_CONCURRENT_INDEX,
+            ),
         )
 
 

@@ -27,10 +27,11 @@ vs ``isError``）。
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable, Iterator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from contextvars import ContextVar, Token
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from threading import Lock
 from typing import Annotated, Any, Protocol
@@ -52,10 +53,15 @@ from starlette.concurrency import run_in_threadpool
 from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from nova_service import audit
 from nova_service.answer import AnswerError, answer_question
 from nova_service.auth import local_user
 from nova_service.config import Settings
-from nova_service.deps import project_not_found_message, require_ownership_of
+from nova_service.deps import (
+    project_not_found_message,
+    require_ownership_of,
+    user_scoped_identity_key,
+)
 from nova_service.errors import (
     PROVIDER_UNAVAILABLE_HINT,
     ApiError,
@@ -66,6 +72,7 @@ from nova_service.logging import get_logger, redact_text
 from nova_service.metadb import MetaDB
 from nova_service.packmeta import pack_meta
 from nova_service.quota import append_warning, warning_for
+from nova_service.ratelimit import enforce_ask_rate
 from nova_service.routers.query import (
     ASK_MAX_TOKENS,
     DEFAULT_MAX_TOKENS,
@@ -277,8 +284,9 @@ def build_mcp(
         """
         _require_query(query)
         manager = resolve()
-        project_id = _project_id_for(manager, project_root)
-        _require_index(manager, project_id)
+        # 身份解析会起 git 子进程并读 SQLite，索引判定要开项目库：都放线程池，别堵事件循环。
+        project_id = await run_in_threadpool(_project_id_for, manager, project_root)
+        await run_in_threadpool(_require_index, manager, project_id)
         current = _load_settings()
         return await run_in_threadpool(
             _search_text, manager, current, project_id, query.strip(), max_tokens
@@ -302,9 +310,16 @@ def build_mcp(
         """
         _require_query(question, field="question")
         _require_service_max_tokens(max_tokens)
+        try:
+            enforce_ask_rate(
+                getattr(getattr(app, "state", None), "ask_limiter", None),
+                getattr(current_user(), "id", None),
+            )
+        except ApiError as exc:
+            raise ToolError(exc.message) from None
         manager = resolve()
-        project_id = _project_id_for(manager, project_root)
-        _require_index(manager, project_id)
+        project_id = await run_in_threadpool(_project_id_for, manager, project_root)
+        await run_in_threadpool(_require_index, manager, project_id)
         current = _load_settings()
         return await run_in_threadpool(
             _ask_text,
@@ -422,6 +437,7 @@ def manager_for_app(app: FastAPI) -> EngineManager:
         manager = getattr(app.state, "engine_manager", None)
         if not isinstance(manager, EngineManager):
             manager = EngineManager.open(app.state.settings.data_root)
+            manager.set_index_concurrency(app.state.settings.max_concurrent_index)
             # TASK-085：与 ``deps.get_engine_manager`` 同口径——懒构造的 manager 必须接上
             # app 级元数据库，否则 MCP 面触发的上传同样不落索引 run（统计恒为 0）。
             db = getattr(app.state, "meta_db", None)
@@ -441,8 +457,11 @@ def _search_text(
     max_tokens: int,
 ) -> str:
     """``search_context`` 的正体（同步；由调用方放进线程池）。"""
+    started = time.perf_counter()
     _rescan_if_due(manager, settings, project_id)
     trace = _call_engine(lambda: manager.search(project_id, query, max_tokens))
+    _audit(manager, project_id, audit.MODE_SEARCH, query, trace.pack, started,
+           degraded=trace.degraded)
     meta = pack_meta(
         trace.pack,
         project_id=project_id,
@@ -526,10 +545,12 @@ def _ask_text(
     而 HTTP ``ask`` 走 16K——两个面不一致；现在两边都由调用方传 ``ASK_MAX_TOKENS``。
     D-50：两侧均走独立 Deep 证据入口；仅传 16K 数值而漏传 Deep 的旧差异已消除。
     """
+    started = time.perf_counter()
     _rescan_if_due(manager, settings, project_id)
     trace = _call_engine(lambda: manager.ask_evidence(project_id, question, max_tokens))
     warning = _storage_warning(manager, settings, project_id)
     insufficient = not trace.pack.answerable
+    pack = trace.pack
     meta = pack_meta(
         trace.pack,
         project_id=project_id,
@@ -539,13 +560,16 @@ def _ask_text(
         candidate_count=trace.candidate_count,
     )
     status_line = _status_line(meta)
+    ask_audit = partial(_audit, manager, project_id, audit.MODE_ASK, question, pack, started)
     if insufficient:
+        ask_audit(degraded=True, status=audit.STATUS_INSUFFICIENT)
         # 与 HTTP 路由的 D-24 短路同语义：先说清为何不调 LLM，再给可直接使用的上下文与补证据建议。
         return append_warning(
             f"{INSUFFICIENT_NOTICE}\n\n{status_line}\n\n{render_markdown(trace.pack)}", warning
         )
     provider = provider_resolver()
     if provider is None:
+        ask_audit(degraded=True, status=audit.STATUS_DEGRADED)
         return append_warning(
             f"{DEGRADED_NOTICE}\n\n{status_line}\n\n{render_markdown(trace.pack)}", warning
         )
@@ -560,11 +584,50 @@ def _ask_text(
             project_id,
             redact_text(f"{type(exc).__name__}: {exc}"),
         )
+        ask_audit(degraded=True, status=audit.STATUS_DEGRADED)
         return append_warning(
             f"{LLM_FAILED_NOTICE}\n\n{status_line}\n\n{render_markdown(trace.pack)}", warning
         )
+    ask_audit(
+        degraded=False, status=audit.STATUS_ANSWERED, answer_text=outcome.answer,
+        citation_coverage=outcome.citation_coverage, llm_latency_ms=outcome.latency_ms,
+        answer_tokens=outcome.answer_tokens,
+    )
     degraded_line = _status_line({**meta, "degraded": False})
     return append_warning(f"{outcome.answer}\n\n{degraded_line}", warning)
+
+
+def _audit(
+    manager: EngineManager,
+    project_id: str,
+    mode: str,
+    query: str,
+    pack: Any,
+    started: float,
+    *,
+    degraded: bool,
+    status: str | None = None,
+    **observations: Any,
+) -> None:
+    """MCP 面的查询审计（旁路，失败不影响检索）。
+
+    此前只有 REST 的 ``search``/``ask`` 落 ``query_audit``：经 ``/mcp`` 的调用不进用量统计，
+    历史页与用量汇总因此少算。口径与 REST 一致；``search`` 不落答案正文（Module/04 §8）。
+    """
+    audit.record_query(
+        manager.meta_db,
+        project_id=project_id,
+        mode=mode,
+        query=query,
+        pack=pack,
+        latency_ms=(time.perf_counter() - started) * 1000.0,
+        degraded=degraded,
+        answerable=getattr(pack, "answerable", None),
+        confidence=getattr(pack, "confidence", None),
+        user_id=getattr(current_user(), "id", None),
+        answer_status=status,
+        **observations,
+    )
 
 
 def _storage_warning(manager: EngineManager, settings: Settings, project_id: str) -> str | None:
@@ -700,7 +763,13 @@ def _project_id_for(manager: EngineManager, project_root: str) -> str:
         identity = repo_identity(Path(raw))
     except Exception as exc:  # 路径本身非法（如含空字节）：如实报参数问题
         raise ToolError(f"project_root 无法解析为路径：{redact_text(str(exc))}") from exc
-    project_id = engine_project_id_for(identity.identity_key)
+    identity_key = identity.identity_key
+    account = getattr(current_user(), "id", None)
+    if account:  # 云端账户：与 REST ``resolve`` 同一份加盐规则，两个面算出同一个 projectId
+        identity_key = user_scoped_identity_key(
+            manager, manager.meta_db, str(account), identity_key
+        )
+    project_id = engine_project_id_for(identity_key)
     _require_owned_project(manager, project_id, raw)
     return project_id
 
@@ -754,7 +823,7 @@ def _require_index(manager: EngineManager, project_id: str) -> None:
     2. 索引中/从未跑过 → 报当前状态与已处理文件数（**不伪造百分比**，D-30）；
     3. 给出"下一步做什么"（重试 / 看 indexProgress / 触发 rescan）。
     """
-    if manager.sync_status(project_id)["chunks"] > 0:
+    if manager.chunk_count(project_id) > 0:
         return
 
     ok, reason = manager.provider_health()

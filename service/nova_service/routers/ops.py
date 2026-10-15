@@ -48,21 +48,40 @@ MAX_DAYS = 365
 
 @router.get("/healthz")
 def healthz(request: Request, deep: int = 0) -> dict[str, Any]:
-    """存活 + 依赖检查（``security: []``；``deep=1`` 追加 provider 探测）。"""
+    """存活 + 依赖检查（``security: []``；``deep=1`` 追加 provider 探测）。
+
+    **匿名只拿到存活信息**（backlog A2）：云端形态下 ``dataRoot``、全体租户的 projectId 与进度、
+    以及会触发真实 embedding 请求/模型加载的 ``deep`` 探测，都只对管理员开放；
+    本地模式（无账户体系，R34）行为不变。匿名的 ``deep`` 参数被忽略而不是 403，
+    探活脚本不该因此失败。
+    """
     settings = get_settings(request)
     core: dict[str, Any] = {"importable": _core_importable()}
-    if deep:
-        core.update(_probe_embedding_provider())
-    return {
+    body: dict[str, Any] = {
         "status": "ok",
         "version": settings.version,
-        "dataRoot": str(settings.data_root),
         "localMode": settings.local_mode,
         # TASK-060：按**真实**鉴权状态报告（此前按 local_mode 硬编码，TASK-051 A1 记为诚实性缺陷）。
         "auth": "disabled(local)" if settings.local_mode else "required",
         "core": core,
-        "projects": _project_progress(request),
     }
+    if not _may_see_details(request, settings):
+        return body
+    if deep:
+        core.update(_probe_embedding_provider())
+    body["dataRoot"] = str(settings.data_root)
+    body["projects"] = _project_progress(request)
+    return body
+
+
+def _may_see_details(request: Request, settings: Any) -> bool:
+    """``/healthz`` 的详情可见性：本地模式放行；云端仅限已认证的管理员（可选认证，不抛 401）。"""
+    if settings.local_mode:
+        return True
+    from nova_service.auth import authenticate
+
+    principal = authenticate(request)
+    return principal is not None and normalize_role(principal.user.role) == "admin"
 
 
 def _project_progress(request: Request) -> list[dict[str, Any]]:
@@ -105,12 +124,13 @@ def overview(request: Request, days: int = DEFAULT_DAYS) -> dict[str, Any]:
     user = getattr(request.state, "nova_user", None)
     window = max(1, min(int(days), MAX_DAYS))
 
-    listed = manager.list_projects()
     user_id = getattr(user, "id", None)
     if user_id is not None and db is not None:
-        owned = set(db.list_projects(user_id))
         # 未登记归属的项目（本地 attach 后尚未 claim）不计入概览，避免"看到不属于自己的项目"。
-        listed = [item for item in listed if str(item["projectId"]) in owned]
+        # 只描述归属集合：逐项目磁盘求和的成本不该随全站项目数增长。
+        listed = manager.list_projects(only=db.list_projects(user_id))
+    else:
+        listed = manager.list_projects()
     settings = get_settings(request)
     # TASK-110：账户页要显示头衔/编号与"按角色的额度"；上限与上传硬拒同一函数算出。
     user_id, role, override = quota_identity(request)
@@ -378,14 +398,10 @@ def _require_meta_db(request: Request) -> MetaDB:
 
 def _visible_project_ids(request: Request, manager: Any) -> list[str]:
     """当前用户可见的 projectId（未鉴权时退化为全量，本地模式口径）。"""
-    all_ids = [str(item["projectId"]) for item in manager.list_projects()]
-    db = _meta_db(request)
+    from nova_service.quota import visible_project_ids
+
     user = getattr(request.state, "nova_user", None)
-    user_id = getattr(user, "id", None)
-    if db is None or user_id is None:
-        return all_ids
-    owned = set(db.list_projects(user_id))
-    return [pid for pid in all_ids if pid in owned]
+    return visible_project_ids(manager, _meta_db(request), getattr(user, "id", None))
 
 
 def _limit(value: int) -> int:

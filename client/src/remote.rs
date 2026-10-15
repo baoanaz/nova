@@ -28,7 +28,11 @@ use crate::blobref::blob_hash;
 const MAX_BATCH_BYTES: usize = 1024 * 1024;
 /// 分层超时（D-32）。
 pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(30);
-pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(15);
+pub const SEARCH_TIMEOUT: Duration = Duration::from_secs(30);
+/// ask 的整体超时：必须覆盖服务端「检索 + 一次 LLM 调用（服务端总预算 ANSWER_TIMEOUT_S，默认 60s）」。
+/// 此前走 90s 的通用客户端，而服务端 LLM 超时 60s × 重试 2 次，最坏远超 90s：
+/// 客户端先放弃并静默降级成纯检索，服务端却还在调用并计费。
+pub const ASK_TIMEOUT: Duration = Duration::from_secs(120);
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(90);
 pub const INDEX_WAIT_TIMEOUT: Duration = Duration::from_secs(120);
 /// 等待索引就绪时的轮询间隔：轻量 progressOnly 状态请求，间隔越短，"索引完成 → 开始检索"的空等越少。
@@ -37,6 +41,55 @@ const INDEX_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const UPLOADS_IN_FLIGHT: usize = 2;
 /// 对外错误文本里的响应体截断（Module 05 §2.2：512 字节）。
 const MAX_ERROR_SNIPPET_BYTES: usize = 512;
+/// 单个 HTTP 请求的重试策略。
+///
+/// 没有重试时，WSL/代理/反代重启造成的任何一次瞬时失败都会让整个 tool call 失败，
+/// 而绝大多数端点（resolve / 按 blobHash 的上传 / flush / 状态轮询 / checkpoint / 检索）都是幂等的。
+/// 退避：250ms、500ms…（带最多 100ms 抖动），总等待远小于各请求自身的超时。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Retry {
+    /// 含首次在内的最大尝试次数。
+    attempts: usize,
+    /// "不确定服务端有没有收到"的失败（超时、连接中途被重置）是否重试：
+    /// 对幂等请求安全；对读类请求（服务端可能只是忙）重试只会加倍负载，对 ask 还可能重复计费。
+    on_ambiguous: bool,
+    /// 429/502/503/504 是否重试（这些状态表示"这次没处理"，不是业务结论）。
+    on_status: bool,
+}
+
+impl Retry {
+    /// 幂等写/状态类请求。
+    pub(crate) const IDEMPOTENT: Self = Self { attempts: 3, on_ambiguous: true, on_status: true };
+    /// 只读检索：连接失败与网关类状态各重试一次，超时/中途重置不重试。
+    pub(crate) const QUERY: Self = Self { attempts: 2, on_ambiguous: false, on_status: true };
+    /// 会触发付费 LLM 调用的 ask：只在"请求根本没发出去"（连接失败）时重试。
+    pub(crate) const CONNECT_ONLY: Self = Self { attempts: 2, on_ambiguous: false, on_status: false };
+
+    fn should_retry_error(self, error: &reqwest::Error) -> bool {
+        error.is_connect() || (self.on_ambiguous && (error.is_timeout() || error.is_request()))
+    }
+
+    fn should_retry_status(self, status: u16) -> bool {
+        self.on_status && matches!(status, 429 | 502 | 503 | 504)
+    }
+}
+
+/// 第 `attempt`（从 1 起）次失败后的等待：指数退避 + 抖动；尊重 `Retry-After`（上限 5s）。
+fn retry_delay(attempt: usize, retry_after: Option<&str>) -> Duration {
+    let base = 250u64 * (1u64 << (attempt - 1).min(4));
+    let jitter = u64::from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.subsec_nanos())
+            .unwrap_or(0),
+    ) % 100;
+    let hinted = retry_after
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|seconds| Duration::from_secs(seconds.min(5)))
+        .unwrap_or_default();
+    Duration::from_millis(base + jitter).max(hinted)
+}
+
 /// callId（= 服务端的 ``X-Request-Id``）的请求头名（TASK-099 §B-2）。
 ///
 /// **为什么不新增一个头**：服务端 ``app.py`` 的 requestId 中间件早已支持客户端传入
@@ -156,6 +209,7 @@ pub struct RemoteClient {
     token: Option<String>,
     upload: reqwest::Client,
     search: reqwest::Client,
+    ask: reqwest::Client,
     general: reqwest::Client,
     call: CallContext,
 }
@@ -174,6 +228,7 @@ impl RemoteClient {
         Ok(Self {
             upload: build_client(UPLOAD_TIMEOUT)?,
             search: build_client(SEARCH_TIMEOUT)?,
+            ask: build_client(ASK_TIMEOUT)?,
             general: build_client(DEFAULT_TIMEOUT)?,
             base_url,
             token,
@@ -197,6 +252,7 @@ impl RemoteClient {
             token: self.token.clone(),
             upload: self.upload.clone(),
             search: self.search.clone(),
+            ask: self.ask.clone(),
             general: self.general.clone(),
             call,
         }
@@ -398,16 +454,17 @@ impl RemoteClient {
         &self, project_id: &str, deferred_confirmed: bool,
     ) -> Result<Vec<String>> {
         let payload = serde_json::json!({"projectId": project_id});
-        let response = self.send(
-            self.general.post(self.url("/api/sync/flush")), Some(&payload),
+        let response = self.send_with(
+            self.general.post(self.url("/api/sync/flush")), Some(&payload), Retry::IDEMPOTENT,
         ).await?;
         if !deferred_confirmed && matches!(response.status().as_u16(), 404 | 405) {
             return Ok(Vec::new()); // 旧服务仍在每次上传请求内完成索引。
         }
         self.checked_response(response).await?;
         loop {
-            let response = self.send(
-                self.general.get(self.url(&format!("/api/sync/status/{project_id}?progressOnly=true"))), None,
+            let response = self.send_with(
+                self.general.get(self.url(&format!("/api/sync/status/{project_id}?progressOnly=true"))),
+                None, Retry::IDEMPOTENT,
             ).await?;
             let status: SyncIndexStatus = self.checked_response(response).await?.json().await
                 .context("sync/status 响应不完整，不能确认索引就绪")?;
@@ -458,7 +515,7 @@ impl RemoteClient {
             "checkpointId": checkpoint_id,
         });
         let response = self
-            .request(self.search.post(self.url("/api/query/search")), &payload)
+            .request_with(self.search.post(self.url("/api/query/search")), &payload, Retry::QUERY)
             .await?;
         let body: SearchResponse = response.json().await.context("search 响应不是合法 JSON")?;
         Ok(body.markdown)
@@ -480,7 +537,7 @@ impl RemoteClient {
             "checkpointId": checkpoint_id,
         });
         let response = self
-            .request(self.general.post(self.url("/api/query/ask")), &payload)
+            .request_with(self.ask.post(self.url("/api/query/ask")), &payload, Retry::CONNECT_ONLY)
             .await?;
         let body: AskResponse = response.json().await.context("ask 响应不是合法 JSON")?;
         Ok(body.into_text())
@@ -489,8 +546,8 @@ impl RemoteClient {
     /// One server-side synthesis, never one paid call per project.
     pub async fn ask_workspace(&self, projects: &[String], question: &str) -> Result<String> {
         let payload = serde_json::json!({"projectIds": projects, "question": question});
-        let response = self.request(
-            self.general.post(self.url("/api/query/ask-workspace")), &payload,
+        let response = self.request_with(
+            self.ask.post(self.url("/api/query/ask-workspace")), &payload, Retry::CONNECT_ONLY,
         ).await?;
         let body: AskResponse = response.json().await.context("workspace ask 响应不是合法 JSON")?;
         Ok(body.into_text())
@@ -509,12 +566,22 @@ impl RemoteClient {
         builder: reqwest::RequestBuilder,
         payload: &serde_json::Value,
     ) -> Result<reqwest::Response> {
-        let response = self.send(builder, Some(payload)).await?;
+        self.request_with(builder, payload, Retry::IDEMPOTENT).await
+    }
+
+    async fn request_with(
+        &self,
+        builder: reqwest::RequestBuilder,
+        payload: &serde_json::Value,
+        retry: Retry,
+    ) -> Result<reqwest::Response> {
+        let response = self.send_with(builder, Some(payload), retry).await?;
         self.checked_response(response).await
     }
 
-    async fn send(
-        &self, builder: reqwest::RequestBuilder, payload: Option<&serde_json::Value>,
+    /// 发送并按 [`Retry`] 重试瞬时失败。请求体是 JSON，可克隆；每次重试沿用同一个 callId。
+    async fn send_with(
+        &self, builder: reqwest::RequestBuilder, payload: Option<&serde_json::Value>, retry: Retry,
     ) -> Result<reqwest::Response> {
         let mut builder = builder.header(CALL_ID_HEADER, self.call.id());
         if let Some(payload) = payload {
@@ -523,8 +590,34 @@ impl RemoteClient {
         if let Some(token) = &self.token {
             builder = builder.bearer_auth(token);
         }
-        builder.send().await
-            .map_err(|error| anyhow!("请求 {} 失败：{error}", self.base_url))
+        let mut current = builder;
+        let mut attempt = 1;
+        loop {
+            let spare = if attempt < retry.attempts { current.try_clone() } else { None };
+            let result = current.send().await;
+            let (retryable, hint) = match &result {
+                Ok(response) => (
+                    retry.should_retry_status(response.status().as_u16()),
+                    response.headers().get(reqwest::header::RETRY_AFTER)
+                        .and_then(|value| value.to_str().ok()).map(str::to_owned),
+                ),
+                Err(error) => (retry.should_retry_error(error), None),
+            };
+            match spare {
+                Some(next) if retryable => {
+                    eprintln!("nova-client: 请求瞬时失败，第 {attempt} 次后重试");
+                    tokio::time::sleep(retry_delay(attempt, hint.as_deref())).await;
+                    current = next;
+                    attempt += 1;
+                }
+                _ => {
+                    return result.map_err(|error| {
+                        let tried = if attempt > 1 { format!("（已尝试 {attempt} 次）") } else { String::new() };
+                        anyhow!("请求 {} 失败{tried}：{error}", self.base_url)
+                    });
+                }
+            }
+        }
     }
 
     async fn checked_response(&self, response: reqwest::Response) -> Result<reqwest::Response> {
@@ -542,11 +635,13 @@ impl RemoteClient {
 }
 
 fn build_client(timeout: Duration) -> Result<reqwest::Client> {
-    reqwest::Client::builder()
+    let builder = reqwest::Client::builder()
         .timeout(timeout)
-        .user_agent(concat!("nova-client/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .context("failed to build the HTTP client")
+        .user_agent(concat!("nova-client/", env!("CARGO_PKG_VERSION")));
+    // 单元测试只和回环地址上的脚本化服务对话，不能被开发机的 http_proxy 劫持。
+    #[cfg(test)]
+    let builder = builder.no_proxy();
+    builder.build().context("failed to build the HTTP client")
 }
 
 fn normalize_base_url(input: &str) -> Result<String> {
@@ -769,6 +864,117 @@ mod tests {
             redact(leaked, Some("sk-secret-123")),
             r#"{"error":{"message":"bad token ***"}}"#
         );
+    }
+
+    /// 脚本化的最小 HTTP 服务：按顺序对每个连接返回给定响应，返回 (端口, 命中次数)。
+    fn scripted_server(responses: Vec<&'static str>) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::io::{Read, Write};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        std::thread::spawn(move || {
+            for response in responses {
+                let Ok((mut stream, _)) = listener.accept() else { return };
+                counter.fetch_add(1, Ordering::SeqCst);
+                let mut seen = Vec::new();
+                let mut buffer = [0u8; 4096];
+                // 读到请求头结束，再按 Content-Length 读完请求体（避免对端因未读完而 RST）。
+                loop {
+                    let Ok(read) = stream.read(&mut buffer) else { break };
+                    if read == 0 { break; }
+                    seen.extend_from_slice(&buffer[..read]);
+                    if let Some(end) = seen.windows(4).position(|window| window == b"\r\n\r\n") {
+                        let head = String::from_utf8_lossy(&seen[..end]).to_ascii_lowercase();
+                        let length = head.lines()
+                            .find_map(|line| line.strip_prefix("content-length:"))
+                            .and_then(|value| value.trim().parse::<usize>().ok()).unwrap_or(0);
+                        if seen.len() >= end + 4 + length { break; }
+                    }
+                }
+                let _ = stream.write_all(response.as_bytes());
+            }
+        });
+        (port, hits)
+    }
+
+    const GATEWAY_ERROR: &str =
+        "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    const RESOLVED: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 19\r\nConnection: close\r\n\r\n{\"projectId\":\"abc\"}";
+    const ASKED: &str = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 61\r\nConnection: close\r\n\r\n{\"status\":\"answered\",\"answer\":\"ok\",\"meta\":{\"degraded\":false}}";
+
+    #[tokio::test]
+    async fn idempotent_calls_retry_gateway_errors() {
+        let (port, hits) = scripted_server(vec![GATEWAY_ERROR, RESOLVED]);
+        let client = RemoteClient::new(&format!("http://127.0.0.1:{port}"), None).unwrap();
+        let project = client.resolve_project("key", "name").await.expect("重试后应成功");
+        assert_eq!(project, "abc");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 2, "第一次 503，第二次成功");
+    }
+
+    #[tokio::test]
+    async fn ask_is_not_retried_after_the_server_responded() {
+        // ask 会触发付费 LLM 调用：服务端已经回应（哪怕是 503）就不能再发第二次。
+        let (port, hits) = scripted_server(vec![GATEWAY_ERROR, ASKED]);
+        let client = RemoteClient::new(&format!("http://127.0.0.1:{port}"), None).unwrap();
+        assert!(client.ask("abc", "q", None).await.is_err());
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn connection_failures_are_retried_and_reported_with_attempt_count() {
+        let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = closed.local_addr().unwrap().port();
+        drop(closed); // 端口无人监听 → 连接被拒
+        let client = RemoteClient::new(&format!("http://127.0.0.1:{port}"), None).unwrap();
+        let error = client.resolve_project("key", "name").await.unwrap_err().to_string();
+        assert!(error.contains("已尝试 3 次"), "{error}");
+        let error = client.ask("abc", "q", None).await.unwrap_err().to_string();
+        assert!(error.contains("已尝试 2 次"), "ask 只重试一次连接失败：{error}");
+    }
+
+    /// 接受连接后不回应直接关闭：模拟反代重启 / 连接被中途重置。
+    fn dropping_server(connections: usize) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let port = listener.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let counter = hits.clone();
+        std::thread::spawn(move || {
+            for _ in 0..connections {
+                let Ok((stream, _)) = listener.accept() else { return };
+                counter.fetch_add(1, Ordering::SeqCst);
+                drop(stream);
+            }
+        });
+        (port, hits)
+    }
+
+    #[tokio::test]
+    async fn mid_flight_resets_retry_idempotent_calls_but_never_ask() {
+        let (port, hits) = dropping_server(3);
+        let client = RemoteClient::new(&format!("http://127.0.0.1:{port}"), None).unwrap();
+        let error = client.resolve_project("key", "name").await.unwrap_err().to_string();
+        assert!(error.contains("已尝试 3 次"), "{error}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        // ask：连接已建立后才失败，服务端可能已开始调用 LLM → 不重试，避免重复计费。
+        let (port, hits) = dropping_server(2);
+        let client = RemoteClient::new(&format!("http://127.0.0.1:{port}"), None).unwrap();
+        let error = client.ask("abc", "q", None).await.unwrap_err().to_string();
+        assert!(!error.contains("已尝试"), "{error}");
+        assert_eq!(hits.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn retry_delay_grows_and_caps_retry_after() {
+        assert!(retry_delay(1, None) >= Duration::from_millis(250));
+        assert!(retry_delay(2, None) >= Duration::from_millis(500));
+        assert!(retry_delay(1, None) < Duration::from_millis(400));
+        assert_eq!(retry_delay(1, Some("2")), Duration::from_secs(2));
+        assert_eq!(retry_delay(1, Some("3600")), Duration::from_secs(5), "Retry-After 不得把请求挂死");
+        assert!(retry_delay(1, Some("garbage")) < Duration::from_secs(1));
     }
 
     #[test]

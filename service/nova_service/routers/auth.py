@@ -63,6 +63,7 @@ from nova_service.llmprotocol import (
 from nova_service.logging import get_logger
 from nova_service.metadb import MetaDB, User
 from nova_service.quota import effective_user_limit_bytes
+from nova_service.ratelimit import too_many
 from nova_service.roles import (
     CAN_CUSTOM_KEY,
     ROLE_ADMIN,
@@ -471,15 +472,29 @@ def login(payload: Credentials, request: Request, response: Response) -> dict[st
     _require_remote(settings.local_mode)
     name = payload.name.strip()
     db = get_meta_db(request)
+    # 试密码限流：失败次数按 (来源, 账户名) 计，达到上限后在**校验密码之前**就拒绝
+    # （argon2 每次吃 64 MiB 内存，攻击者的无效尝试本身也是资源攻击）。
+    limiter = getattr(request.app.state, "login_limiter", None)
+    attempt_key = f"{request.client.host if request.client else '-'}|{name.lower()}"
+    if limiter is not None:
+        wait = limiter.retry_after(attempt_key)
+        if wait is not None:
+            raise too_many("too_many_attempts", "登录失败次数过多", wait)
     found = db.get_user_by_name(name)
     if found is None or not verify_password(payload.password, found[1]):
+        if limiter is not None:
+            limiter.hit(attempt_key)
         raise ApiError(
             code="unauthorized", message="账户名或密码不正确", status=401
         )
     user = found[0]
     if user.banned:
         logger.warning("已封禁账户尝试登录：user=%s", user.id)
+        if limiter is not None:
+            limiter.hit(attempt_key)
         raise ApiError(code="unauthorized", message="账户名或密码不正确", status=401)
+    if limiter is not None:
+        limiter.reset(attempt_key)
     _set_session_cookie(response, issue_session(db, user.id), settings)
     return {**user.to_json(quota_bytes=_quota_for(settings, user)), "via": "session"}
 

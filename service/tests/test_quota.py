@@ -389,6 +389,49 @@ def test_quota_is_per_user(tmp_path: Path) -> None:
     manager.close()
 
 
+def test_quota_path_never_scans_other_tenants(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """检索告警/上传配额只碰**当前用户**的项目目录，不得枚举（并遍历）全站项目。
+
+    此前 ``visible_project_ids`` 先 ``list_projects()`` 全量（每个项目一次递归磁盘求和）再过滤，
+    每次 search/ask/上传批次的耗时随全站项目数线性增长（实测 40 个项目 +300 ms）。
+    """
+    app, manager, client = _build_env_raw(tmp_path)
+    with client:
+        db = app.state.meta_db
+        alice = db.create_user("alice", "hash")
+        own = manager.resolve_project("identity:scoped-own", "own").project_id
+        db.claim_project(alice.id, own, "own")
+        for index in range(3):  # 别的租户的项目：不在 alice 名下
+            manager.resolve_project(f"identity:scoped-other-{index}", "other")
+
+        walked: list[str] = []
+        real = quota_module.project_usage_bytes
+
+        def spy(target: EngineManager, project_id: str) -> int:
+            walked.append(project_id)
+            return real(target, project_id)
+
+        def forbidden(*_args: object, **_kwargs: object) -> None:
+            raise AssertionError("配额路径不得枚举全站项目")
+
+        monkeypatch.setattr(quota_module, "project_usage_bytes", spy)
+        monkeypatch.setattr(EngineManager, "list_projects", forbidden)
+        settings = dataclasses.replace(
+            app.state.settings, storage_limit_per_user_bytes=10**9
+        )
+        quota_module.warning_for(
+            manager, settings, project_id=own, db=db, user_id=alice.id, role="public"
+        )
+        quota_module.enforce_upload_limit(
+            manager, settings, project_id=own, db=db, user_id=alice.id, role="public",
+            incoming_bytes=1,
+        )
+        assert set(walked) == {own}
+    manager.close()
+
+
 # --------------------------------------------------------------------------- §A 占用可见
 
 
@@ -498,6 +541,18 @@ def test_exceeded_rejects_upload(env: Env) -> None:
     # 拒绝必须发生在**写入之前**：账本里不该出现这个文件（否则会把索引搞成半成品）。
     _blobs, state = env.manager.project_paths(env.project_id)
     assert "src/extra.py" not in state.files
+
+
+def test_mcp_calls_are_written_to_query_audit(env: Env) -> None:
+    """经 ``/mcp`` 的 search/ask 同样落 ``query_audit``（此前只有 REST 面落库，用量统计少算）。"""
+    db = env.app.state.meta_db
+    env.manager.attach_meta_db(db)  # 生产里由 __main__ / 懒构造注入；此夹具手工拼装，需显式接上
+    before = db.usage_summary([env.project_id], days=1).total
+    _search_via_mcp(env)
+    _ask_via_mcp(env)
+    summary = db.usage_summary([env.project_id], days=1)
+    assert summary.total == before + 2
+    assert {record.mode for record in summary.recent} >= {"fast", "deep"}
 
 
 def test_ask_project_tool_also_carries_warning(env: Env) -> None:

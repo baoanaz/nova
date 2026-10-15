@@ -377,15 +377,21 @@ impl IgnoreRules {
         let discovered = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let walker = self.walker_pruned(true, Some(discovered.clone()))
             .chain(self.allowlist_walk_pruned(self.allowlist(), true, Some(discovered.clone())));
+        let discovery_limit = crate::policy::env_limit("NOVA_DISCOVERY_MAX_ITEMS", 50_000);
+        let max_repositories = crate::policy::env_limit("NOVA_WORKSPACE_MAX_REPOS", 32);
         for (visited, entry) in walker.enumerate() {
             if cancelled.load(std::sync::atomic::Ordering::Acquire) { anyhow::bail!("工作区发现已取消"); }
-            if visited >= 10_000 { anyhow::bail!("工作区发现超出 10000 项上限，请缩小 project_root"); }
+            if visited >= discovery_limit {
+                anyhow::bail!("工作区发现超出 {discovery_limit} 项上限，请缩小 project_root，或用 NOVA_DISCOVERY_MAX_ITEMS 调高");
+            }
             entry?;
         }
         let mut roots = discovered.lock().map_err(|_| anyhow::anyhow!("工作区发现状态不可用"))?.clone();
         roots.sort();
         roots.dedup();
-        if roots.len() > 16 { anyhow::bail!("工作区包含超过 16 个 Git 项目，请缩小 project_root"); }
+        if roots.len() > max_repositories {
+            anyhow::bail!("工作区包含超过 {max_repositories} 个 Git 项目，请缩小 project_root，或用 NOVA_WORKSPACE_MAX_REPOS 调高");
+        }
         Ok(roots)
     }
 

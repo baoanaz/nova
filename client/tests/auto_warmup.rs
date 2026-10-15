@@ -415,7 +415,10 @@ fn mixed_workspace_fuses_code_and_hidden_markdown_without_double_indexing() {
     assert!(!all_paths.contains(&"code/README.md") && !all_paths.contains(&"secret.env"));
     mcp.call(2, root.path(), true); let answer = mcp.success(2);
     assert!(answer.contains("run.py") && answer.contains(".claude/guide.markdown"));
-    assert_eq!(mock.count("/query/ask"), 0, "mixed ask must not multiply answer-model calls");
+    // `/query/ask` 是子串匹配，也会命中统一问答端点：混合工作区只允许一次 ask-workspace，
+    // 不允许对每个项目各发一次 /ask（那会成倍调用总结模型）。
+    assert_eq!(mock.count("/query/ask-workspace"), 1);
+    assert_eq!(mock.count("/query/ask"), 1, "mixed ask must not multiply answer-model calls");
     assert_eq!(mock.count("resolve"), 2);
     std::fs::remove_file(doc).unwrap();
     mcp.call(3, root.path(), false); let text = mcp.success(3);

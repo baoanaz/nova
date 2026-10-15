@@ -37,6 +37,7 @@ from nova_service.errors import error_envelope, install_error_handlers, internal
 from nova_service.logging import bind_request_id, configure_logging, get_logger, reset_request_id
 from nova_service.mcp import build_mcp, manager_for_app, mount, session_lifespan
 from nova_service.metadb import MetaDB
+from nova_service.ratelimit import LOGIN_MAX_FAILURES, LOGIN_WINDOW_S, SlidingWindowLimiter
 from nova_service.requestlog import capture_request
 from nova_service.routers import all_routers
 
@@ -68,6 +69,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved
     app.state.engine_manager = None  # TASK-031 懒构造/测试注入
+    app.state.login_limiter = SlidingWindowLimiter(LOGIN_MAX_FAILURES, LOGIN_WINDOW_S)
+    app.state.ask_limiter = SlidingWindowLimiter(resolved.ask_rate_per_min, 60.0)
     # TASK-060：云瑞形态才需要元数据库；本地模式不建库（R34：无账户体系）。
     app.state.meta_db = MetaDB.open(resolved.meta_db_path) if resolved.auth_required else None
     _promote_admin(app.state.meta_db, resolved)

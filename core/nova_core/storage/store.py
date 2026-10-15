@@ -1123,6 +1123,18 @@ class Store:
         ).fetchone()
         return {key: int(row[key]) for key in row.keys()}
 
+    def has_code_chunks(self) -> bool:
+        """索引里是否存在**结构化代码切片**（函数/方法/类等；不含文档块与文件前导/降级块）。
+
+        纯文档索引（如非 Git 目录默认只索引 Markdown）返回 ``False``——此时"命中必须含代码结构"
+        的可答性前置条件没有意义（见 ``contextpack.assembly._assess``）。
+        """
+        row = self._conn.execute(
+            "SELECT 1 FROM chunks WHERE symbol_kind IS NOT NULL"
+            " AND symbol_kind NOT IN ('spec_block', 'fallback_block') LIMIT 1"
+        ).fetchone()
+        return row is not None
+
     def generated_files(self) -> frozenset[str]:
         """标记为 generated 的文件路径集合（TASK-REVIEW-RUNTIME P2-5）。
 

@@ -716,7 +716,8 @@ def test_system_module_matches_healthz(admin_env: SimpleNamespace) -> None:
     """系统模块与 ``/healthz?deep=1`` **同源**（两处不能各算一份健康）。"""
     ns = admin_env
     admin_view = ns.client.get("/api/admin/system", headers=_auth(ns.admin_key)).json()
-    probe = ns.client.get("/healthz?deep=1").json()
+    # 匿名的 deep 探测被忽略（backlog A2）；管理员带凭据才能拿到与后台同源的探测结果。
+    probe = ns.client.get("/healthz?deep=1", headers=_auth(ns.admin_key)).json()
     assert admin_view["status"] == probe["status"]
     assert admin_view["version"] == probe["version"]
     assert admin_view["core"].keys() == probe["core"].keys()

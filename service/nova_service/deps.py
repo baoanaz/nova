@@ -10,9 +10,12 @@ provider 覆盖整个应用配置（``create_app(app_settings)`` 后写 ``app.st
 
 from __future__ import annotations
 
+import hashlib
+import json
 import threading
 
 from fastapi import Request
+from nova_core.engine import project_id_for
 
 from nova_service.config import Settings
 from nova_service.errors import ApiError
@@ -25,6 +28,7 @@ __all__ = [
     "project_not_found_message",
     "require_ownership_of",
     "require_project_id",
+    "user_scoped_identity_key",
 ]
 
 #: 懒构造 EngineManager 的互斥（多线程首个请求可能同时到达）。
@@ -51,7 +55,9 @@ def get_engine_manager(request: Request) -> EngineManager:
     with _manager_lock:
         manager = getattr(request.app.state, "engine_manager", None)
         if not isinstance(manager, EngineManager):
-            manager = EngineManager.open(get_settings(request).data_root)
+            settings = get_settings(request)
+            manager = EngineManager.open(settings.data_root)
+            manager.set_index_concurrency(settings.max_concurrent_index)
             # TASK-085：懒构造也要接上元数据库，否则上传路径的索引 run 无处落库
             # （实测：npx nova-client 索引成功后 /api/index-stats 仍恒为 0）。
             # 直接读 ``app.state`` 而不调 ``auth.get_meta_db``：后者会**建库**，而本地模式
@@ -160,6 +166,32 @@ def project_not_found_message(project_id: str) -> str:
     "这个 projectId 到底存不存在"（Module/06 §2.2 的不给探测面纪律）。
     """
     return f"项目不存在：{project_id}"
+
+
+def user_scoped_identity_key(
+    manager: EngineManager, db: MetaDB | None, user_id: str, identity_key: str
+) -> str:
+    """云端账户的项目身份：**每个用户一份独立索引**（REST ``resolve`` 与 MCP 共用这一份实现）。
+
+    问题：D-29 的 identityKey 只由 remote + 分支（或路径）决定，与用户无关。同一仓库同一分支的
+    第二个用户拿到同一个 projectId，却不是归属者——此后每个端点都 404；公开仓库的 remote 是公开的，
+    任何人先 resolve 一次就能占住别人的位置。共享索引也不可取：不同用户的工作树（未提交改动）
+    会混进同一份索引，且配额按用户计。
+
+    规则（对既有数据向后兼容）：
+
+    - 旧（未加盐）项目已存在且**未登记归属或归当前用户** → 沿用旧 key（既有用户无感）；
+    - 否则（项目不存在，或已是别人的）→ 用户盐 key：``sha256(["nova-user-scope-v1", user, key])``。
+    """
+    legacy_id = project_id_for(identity_key)
+    if manager.project_exists(legacy_id):
+        owner = db.project_owner(legacy_id) if db is not None else None
+        if owner is None or owner == user_id:
+            return identity_key
+    material = json.dumps(
+        ["nova-user-scope-v1", user_id, identity_key], ensure_ascii=False, separators=(",", ":")
+    )
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _meta_db(request: Request) -> MetaDB | None:

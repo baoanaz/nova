@@ -275,15 +275,14 @@ def test_resolve_claims_and_is_idempotent(two_users: SimpleNamespace) -> None:
     assert two_users.meta_db.list_projects(two_users.alice_id) == [two_users.alice_project]
 
 
-def test_shared_repo_second_user_resolves_but_does_not_take_over(
+def test_shared_repo_second_user_gets_own_isolated_project(
     two_users: SimpleNamespace,
 ) -> None:
-    """**共用仓库的既定简化**（卡内 §B 要求明确写出）：第二人 resolve 不报错、也不获得归属。
+    """**同仓库多用户**：第二人 resolve 同一个 identityKey 得到**自己的**独立项目，两边互不可见。
 
-    本项目常见形态是多人共用同一仓库（同一 identityKey → 同一 projectId）。TASK-061 §A0 已裁定
-    口径 A：``resolve`` **不**报 403 ``project_owned_by_other``（否则会把第二人直接卡死），
-    越权一律由 §C 的 404 拦。代价是第二人 resolve 成功但项目不在其名下 —— 这正是"先到先得"的
-    V1 简化：``org_id`` 列留待 V2 做共享（Module/06 §2.3）。
+    旧行为（先到先得）：第二人拿到同一个 projectId 却不是归属者，随后所有端点 404——
+    共用仓库的人无法使用服务，且公开仓库的 remote 公开，任何人先 resolve 就能占位。
+    现在云端账户的 identityKey 在服务端按用户加盐（``user_scoped_identity_key``）。
     """
     response = two_users.client.post(
         "/api/projects/resolve",
@@ -291,17 +290,50 @@ def test_shared_repo_second_user_resolves_but_does_not_take_over(
         headers=two_users.bob,
     )
     assert response.status_code == 200, response.text
-    assert response.json()["projectId"] == two_users.alice_project  # 同一 identity → 同一 id
-    # 归属没有转移，也没有产生第二行。
+    bob_copy = response.json()["projectId"]
+    assert bob_copy != two_users.alice_project, "不同用户即使同一仓库也必须是不同项目"
+    assert response.json()["created"] is True
+    # 各自归属自己的那一份，没有转移、没有第二行。
     assert two_users.meta_db.list_projects(two_users.alice_id) == [two_users.alice_project]
-    assert two_users.meta_db.list_projects(two_users.bob_id) == [two_users.bob_project]
-    # 第二人随后访问该项目 → 404（§C 的归属校验生效）。
+    assert sorted(two_users.meta_db.list_projects(two_users.bob_id)) == sorted(
+        [two_users.bob_project, bob_copy]
+    )
+    # 第二人能正常使用自己的那份，仍然碰不到 A 的。
+    own = two_users.client.get(f"/api/projects/{bob_copy}", headers=two_users.bob)
+    assert own.status_code == 200
     assert (
         two_users.client.get(
             f"/api/projects/{two_users.alice_project}", headers=two_users.bob
         ).status_code
         == 404
     )
+    # 重复 resolve 幂等。
+    again = two_users.client.post(
+        "/api/projects/resolve",
+        json={"identityKey": "identity:alice-repo", "displayName": "alice-repo"},
+        headers=two_users.bob,
+    )
+    assert again.json() == {"projectId": bob_copy, "created": False}
+
+
+def test_legacy_unsalted_project_keeps_working_for_its_owner(two_users: SimpleNamespace) -> None:
+    """向后兼容：加盐上线前就存在、且归属当前用户的旧项目，resolve 仍返回原 projectId。"""
+    from nova_core.engine import project_id_for
+
+    legacy = two_users.manager.resolve_project("identity:legacy-repo", "legacy").project_id
+    assert legacy == project_id_for("identity:legacy-repo")
+    two_users.meta_db.claim_project(two_users.alice_id, legacy, "legacy")
+
+    owner = two_users.client.post(
+        "/api/projects/resolve", json={"identityKey": "identity:legacy-repo"},
+        headers=two_users.alice,
+    )
+    assert owner.json() == {"projectId": legacy, "created": False}
+    other = two_users.client.post(
+        "/api/projects/resolve", json={"identityKey": "identity:legacy-repo"},
+        headers=two_users.bob,
+    )
+    assert other.json()["projectId"] != legacy, "旧项目是 A 的：B 得到自己的加盐项目"
 
 
 # --------------------------------------------------------------------------- §B：attach 的 claim
@@ -593,7 +625,11 @@ def test_mcp_cross_user_call_is_indistinguishable_from_missing(
     )
     assert status == 200, "MCP 的工具错误走正常响应 + isError（Module/05 §2.2），不是 HTTP 4xx"
     assert denied is not None and denied.get("isError") is True, _mcp_text(denied)
-    assert _mcp_error_reason(denied) == f"项目不存在：{alice_project}", _mcp_text(denied)
+    # B 的身份在服务端加盐：同一个 project_root 反解出的是 **B 自己名下**（尚不存在）的 projectId，
+    # 因此 B 根本无法寻址到 A 的项目，更不可能从文案里拿到 A 的 projectId。
+    reason = _mcp_error_reason(denied)
+    assert re.fullmatch(r"项目不存在：[0-9a-f]{16}", reason), _mcp_text(denied)
+    assert alice_project not in reason, "不得把别人的 projectId 回显给越权者"
 
     _, missing = _mcp_call(
         two_users.client, tool=tool, project_root=str(ghost_root), headers=two_users.bob
@@ -696,7 +732,8 @@ def test_mcp_identity_is_per_request_not_sticky(two_users: SimpleNamespace) -> N
     assert call(two_users.alice, 2).get("isError") is not True
     denied = call(two_users.bob, 3)
     assert denied.get("isError") is True
-    assert _mcp_error_reason(denied) == f"项目不存在：{alice_project}"
+    assert re.fullmatch(r"项目不存在：[0-9a-f]{16}", _mcp_error_reason(denied))
+    assert alice_project not in _mcp_error_reason(denied)
 
 
 def test_mcp_local_mode_still_fully_open(tmp_path: Path) -> None:
