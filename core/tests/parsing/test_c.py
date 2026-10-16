@@ -255,3 +255,34 @@ def test_file_context_reuse_surface() -> None:
     source = "int x; /* 中文注释 */\n".encode()
     ctx = FileContext(path="a.c", language="c", source=source)
     assert ctx.text  # 绑定方法存在即可，具体行为由基类测试覆盖
+
+
+DECLARATION_MACRO_SOURCE = """\
+int attribute_align_arg avcodec_send_packet(AVCodecContext *c, const AVPacket *p)
+{
+    return 0;
+}
+
+static int plain(int a) { return a; }
+"""
+
+
+def test_unknown_declaration_macro_does_not_poison_the_function(parser: CParser) -> None:
+    """函数名前的未知修饰宏（FFmpeg 的 attribute_align_arg）是良性错误：符号照常抽取。
+
+    基线（FFmpeg decode.c）里它曾把整个 avcodec_send_packet 压成 fallback 块，
+    连点名的查询都搜不到。
+    """
+    parsed = parser.parse("libavcodec/decode.c", DECLARATION_MACRO_SOURCE)
+
+    assert not parsed.fallback
+    assert parsed.parse_errors == ()
+    names = {s.name for s in parsed.symbols}
+    assert {"avcodec_send_packet", "plain"} <= names
+
+
+def test_stray_tokens_after_the_declarator_still_count_as_errors(parser: CParser) -> None:
+    """良性判定只放行『声明符之前、只含标识符』的 ERROR；其余照旧触发错误处理。"""
+    parsed = parser.parse("x.c", "int broken( {\n    return 1;\n}\n")
+
+    assert parsed.parse_errors

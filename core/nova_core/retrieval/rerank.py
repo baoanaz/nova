@@ -59,6 +59,13 @@ from nova_core.retrieval.fusion import (
     is_test_path,
 )
 from nova_core.retrieval.literal import REASON_LITERAL, REASON_LITERAL_ROOT
+from nova_core.retrieval.prior import (
+    changelog_intent,
+    example_intent,
+    is_changelog_path,
+    is_example_path,
+    translation_variants,
+)
 from nova_core.storage import Store
 from nova_core.types import Candidate
 
@@ -91,6 +98,10 @@ VECTOR_NEAR_K = 10
 #: TASK-101 新增权重的环境变量覆盖名（A/B 用；见 :func:`weights_from_env`）。
 LITERAL_WEIGHT_ENV = "NOVA_W_LITERAL"
 LITERAL_ROOT_WEIGHT_ENV = "NOVA_W_LITERAL_ROOT"
+#: 路径先验权重的 A/B 入口（同样只覆盖新增权重，不动冻结的旧权重）。
+TRANSLATION_WEIGHT_ENV = "NOVA_W_TRANSLATION"
+CHANGELOG_WEIGHT_ENV = "NOVA_W_CHANGELOG"
+EXAMPLE_WEIGHT_ENV = "NOVA_W_EXAMPLE"
 
 #: rerank 加分的 doctype 白名单（D-42 高信息密度文档）。
 HIGH_VALUE_DOCTYPES = frozenset({"agent-instructions", "design", "adr", "readme", "api"})
@@ -119,6 +130,10 @@ FEATURE_STALE_SPEC = "stale spec reference"
 FEATURE_FALLBACK = "fallback_block"
 FEATURE_GRAPH_2HOP = "graph distance 2 hops"
 FEATURE_SYNTHESIZED = "synthesized edge"
+#: 路径先验（benchmark 基线暴露的系统性噪声，见 ``retrieval/prior.py``）。
+FEATURE_TRANSLATION = "translation variant (duplicate of another language)"
+FEATURE_CHANGELOG = "changelog / release notes"
+FEATURE_EXAMPLE_PATH = "example / tutorial path"
 
 #: 特征名（供测试与 03 的可解释性断言引用）。
 FEATURE_NAMES = (
@@ -139,6 +154,9 @@ FEATURE_NAMES = (
     FEATURE_FALLBACK,
     FEATURE_GRAPH_2HOP,
     FEATURE_SYNTHESIZED,
+    FEATURE_TRANSLATION,
+    FEATURE_CHANGELOG,
+    FEATURE_EXAMPLE_PATH,
 )
 
 #: "测试意图查询" 的确定性词表（V1 口径，见任务卡"执行记录"）。
@@ -242,6 +260,15 @@ class RerankWeights:
     #: （它仍是真实代码，用户明确问“兼容层怎么做”时应当能看到）。-0.35 大于实测分差
     #: 一个量级，又远小于两档之间的典型间隔（约 1.0），不会跨档误伤。
     deprecated_path: float = -0.35
+    #: **译文变体**：同一文档的其他语言版本。基线（fastapi：``docs/<语言>/...`` 同一段话 6+ 份）
+    #: 里它们占满前 10、把实现挤出去；取 -2.0 让同组只剩一个版本留在前列（组内保留者不扣）。
+    translation_variant: float = -2.0
+    #: **变更日志 / 发布说明**（查询没有明示要找它时）：基线（cc-switch）里三语发布说明
+    #: 因含大量功能名排在源码前面。-1.2 与 ``test_fixture`` 同量级。
+    changelog_path: float = -1.2
+    #: **示例 / 教程目录**（查询没有明示要示例时）：同名变量与调用多，容易压过核心实现
+    #: （muduo ``examples/`` 的 ``loop_`` 成员声明）。只取 -0.6，示例仍是真实代码。
+    example_path: float = -0.6
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +284,9 @@ class RerankSignals:
     stale_chunk_ids: frozenset[str] = frozenset()
     test_intent: bool = False
     doctype_by_chunk: Mapping[str, str] = field(default_factory=dict)
+    translation_variant_ids: frozenset[str] = frozenset()
+    changelog_intent: bool = False
+    example_intent: bool = False
 
 
 def _symbol_names(symbol: str) -> set[str]:
@@ -374,6 +404,22 @@ def features(
     hit(FEATURE_FALLBACK, weights.fallback_block, candidate.kind == KIND_FALLBACK)
     hit(FEATURE_GRAPH_2HOP, weights.graph_2hop, candidate.graph_depth >= 2)
     hit(FEATURE_SYNTHESIZED, weights.synthesized_edge, SYNTHESIZED_REASON in candidate.reasons)
+    hit(
+        FEATURE_TRANSLATION,
+        weights.translation_variant,
+        candidate.chunk_id in signals.translation_variant_ids,
+    )
+    path = candidate.path or ""
+    hit(
+        FEATURE_CHANGELOG,
+        weights.changelog_path,
+        not signals.changelog_intent and is_changelog_path(path),
+    )
+    hit(
+        FEATURE_EXAMPLE_PATH,
+        weights.example_path,
+        not signals.example_intent and is_example_path(path),
+    )
     return hits
 
 
@@ -406,8 +452,9 @@ def rerank(
 def weights_from_env(source: Mapping[str, str] | None = None) -> RerankWeights:
     """按环境变量覆盖权重默认值（TASK-101 的实测调参入口，便于 A/B 而不改代码）。
 
-    只覆盖 TASK-101 **新增**的 2 个权重（``NOVA_W_LITERAL`` / ``NOVA_W_LITERAL_ROOT``
-    ）；R29/R30 冻结的旧权重不在此列——它们要等 TASK-093 的真实数据。
+    只覆盖**后加**的权重（TASK-101 的 ``NOVA_W_LITERAL`` / ``NOVA_W_LITERAL_ROOT``，
+    以及路径先验的 ``NOVA_W_TRANSLATION`` / ``NOVA_W_CHANGELOG`` / ``NOVA_W_EXAMPLE``）；
+    R29/R30 冻结的旧权重不在此列——它们要等 TASK-093 的真实数据。
     缺省/非法值一律回落默认（与 ``IndexScope.from_env`` 同一纪律）。
     """
     env = os.environ if source is None else source
@@ -416,6 +463,9 @@ def weights_from_env(source: Mapping[str, str] | None = None) -> RerankWeights:
     for name, variable in (
         ("literal_hit", LITERAL_WEIGHT_ENV),
         ("literal_root", LITERAL_ROOT_WEIGHT_ENV),
+        ("translation_variant", TRANSLATION_WEIGHT_ENV),
+        ("changelog_path", CHANGELOG_WEIGHT_ENV),
+        ("example_path", EXAMPLE_WEIGHT_ENV),
     ):
         raw = env.get(variable)
         if not raw:
@@ -483,6 +533,9 @@ def collect_signals(
     )
 
     return RerankSignals(
+        translation_variant_ids=translation_variants(candidates, query),
+        changelog_intent=changelog_intent(query),
+        example_intent=example_intent(query),
         query_symbols=query_symbols,
         explicit_chunk_ids=explicit_chunk_ids,
         top1_seed_chunk_id=top1,

@@ -205,9 +205,9 @@ def prepare_file(
     )
 
 
-def scope_key(scope: IndexScope) -> tuple[int, float, int]:
+def scope_key(scope: IndexScope) -> tuple[int, float, int, int]:
     """范围阈值的可比较键（预取结果只在同一阈值下复用）。"""
-    return (scope.max_bytes, scope.binary_ratio, scope.probe_bytes)
+    return (scope.max_bytes, scope.binary_ratio, scope.probe_bytes, scope.source_max_bytes)
 
 
 # ---------------------------------------------------------------------------
@@ -215,25 +215,30 @@ def scope_key(scope: IndexScope) -> tuple[int, float, int]:
 # ---------------------------------------------------------------------------
 
 #: ``(项目, 路径, blob hash, 语言, 范围阈值, 递归上限)``。
-_Key = tuple[str, str, str, "str | None", tuple[int, float, int], int]
+_Key = tuple[str, str, str, "str | None", tuple[int, float, int, int], int]
 
 
 def _prepare_task(
     path: str,
     data: bytes,
     language: str | None,
-    scope: tuple[int, float, int],
+    scope: tuple[int, float, int, int],
     recursion_limit: int,
 ) -> bytes:
     """子进程入口：同一个 :func:`prepare_file`，结果压缩序列化后交回（主进程按需解开）。"""
     if sys.getrecursionlimit() != recursion_limit:
         sys.setrecursionlimit(recursion_limit)
-    max_bytes, binary_ratio, probe_bytes = scope
+    max_bytes, binary_ratio, probe_bytes, source_max_bytes = scope
     result = prepare_file(
         path,
         data,
         language,
-        IndexScope(max_bytes=max_bytes, binary_ratio=binary_ratio, probe_bytes=probe_bytes),
+        IndexScope(
+            max_bytes=max_bytes,
+            binary_ratio=binary_ratio,
+            probe_bytes=probe_bytes,
+            source_max_bytes=source_max_bytes,
+        ),
     )
     return zlib.compress(pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL), 1)
 

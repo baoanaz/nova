@@ -699,6 +699,30 @@ class Engine:
         """独立 Deep 证据入口；不调用 search、不调用 LLM（总结仍由 service 负责）。"""
         return self._query_with_trace(project_id, question, max_tokens, deep=True)
 
+    def rank_candidates(self, project_id: str, query: str) -> list[Candidate]:
+        """诊断用：召回 → 扩展 → rerank 之后的**完整**候选序（带通道名次与命中特征）。
+
+        与 ``search`` 共用同一条召回与排序路径，但不做组装、预算裁剪与二轮补检，
+        用来回答「期望的证据到底有没有被召回、在哪个通道、最终排第几」。不进入任何对外合同。
+        """
+        if not query.strip():
+            raise EngineError("query 不能为空")
+        query_vector = self._start_query_embedding(query)
+        with self._open_project(project_id) as (raw_store, vectors, provider):
+            store = ReadCachedStore(raw_store)
+            recalled = recall(
+                store,
+                query,
+                provider=provider,
+                vector_store=vectors,
+                limits=self._limits,
+                cache=self.query_cache,
+                query_vector=query_vector,
+            )
+            expansion = expand(store, recalled.candidates, limits=self._expansion_limits)
+            pool = [*recalled.candidates, *expansion.candidates]
+            return rerank(pool, collect_signals(store, query, pool))
+
     def _query_with_trace(
         self, project_id: str, query: str, max_tokens: int, *, deep: bool
     ) -> SearchTrace:

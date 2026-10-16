@@ -48,6 +48,7 @@ from nova_core.parsing.base import (
 from nova_core.parsing.c import (
     FunctionPointerMap,
     declarator_name,
+    is_declaration_macro_error,
     is_function_pointer_declarator,
     parse_include_directive,
     resolve_include,
@@ -87,6 +88,9 @@ class CppParser(TreeSitterParser):
 
     #: 宏展开后的少量缺分号是已验证的正常恢复形态，保持 TASK-004 既有语义。
     max_tolerated_missing = 5
+
+    def is_benign_error(self, node: ts.Node) -> bool:
+        return is_declaration_macro_error(node)
 
     def should_filter_recovered_syntax(self, errors: tuple[str, ...]) -> bool:
         missing_only = all(": missing " in message for message in errors)

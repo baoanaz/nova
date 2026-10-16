@@ -57,7 +57,11 @@ EMBEDDING_MODEL_KEY = "embedding_model"
 EMBEDDING_DIM_KEY = "embedding_dim"
 
 #: 解析/切片规则版本：改解析口径或切分逻辑（含伪 fqn、骨架规则）时必须 +1。
-PARSER_CONFIG_VERSION = 2
+#:
+#: 3：C/C++ 容忍函数名前的未知修饰宏（旧索引里这类函数被压成 fallback 块）。
+#: 4：源码文件大小上限从 128 KB 提到 1 MiB（旧索引整体跳过 routing.py、forwarder.rs 这类大文件）。
+#: 已有索引会在下一次索引时自动全量重解析。
+PARSER_CONFIG_VERSION = 4
 
 
 class Invalidation(StrEnum):

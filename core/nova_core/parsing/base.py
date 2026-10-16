@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import importlib
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import ClassVar
 
@@ -74,7 +74,10 @@ def walk(node: ts.Node) -> Iterator[ts.Node]:
 
 
 def collect_parse_errors(
-    root: ts.Node, source: bytes, limit: int = MAX_PARSE_ERRORS
+    root: ts.Node,
+    source: bytes,
+    limit: int = MAX_PARSE_ERRORS,
+    ignore: Callable[[ts.Node], bool] | None = None,
 ) -> list[str]:
     """收集语法错误（ERROR / MISSING 节点），带 1-based 行号与片段。"""
     errors: list[str] = []
@@ -85,6 +88,8 @@ def collect_parse_errors(
             errors.append(f"L{line_of(node)}: missing {node.type}")
             continue
         if node.is_error:
+            if ignore is not None and ignore(node):
+                continue
             snippet = normalize_name(_text(node, source))
             errors.append(f"L{line_of(node)}: syntax error near {snippet!r}")
             continue
@@ -95,12 +100,16 @@ def collect_parse_errors(
     return errors
 
 
-def collect_error_spans(root: ts.Node) -> tuple[tuple[int, int], ...]:
+def collect_error_spans(
+    root: ts.Node, ignore: Callable[[ts.Node], bool] | None = None
+) -> tuple[tuple[int, int], ...]:
     """返回最外层 ERROR/MISSING 节点的 1-based 闭区间，供局部恢复过滤。"""
     spans: list[tuple[int, int]] = []
     stack = [root]
     while stack:
         node = stack.pop()
+        if node.is_error and ignore is not None and ignore(node):
+            continue
         if node.is_missing or node.is_error:
             spans.append((line_of(node), max(line_of(node), end_line_of(node))))
             continue
@@ -207,7 +216,7 @@ class TreeSitterParser:
                 fallback=True,
             )
 
-        errors = collect_parse_errors(tree.root_node, source)
+        errors = collect_parse_errors(tree.root_node, source, ignore=self.is_benign_error)
         if errors and not self.recover_syntax_errors:
             return ParsedFile(
                 path=path,
@@ -230,7 +239,9 @@ class TreeSitterParser:
 
         if errors:
             if self.should_filter_recovered_syntax(tuple(errors)):
-                _filter_recovered_extraction(out, collect_error_spans(tree.root_node))
+                _filter_recovered_extraction(
+                    out, collect_error_spans(tree.root_node, ignore=self.is_benign_error)
+                )
             if not out.symbols:
                 return ParsedFile(
                     path=path,
@@ -251,6 +262,15 @@ class TreeSitterParser:
     def should_filter_recovered_syntax(self, errors: tuple[str, ...]) -> bool:
         """局部恢复后是否过滤错误子树；子类可保留已验证的窄容忍形态。"""
         return True
+
+    def is_benign_error(self, node: ts.Node) -> bool:
+        """某个 ERROR 节点是否属于**不影响符号抽取**的良性形态（默认没有）。
+
+        良性错误不计入 ``parse_errors``、也不污染所在符号：例如 C/C++ 在函数名前的未知修饰宏
+        （``int attribute_align_arg avcodec_send_packet(...)``）——语法树里函数定义完整，
+        只是修饰宏被标成一个只含标识符的 ERROR。
+        """
+        return False
 
     def extract(self, root: ts.Node, ctx: FileContext, out: Extraction) -> None:
         """子类实现：把符号/边/unresolved 写进 ``out``。"""

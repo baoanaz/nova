@@ -60,6 +60,7 @@ __all__ = [
     "DEFAULT_SKIP_DIRS",
     "DEFAULT_SKIP_DIR_PATTERNS",
     "DEFAULT_MAX_FILE_BYTES",
+    "DEFAULT_MAX_SOURCE_FILE_BYTES",
     "IGNORE_FILENAME",
     "INCLUDE_FILENAME",
     "GITIGNORE_FILENAME",
@@ -86,6 +87,16 @@ ALLOWLIST_SCOPE_ENV_VAR = "NOVA_ALLOWLIST_SCOPE"
 
 #: 默认大小阈值：``> 128 KB`` 跳过（Module/05 §3.1 / R43，与 client 同口径）。
 DEFAULT_MAX_FILE_BYTES = 128 * 1024
+#: 源码文件的单独上限：``routing.py``（254 KB）、``forwarder.rs``（342 KB）这类核心实现文件
+#: 体量大但恰恰是检索的主要目标，整体跳过会让整份实现不可检索（benchmark 实测）。
+#: 源码按符号切块，大文件不会产生超长 chunk；真正的生成物/压缩产物靠二进制与生成文件判定兜住。
+DEFAULT_MAX_SOURCE_FILE_BYTES = 1024 * 1024
+#: 视为「源码」的扩展名（小写，含点号）：不依赖是否有专用解析器（Rust/Kotlin 走兜底切分也算）。
+SOURCE_EXTENSIONS = frozenset(
+    ".py .pyi .c .h .cc .cpp .cxx .c++ .hpp .hh .hxx .h++ .ipp .tpp "
+    ".js .jsx .mjs .cjs .ts .mts .cts .tsx .rs .kt .kts .java .go .swift .cs "
+    ".scala .rb .php .lua .m .mm".split()
+)
 #: 二进制判定的不可打印字符比例上限（Module/05 §3.1：``> 10%`` 判二进制）。
 BINARY_RATIO = 0.10
 #: 二进制探测只读前 8 KB（避免为一个 308 MB 的文件读全量；R43 / TASK-036 §C.1）。
@@ -1030,7 +1041,7 @@ class IndexScope:
     :meth:`check_bytes` 在拿到内容后判定——两段的返回值都是 ``(可索引, 原因)``。
     """
 
-    __slots__ = ("_max_bytes", "_binary_ratio", "_probe_bytes")
+    __slots__ = ("_max_bytes", "_source_max_bytes", "_binary_ratio", "_probe_bytes")
 
     def __init__(
         self,
@@ -1038,6 +1049,7 @@ class IndexScope:
         max_bytes: int = DEFAULT_MAX_FILE_BYTES,
         binary_ratio: float = BINARY_RATIO,
         probe_bytes: int = BINARY_PROBE_BYTES,
+        source_max_bytes: int = DEFAULT_MAX_SOURCE_FILE_BYTES,
     ) -> None:
         if max_bytes <= 0:
             raise ValueError(f"max_bytes 必须为正整数，收到 {max_bytes}")
@@ -1046,12 +1058,18 @@ class IndexScope:
         if probe_bytes <= 0:
             raise ValueError(f"probe_bytes 必须为正整数，收到 {probe_bytes}")
         self._max_bytes = max_bytes
+        # 源码上限不低于通用上限：调高通用上限（NOVA_MAX_FILE_BYTES）时源码不会反而更严。
+        self._source_max_bytes = max(source_max_bytes, max_bytes)
         self._binary_ratio = binary_ratio
         self._probe_bytes = probe_bytes
 
     @property
     def max_bytes(self) -> int:
         return self._max_bytes
+
+    @property
+    def source_max_bytes(self) -> int:
+        return self._source_max_bytes
 
     @property
     def binary_ratio(self) -> float:
@@ -1074,7 +1092,16 @@ class IndexScope:
         raw_bytes = source.get("NOVA_MAX_FILE_BYTES")
         raw_ratio = source.get("NOVA_BINARY_RATIO")
         max_bytes = DEFAULT_MAX_FILE_BYTES
+        source_max_bytes = DEFAULT_MAX_SOURCE_FILE_BYTES
         binary_ratio = BINARY_RATIO
+        raw_source = source.get("NOVA_MAX_SOURCE_FILE_BYTES")
+        if raw_source:
+            try:
+                parsed_source = int(raw_source)
+            except ValueError:
+                parsed_source = 0
+            if parsed_source > 0:
+                source_max_bytes = parsed_source
         if raw_bytes:
             try:
                 parsed = int(raw_bytes)
@@ -1089,11 +1116,19 @@ class IndexScope:
                 ratio = -1.0
             if 0.0 <= ratio <= 1.0:
                 binary_ratio = ratio
-        return cls(max_bytes=max_bytes, binary_ratio=binary_ratio)
+        return cls(
+            max_bytes=max_bytes, binary_ratio=binary_ratio, source_max_bytes=source_max_bytes
+        )
+
+    def _limit_for(self, path: str) -> int:
+        dot = path.rfind(".")
+        if dot > path.rfind("/") and path[dot:].lower() in SOURCE_EXTENSIONS:
+            return self._source_max_bytes
+        return self._max_bytes
 
     def should_read(self, path: str, size: int) -> tuple[bool, str | None]:
-        """纯元数据判定：``size > max_bytes`` → ``(False, "oversize:<size>")``。"""
-        if size > self._max_bytes:
+        """纯元数据判定：超限 → ``(False, "oversize:<size>")``；源码文件用更高的上限。"""
+        if size > self._limit_for(path):
             return False, oversize_reason(size)
         return True, None
 

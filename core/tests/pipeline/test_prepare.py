@@ -48,7 +48,7 @@ def _write_corpus(root: Path) -> None:
     (root / "broken.py").write_text("def broken(:\n    pass\n", encoding="utf-8")
     (root / "blob.bin").write_bytes(b"\x00\x01binary\x00" * 10)
     (root / "late_nul.py").write_bytes(b"x = 1\n" * 3000 + b"\x00")
-    (root / "huge.py").write_text("x = 1\n" * 40_000, encoding="utf-8")
+    (root / "huge.txt").write_text("x = 1\n" * 40_000, encoding="utf-8")
     (root / "native").mkdir()
     (root / "native" / "a.cpp").write_text("int add(int a, int b) { return a + b; }\n")
     (root / "native" / "a.h").write_text("class Box { public: int size() const; };\n")
@@ -156,7 +156,7 @@ def test_prefetched_ingest_matches_inline_byte_for_byte(tmp_path: Path) -> None:
     assert dump == inline_dump
     assert report == inline_report
     assert any("broken.py" in error for error in inline_report.errors)
-    assert {"blob.bin", "late_nul.py", "huge.py"} <= set(inline_report.skipped_files)
+    assert {"blob.bin", "late_nul.py", "huge.txt"} <= set(inline_report.skipped_files)
 
 
 def test_partial_prefetch_matches_inline(tmp_path: Path) -> None:
@@ -205,7 +205,7 @@ def test_parse_result_is_independent_of_caller_stack_depth(tmp_path: Path) -> No
 
 def test_prepare_file_skip_and_error_semantics() -> None:
     assert prepare_file("a.bin", b"a\x00b", "python", _SCOPE) == PrepareSkip("a.bin", "binary")
-    oversize = prepare_file("big.py", b"x" * (_SCOPE.max_bytes + 1), "python", _SCOPE)
+    oversize = prepare_file("big.txt", b"x" * (_SCOPE.max_bytes + 1), None, _SCOPE)
     assert isinstance(oversize, PrepareSkip) and oversize.skip_reason.startswith("oversize:")
     unknown = prepare_file("a.xyz", b"text", "no-such-language", _SCOPE)
     assert isinstance(unknown, PreparedFile) and unknown.parsed.fallback
@@ -255,7 +255,7 @@ def test_unfinished_prefetch_is_not_awaited() -> None:
     try:
         pending: Future[bytes] = Future()
         key = ("p", "a.py", "h1", "python", (_SCOPE.max_bytes, _SCOPE.binary_ratio,
-               _SCOPE.probe_bytes), __import__("sys").getrecursionlimit())
+               _SCOPE.probe_bytes, _SCOPE.source_max_bytes), __import__("sys").getrecursionlimit())
         prefetcher._entries[key] = (pending, 6, 0.0)  # noqa: SLF001 - 构造"未算完"
         prefetcher._held_bytes = 6  # noqa: SLF001
         view = prefetcher.view("p", _SCOPE)

@@ -75,7 +75,7 @@ def test_embedding_dim_change_triggers_reembed(store: Store) -> None:
 def test_parser_change_wins_over_embedding_change(store: Store) -> None:
     write_fingerprint(store, _fingerprint())
     other = IndexFingerprint(
-        parser_config_hash=compute_parser_config_hash({"version": 3}),
+        parser_config_hash=compute_parser_config_hash({"version": PARSER_CONFIG_VERSION + 1}),
         embedding_model="api:bge-m3",
         embedding_dim=1024,
     )

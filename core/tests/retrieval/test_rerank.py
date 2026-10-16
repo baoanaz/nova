@@ -210,8 +210,8 @@ def test_feature_names_cover_fifteen() -> None:
     """特征表规模（TASK-101 新增 2 条 literal；TASK-105 新增 2 条 vector rank；
     TASK-MCP-BUDGET 新增 1 条 deprecated path）。
     """
-    assert len(FEATURE_NAMES) == 17
-    assert len(set(FEATURE_NAMES)) == 17
+    assert len(FEATURE_NAMES) == 20  # 17 + 路径先验 3 条（译文变体 / 变更日志 / 示例目录）
+    assert len(set(FEATURE_NAMES)) == 20
 
 
 # --------------------------------------------------------------------------- 打分与排序
@@ -265,7 +265,7 @@ def test_weights_override_does_not_change_feature_structure() -> None:
     lightweight = with_weights(RerankWeights(), explicit_hit=0.0)
     assert lightweight.explicit_hit == 0.0
     assert lightweight.symbol_match == 1.0
-    assert len(RerankWeights().__dataclass_fields__) == 17
+    assert len(RerankWeights().__dataclass_fields__) == 20
     with pytest.raises(TypeError):
         with_weights(RerankWeights(), not_a_feature=1.0)
 

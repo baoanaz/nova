@@ -502,3 +502,21 @@ def test_default_skip_dirs_is_reachable_from_new_home() -> None:
 
     assert exported is DEFAULT_SKIP_DIRS
     assert "node_modules" in exported
+
+
+def test_source_files_get_a_higher_size_limit_than_other_files() -> None:
+    scope = IndexScope()
+    size = scope.max_bytes + 1
+    assert scope.should_read("fastapi/routing.py", size) == (True, None)
+    assert scope.should_read("src-tauri/src/proxy/forwarder.rs", size) == (True, None)
+    readable, reason = scope.should_read("docs/big.txt", size)
+    assert not readable and reason and reason.startswith("oversize:")
+    readable, reason = scope.should_read("a.py", scope.source_max_bytes + 1)
+    assert not readable and reason and reason.startswith("oversize:")
+
+
+def test_source_limit_is_never_below_general_limit_and_reads_env() -> None:
+    assert IndexScope(max_bytes=4 << 20).source_max_bytes == 4 << 20
+    scope = IndexScope.from_env({"NOVA_MAX_SOURCE_FILE_BYTES": "300000"})
+    assert scope.source_max_bytes == 300000
+    assert IndexScope.from_env({"NOVA_MAX_SOURCE_FILE_BYTES": "oops"}).source_max_bytes == 1 << 20

@@ -76,6 +76,9 @@ class CParser(TreeSitterParser):
     grammar_module = "tree_sitter_c"
     recover_syntax_errors = True
 
+    def is_benign_error(self, node: ts.Node) -> bool:
+        return is_declaration_macro_error(node)
+
     def extract(self, root: ts.Node, ctx: FileContext, out: Extraction) -> None:
         pointers = FunctionPointerMap()
         self._walk(root, ctx, out, pointers)  # 符号 + include + 宏
@@ -369,6 +372,25 @@ def _unique_basename(target: str, repo_paths: Iterable[str] | None) -> str | Non
 
 
 # -- 复用工具：声明符 / 可见性 / 函数指针表 ------------------------------------
+
+
+def is_declaration_macro_error(node: ts.Node) -> bool:
+    """``ERROR`` 节点是否只是声明前缀里的未知修饰宏（C / C++ 共用）。
+
+    形态：父节点是 ``function_definition`` / ``declaration``，ERROR 里只有 ``identifier``，
+    且整体位于声明符（函数名）之前——如 FFmpeg 的 ``int attribute_align_arg avcodec_send_packet()``。
+    这类宏不改变函数的语法结构，符号必须照常抽取；出现在声明符之后或含其他 token 的错误不算。
+    """
+    if not node.is_error:
+        return False
+    parent = node.parent
+    if parent is None or parent.type not in ("function_definition", "declaration"):
+        return False
+    children = node.children
+    if not children or any(child.type != "identifier" for child in children):
+        return False
+    declarator = parent.child_by_field_name("declarator")
+    return declarator is not None and node.end_byte <= declarator.start_byte
 
 
 def declarator_name(node: ts.Node | None, ctx: FileContext) -> str | None:
