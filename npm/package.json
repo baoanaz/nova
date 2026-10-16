@@ -1,6 +1,6 @@
 {
   "name": "@baoanaz/nova-client",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "description": "MCP stdio client for nova: local codebase sync proxy backed by a remote nova-service",
   "license": "Unlicense",
   "repository": {
@@ -39,11 +39,11 @@
     "arm64"
   ],
   "optionalDependencies": {
-    "@baoanaz/nova-client-linux-x64": "0.0.9",
-    "@baoanaz/nova-client-linux-arm64": "0.0.9",
-    "@baoanaz/nova-client-darwin-x64": "0.0.9",
-    "@baoanaz/nova-client-darwin-arm64": "0.0.9",
-    "@baoanaz/nova-client-windows-x64": "0.0.9",
-    "@baoanaz/nova-client-windows-arm64": "0.0.9"
+    "@baoanaz/nova-client-linux-x64": "0.0.10",
+    "@baoanaz/nova-client-linux-arm64": "0.0.10",
+    "@baoanaz/nova-client-darwin-x64": "0.0.10",
+    "@baoanaz/nova-client-darwin-arm64": "0.0.10",
+    "@baoanaz/nova-client-windows-x64": "0.0.10",
+    "@baoanaz/nova-client-windows-arm64": "0.0.10"
   }
 }
