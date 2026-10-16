@@ -94,7 +94,7 @@ ask_project:
 优先级：.novaignore（项目内用户自定义）> .gitignore（真实解析，含否定规则）
         > 内置默认（.git node_modules target dist build .venv __pycache__ .tox
                     .idea .vscode .nova blobs 缓存目录等）
-通用过滤：>128KB 跳过；>10% 不可打印字符判二进制跳过（notace 参数沿用）
+通用过滤：非源码文件 >128KB 跳过，**源码文件 >1 MiB 才跳过**（2026-10 修订：`routing.py`、`forwarder.rs` 这类 250–400 KB 的核心实现文件此前被整体丢弃而无法检索；core `NOVA_MAX_SOURCE_FILE_BYTES` 可调，client `blobref::max_bytes_for` 同口径）；>10% 不可打印字符判二进制跳过（notace 参数沿用）
 Rust 实现直接用 ignore crate（原生支持 .gitignore 语义）
 ```
 

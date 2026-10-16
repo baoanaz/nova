@@ -4,6 +4,69 @@
 > 安装清单是 [ENVIRONMENT.txt](ENVIRONMENT.txt)，操作指南在 [docs/handbook/](docs/handbook/README.md)。
 > 本文件记录开发现状；旧机器的环境、服务状态和历史成绩不代表当前 VPS。
 
+## 2026-10-17 检索与 ask 优化轮（先读这一节）
+
+用新增的 [`bench/`](bench/README.md)（六个真实公开仓库 × 60 题，靶场见
+[靶场清单](docs/handbook/benchmark/targets.md)）驱动，结果：
+
+| | 基线 | 本轮 |
+|---|---:|---:|
+| search 命中@10 | 17/30 | **25/30** |
+| ask 通过（自动粗筛） | 10/30 | **23/30** |
+
+按“根因”而非“调参”改进，每一项都有 benchmark 证据：
+
+1. **源码大文件被整体丢弃**（最大的一项）：索引有 128 KB 单文件上限，`fastapi/routing.py`
+   （254 KB）、cc-switch 的 `forwarder.rs`（342 KB）等 24 个核心实现文件根本不在索引里，
+   不是语义问题。现在**源码扩展名上限 1 MiB**，其余文件仍 128 KB。core
+   `NOVA_MAX_SOURCE_FILE_BYTES` 可调；client 同口径（`client/src/blobref.rs::max_bytes_for`）。
+2. **新增 Rust、Kotlin 解析器**（`core/nova_core/parsing/{rust,kotlin}.py`，节点表参考
+   CodeGraph）：此前 `.rs/.kt` 只走兜底切分，大文件被切成无符号名的 `(module)` 块。
+   依赖 `tree-sitter-rust`、`tree-sitter-kotlin` 已写入 `core/pyproject.toml` 和 `uv.lock`。
+3. **路径先验**（`core/nova_core/retrieval/prior.py`，rerank 三个新特征）：多语言译文变体、
+   变更日志、示例目录在查询没有明确要找它们时降权。设计文档 Module/02 §4.5 已同步。
+4. **C/C++ 容忍函数名前的未知修饰宏**（FFmpeg 的 `attribute_align_arg` 之类），
+   不再把整个函数压成 fallback 块。
+5. **ask 不再轻易降级**（`service/nova_service/{answer,grounded,llmprotocol}.py`）：
+   - 推理模型的 reasoning token 与正文共用 `max_tokens`，大上下文时正文为空或 JSON 被截断，
+     过去被判“空回答 / 格式无效”。现在因长度截断会把额度放大 4 倍（上限 16384）重试一次。
+   - 结构化回答解析容忍围栏变体、JSON 前后的说明文字、重复键。
+   - **ask 只在“一条证据都没有”时才跳过 LLM**（HTTP 与 MCP 共用 `no_usable_evidence`）。
+     `answerable=false` 是多通道共识的质量提示，对 ask 过严，且无关问题与真实问题的
+     `confidence` 同为 low，分不开；有证据就交给 LLM，强制引用回验仍会移除无依据结论。
+     实测“天气 / 番茄炒蛋 / 订单支付”这类无关问题会如实回答“证据不足”并列出缺口。
+6. `PARSER_CONFIG_VERSION` 2 → 5，`Engine.rank_candidates` 提供候选池诊断。
+
+### 上线时会发生什么（VPS）
+
+不需要手工迁移，按常规流程拉代码、`uv sync`、重启服务即可：
+
+- **旧索引会在下一次索引时自动全量重解析**（解析版本号变了）。这是自动的、无感的，
+  代价是 embedding 重新计算新增/变化的 chunk（有内容哈希缓存，未变的 chunk 不重复付费）。
+  数据量参考：放开大文件让 ffmpeg/fastapi/pi/cc-switch 合计多约 5500 个 chunk（+4%）；
+  Rust/Kotlin 解析器让 cc-switch 14582→27312、gkd 1209→5610（按符号切块后粒度更细）。
+  大仓首次重建会多花几分钟（ffmpeg 约 2 分钟，其余不到 1 分钟）。
+- 想先观察再放开，可设 `NOVA_MAX_SOURCE_FILE_BYTES=131072` 回到旧上限。
+- **client 需要同步发版**：远程模式下 Rust client 在上传前按同样的规则过滤，只升级服务端
+  不会让大文件进索引。
+- **本机没有 cargo，client 的改动（`blobref.rs`/`index.rs`/`warmup.rs`）未编译、未测试**。
+  请在有 Rust 的机器上跑 `cargo test`（`client/src/blobref.rs` 新增了
+  `source_files_get_the_higher_limit`）后再发 npm 版本。
+
+### 未做 / 下一步
+
+- 剩下 5 个 search 未命中全是“自然语言问句 ↔ 代码名”的语义距离（如“放到线程池里执行”
+  对 `run_endpoint_function`）。按约定**不在检索前加 LLM 步骤**，靠 Client 侧 Tool 描述引导
+  Agent 把问句改写成更像代码的查询；这是产品文案问题，不是检索架构问题。
+- `bench/` 与 [`benches/`](benches/README.md) 互补：后者是 golden 集上的 recall@k / MRR 回归，
+  前者在真实仓库上暴露“根本没进索引”这类系统性问题。**两者都保留，别删 `benches/`。**
+  下一步可把 `bench/` 的几个检索细节（译文去重、大文件、无解析器语言）补成 `benches/golden` 风格的
+  细粒度用例，覆盖各个检索细节。
+- 本机的 ask 模型是网关里的 `deepseek/deepseek-v4.1-flash`（推理模型）。用户提到过
+  `gpt-6-luna`，但该网关账号的 `/models` 只有 4 个模型（haiku-5-5、deepseek-v4.1-flash、
+  deepseek-v4.1-flash-fast、mimo-v2.6-flash），没有它；需要确切 id 或另一个网关后再换。
+- 提交 `bench/` 后本地跑法见 [bench/README.md](bench/README.md)；`bench/results/` 被忽略。
+
 ## 当前工作区
 
 本轮恢复 Python 3.12.3/uv 0.12.23、Node 22.23.3/npm 10.9.9、

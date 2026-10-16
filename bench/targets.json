@@ -1,0 +1,43 @@
+{
+  "schema": 2,
+  "repos_root_env": "NOVA_BENCH_REPOS",
+  "repos_root_default": "~/github/ace/bench-repos",
+  "targets": {
+    "ffmpeg": {
+      "language": "C",
+      "dir": "FFmpeg",
+      "url": "https://github.com/FFmpeg/FFmpeg",
+      "commit": "447b72d90f2c0738c973e33532cfd325e2f3c9a5"
+    },
+    "muduo": {
+      "language": "C++",
+      "dir": "muduo",
+      "url": "https://github.com/chenshuo/muduo",
+      "commit": "f1fc77e0c13b80e5086ff457362c8a86d1b609d4"
+    },
+    "fastapi": {
+      "language": "Python",
+      "dir": "fastapi",
+      "url": "https://github.com/fastapi/fastapi",
+      "commit": "bb7f314287bf36e04539c572a2256d94ea45f0d6"
+    },
+    "pi": {
+      "language": "TypeScript",
+      "dir": "pi",
+      "url": "https://github.com/earendil-works/pi",
+      "commit": "698a2d23b86a5045dd54554354a5e0cb7e466795"
+    },
+    "cc-switch": {
+      "language": "Rust",
+      "dir": "cc-switch",
+      "url": "https://github.com/farion1231/cc-switch",
+      "commit": "797e0276ffc20e54cbdf55e3de84505d77231c91"
+    },
+    "gkd": {
+      "language": "Kotlin",
+      "dir": "gkd",
+      "url": "https://github.com/gkd-kit/gkd",
+      "commit": "5a3d485e6f9f85888cb17e29f91bc6f220288321"
+    }
+  }
+}

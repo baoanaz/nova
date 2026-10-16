@@ -15,6 +15,9 @@ select = ["E", "F", "W", "I", "UP", "B"]
 [tool.ruff.lint.per-file-ignores]
 # 一次性探针脚本里内嵌了很长的提示词/样本字符串，不值得为行宽拆开。
 "benches/cloudflare_qwen_probe.py" = ["E501"]
+# bench 的 CLI 帮助与报告模板是长中文字符串，不值得为行宽拆开。
+"bench/nova_bench/cli.py" = ["E501"]
+"bench/nova_bench/report.py" = ["E501"]
 
 [tool.pytest.ini_options]
 # ``tests/``：根级跨制品护栏（npm 平台子包一致性 D-48/D-49 等）。
