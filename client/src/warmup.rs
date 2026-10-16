@@ -397,7 +397,7 @@ fn workspace_version(root: &Path, policy: FilePolicy, exclude_repositories: bool
             use std::os::unix::fs::MetadataExt;
             stamp.push_str(&format!(":{}:{}:{}:{}", metadata.dev(), metadata.ino(), metadata.ctime(), metadata.ctime_nsec()));
         }
-        if metadata.len() <= crate::blobref::MAX_FILE_BYTES as u64 {
+        if metadata.len() <= crate::blobref::max_bytes_for(&relative) as u64 {
             if !files.contains_key(&relative) { bytes += metadata.len(); }
             policy.check_limits(0, files.len() + 1, bytes)?;
             stamp.push_str(&digest(&std::fs::read(path)?));

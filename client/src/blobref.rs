@@ -9,8 +9,36 @@
 
 use sha2::{Digest, Sha256};
 
-/// 单文件上限（与 core `DEFAULT_MAX_FILE_BYTES` / Module 05 §3.1 一致：`>128KB` 跳过）。
+/// 单文件上限（与 core `DEFAULT_MAX_FILE_BYTES` 一致：非源码文件 `>128KB` 跳过）。
 pub const MAX_FILE_BYTES: usize = 128 * 1024;
+
+/// 源码文件的单独上限（与 core `DEFAULT_MAX_SOURCE_FILE_BYTES` 一致）。
+///
+/// `routing.py`（254 KB）、`forwarder.rs`（342 KB）这类核心实现文件体量大却正是检索目标，
+/// 整体跳过会让它们完全不可检索。源码按符号切块，大文件不会产生超长 chunk。
+pub const MAX_SOURCE_FILE_BYTES: usize = 1024 * 1024;
+
+/// 视为源码的扩展名（小写、不含点号）；与 core `SOURCE_EXTENSIONS` 保持一致。
+const SOURCE_EXTENSIONS: &[&str] = &[
+    "py", "pyi", "c", "h", "cc", "cpp", "cxx", "c++", "hpp", "hh", "hxx", "h++", "ipp", "tpp",
+    "js", "jsx", "mjs", "cjs", "ts", "mts", "cts", "tsx", "rs", "kt", "kts", "java", "go",
+    "swift", "cs", "scala", "rb", "php", "lua", "m", "mm",
+];
+
+/// 该路径适用的单文件大小上限：源码用 [`MAX_SOURCE_FILE_BYTES`]，其余用 [`MAX_FILE_BYTES`]。
+pub fn max_bytes_for(path: &str) -> usize {
+    let name = path.rsplit('/').next().unwrap_or(path);
+    match name.rsplit_once('.') {
+        // `.py` 这类只有扩展名没有主名的隐藏文件不算源码。
+        Some((stem, ext))
+            if !stem.is_empty()
+                && SOURCE_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()) =>
+        {
+            MAX_SOURCE_FILE_BYTES
+        }
+        _ => MAX_FILE_BYTES,
+    }
+}
 
 /// 二进制判定的不可打印字符比例上限（Module 05 §3.1：`> 10%` 判二进制）。
 pub const BINARY_RATIO: f64 = 0.10;
@@ -129,5 +157,16 @@ mod tests {
     #[test]
     fn size_limit_matches_contract() {
         assert_eq!(MAX_FILE_BYTES, 128 * 1024);
+        assert_eq!(MAX_SOURCE_FILE_BYTES, 1024 * 1024);
+    }
+
+    #[test]
+    fn source_files_get_the_higher_limit() {
+        assert_eq!(max_bytes_for("fastapi/routing.py"), MAX_SOURCE_FILE_BYTES);
+        assert_eq!(max_bytes_for("src-tauri/src/proxy/forwarder.rs"), MAX_SOURCE_FILE_BYTES);
+        assert_eq!(max_bytes_for("A/B.TS"), MAX_SOURCE_FILE_BYTES);
+        assert_eq!(max_bytes_for("docs/big.txt"), MAX_FILE_BYTES);
+        assert_eq!(max_bytes_for("Makefile"), MAX_FILE_BYTES);
+        assert_eq!(max_bytes_for(".py"), MAX_FILE_BYTES);
     }
 }

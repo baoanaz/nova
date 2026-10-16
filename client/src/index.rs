@@ -19,7 +19,10 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::blobref::{blob_hash, is_binary, sanitize_content, BINARY_RATIO, MAX_FILE_BYTES};
+use crate::blobref::{
+    blob_hash, is_binary, max_bytes_for, sanitize_content, BINARY_RATIO, MAX_FILE_BYTES,
+    MAX_SOURCE_FILE_BYTES,
+};
 use crate::ignore::IgnoreRules;
 use crate::policy::FilePolicy;
 
@@ -355,7 +358,7 @@ impl IndexManager {
                 }
             };
             let size = metadata.len();
-            if size > MAX_FILE_BYTES as u64 {
+            if size > max_bytes_for(&relative) as u64 {
                 walked.push(Walked::Skip(SkippedPath {
                     path: relative,
                     reason: format!("oversize:{size}"),
@@ -540,7 +543,7 @@ fn parallel_map<T: Sync, R: Send>(
 /// 扫描配置指纹：阈值 + 忽略规则内容。任一变化 → 缓存作废（避免脏索引）。
 fn config_fingerprint(rules: &IgnoreRules) -> String {
     let material = format!(
-        "v{CACHE_VERSION}:{MAX_FILE_BYTES}:{BINARY_RATIO}:{BINARY_PROBE_BYTES}:{}",
+        "v{CACHE_VERSION}:{MAX_FILE_BYTES}:{MAX_SOURCE_FILE_BYTES}:{BINARY_RATIO}:{BINARY_PROBE_BYTES}:{}",
         rules.fingerprint()
     );
     blob_hash("nova-client-config", material.as_bytes())
