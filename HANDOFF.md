@@ -37,6 +37,14 @@
      实测“天气 / 番茄炒蛋 / 订单支付”这类无关问题会如实回答“证据不足”并列出缺口。
 6. `PARSER_CONFIG_VERSION` 2 → 5，`Engine.rank_candidates` 提供候选池诊断。
 
+**对老 benchmark 的回归检查**：`benches/golden/nova`（本仓自检，19 条）在路径先验开/关两种配置下
+结果完全一致（recall@5=recall@10=0.684、MRR=0.575），说明 rerank 新特征对既有 golden 零回归
+（该仓没有多语言译文，所以先验本就不应触发）。同一份结果里负例 `nova-0106` 仍判为可回答
+（0/1），这是 backlog 里“负例可回答阈值”的既有缺口，本轮没有改动。
+复现：`nova-core ingest --repo . --data ~/.nova/bench-golden` 后
+`python benches/run.py --repo . --golden benches/golden/nova/nova.jsonl --data ~/.nova/bench-golden`，
+用 `NOVA_W_TRANSLATION=0 NOVA_W_CHANGELOG=0 NOVA_W_EXAMPLE=0` 关闭先验做对照。
+
 ### 上线时会发生什么（VPS）
 
 不需要手工迁移，按常规流程拉代码、`uv sync`、重启服务即可：
