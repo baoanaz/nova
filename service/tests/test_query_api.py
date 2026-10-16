@@ -232,7 +232,10 @@ def _ask(client: TestClient, project_id: str, question: str) -> dict:
 
 
 def test_ask_insufficient_evidence_returns_structured_package(
-    client: TestClient, engine_manager: EngineManager, indexed: str
+    client: TestClient,
+    engine_manager: EngineManager,
+    indexed: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``answerable=false`` → 结构化证据不足包（D-24）：三键齐全且 ``bestEffortContext`` 非空。
 
@@ -241,6 +244,10 @@ def test_ask_insufficient_evidence_returns_structured_package(
     口径说明：M1/M2a 里"向量通道总有候选"，单靠无关问题**不会**产生
     ``no_context_match``（R22 已登记，属 TASK-050 校准）。
     """
+    # 短路包的结构契约仍在（真正零证据时使用）；这里用"不可答即短路"的旧口径构造该分支。
+    monkeypatch.setattr(
+        "nova_service.routers.query.no_usable_evidence", lambda pack: not pack.answerable
+    )
     _blobs, state = engine_manager.project_paths(indexed)
     state.remove_paths([SAMPLE_MODULE_PATH])
     state.save()
@@ -276,7 +283,9 @@ def test_ask_when_answerable_keeps_the_degraded_package(client: TestClient, inde
     assert "bestEffortContext" not in body, "有答案时不得走 D-24 短路包"
 
 
-def test_ask_short_circuit_is_audited_as_deep_mode(tmp_path: Path) -> None:
+def test_ask_short_circuit_is_audited_as_deep_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """短路路径**也要落审计**（TASK-084 的 ``_audited``）：一条 ``mode=deep``、
     ``degraded=true``、``answerable=false`` 的记录（建库口径同 ``test_usage_api``）。"""
     settings = Settings(
@@ -289,6 +298,9 @@ def test_ask_short_circuit_is_audited_as_deep_mode(tmp_path: Path) -> None:
     app: FastAPI = create_app(settings)
     app.state.meta_db = MetaDB.open(settings.meta_db_path)
     app.state.engine_manager = manager
+    monkeypatch.setattr(
+        "nova_service.routers.query.no_usable_evidence", lambda pack: not pack.answerable
+    )
     try:
         project_id = manager.resolve_project("identity:audit-short", "audit-short").project_id
         upload_files(manager, project_id, SAMPLE_FILES)

@@ -170,12 +170,17 @@ def test_answer_text_is_stored_and_returned_by_history(env: SimpleNamespace) -> 
     assert recent[0]["answerStatus"] == "answered"
 
 
-def test_answerable_false_stores_null_text_but_records_status(env: SimpleNamespace) -> None:
+def test_answerable_false_stores_null_text_but_records_status(
+    env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """DoD（§A，本卡明令）：``answerable=false`` 短路**不调 LLM**。
 
     ``answer_text`` 必须是 ``NULL``，而 ``answer_status`` 必须是 ``insufficient_evidence``——
     把"没调 LLM"记成"调了但答案是空"是本卡禁止的失信。假 provider 一次都不该被调用。
     """
+    monkeypatch.setattr(
+        "nova_service.routers.query.no_usable_evidence", lambda pack: not pack.answerable
+    )
     provider = FakeAnswerProvider()
     _inject_provider(env, provider)
 

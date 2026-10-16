@@ -398,13 +398,15 @@ def test_ask_project_returns_llm_answer_when_configured(mcp_env: SimpleNamespace
 
 
 def test_ask_project_short_circuits_when_evidence_insufficient(
-    mcp_env: SimpleNamespace,
+    mcp_env: SimpleNamespace, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """``answerable=false`` 时**不调 LLM**，直接返回尽力而为的上下文（D-24，TASK-107）。
 
     与 HTTP ``ask`` 路由同语义。MCP 侧此前漏了这一步：证据不足时仍会消耗一次 LLM 调用，
     且返回的回答没有证据支撑。这里用一个仓库里**不存在**的概念提问，逼出 ``answerable=false``。
     """
+    # 短路分支用"不可答即短路"的旧口径构造（线上只在零证据时短路，见 no_usable_evidence）。
+    monkeypatch.setattr("nova_service.mcp.no_usable_evidence", lambda pack: not pack.answerable)
     calls: list[str] = []
 
     class _RecordingProvider:

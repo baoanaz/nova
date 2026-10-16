@@ -298,6 +298,42 @@ def build_request(
     raise ValueError(f"不支持的协议：{protocol!r}")
 
 
+# --------------------------------------------------------------------------- 截断与额度
+
+#: 因输出额度耗尽而放大重试时的上限。推理模型的 reasoning token 与正文共用 ``max_tokens``，
+#: 检索上下文较大时默认额度会被推理吃光，正文为空或被截断。
+ESCALATED_MAX_TOKENS_CAP = 16384
+ESCALATION_FACTOR = 4
+
+
+def truncated_by_length(protocol: str, body: Any) -> bool:
+    """响应是否因输出额度耗尽而被截断（三种协议各自的标记）。"""
+    if not isinstance(body, Mapping):
+        return False
+    if protocol == PROTOCOL_OPENAI:
+        choices = body.get("choices")
+        first = choices[0] if isinstance(choices, Sequence) and choices else None
+        return isinstance(first, Mapping) and first.get("finish_reason") == "length"
+    if protocol == PROTOCOL_RESPONSES:
+        details = body.get("incomplete_details")
+        return body.get("status") == "incomplete" and (
+            not isinstance(details, Mapping) or details.get("reason") in (None, "max_output_tokens")
+        )
+    if protocol == PROTOCOL_ANTHROPIC:
+        return body.get("stop_reason") == "max_tokens"
+    return False
+
+
+def escalate_max_tokens(protocol: str, payload: dict[str, Any]) -> dict[str, Any] | None:
+    """返回额度放大后的请求体；已达上限（无法再放大）返回 ``None``。"""
+    field = "max_output_tokens" if protocol == PROTOCOL_RESPONSES else "max_tokens"
+    current = int(payload.get(field) or 0)
+    target = min(max(current * ESCALATION_FACTOR, current + 1), ESCALATED_MAX_TOKENS_CAP)
+    if target <= current:
+        return None
+    return {**payload, field: target}
+
+
 # --------------------------------------------------------------------------- 响应抽取
 
 

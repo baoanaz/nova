@@ -54,7 +54,7 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from nova_service import audit
-from nova_service.answer import AnswerError, answer_question
+from nova_service.answer import AnswerError, answer_question, no_usable_evidence
 from nova_service.auth import local_user
 from nova_service.config import Settings
 from nova_service.deps import (
@@ -549,7 +549,7 @@ def _ask_text(
     _rescan_if_due(manager, settings, project_id)
     trace = _call_engine(lambda: manager.ask_evidence(project_id, question, max_tokens))
     warning = _storage_warning(manager, settings, project_id)
-    insufficient = not trace.pack.answerable
+    insufficient = no_usable_evidence(trace.pack)
     pack = trace.pack
     meta = pack_meta(
         trace.pack,

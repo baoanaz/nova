@@ -41,8 +41,10 @@ from nova_service.grounded import STRUCTURED_INSTRUCTIONS, compact_evidence, ren
 from nova_service.llmprotocol import (
     DEFAULT_PROTOCOL,
     ProtocolShapeError,
+    escalate_max_tokens,
     normalize_protocol,
     protocol_endpoint,
+    truncated_by_length,
 )
 from nova_service.llmprotocol import (
     build_request as build_protocol_request,
@@ -55,6 +57,7 @@ from nova_service.logging import get_logger, redact_text, register_secret
 __all__ = [
     "DEFAULT_PROTOCOL",
     "ANSWER_SECTIONS",
+    "no_usable_evidence",
     "CONNECT_TIMEOUT_S",
     "DEFAULT_BACKOFF_BASE",
     "DEFAULT_MAX_RETRIES",
@@ -284,6 +287,7 @@ class HttpJsonProvider:
             temperature=temperature,
         )
         last_error: AnswerError | None = None
+        escalated: dict[str, Any] | None = None
         # 整次调用（含重试与退避）共用一个总预算 ``timeout_s``：此前是"每次尝试 timeout_s × 3 次"，
         # 最坏远超客户端的等待上限，客户端放弃后服务端仍在继续调用并计费。
         deadline = time.monotonic() + self._timeout_s
@@ -336,6 +340,10 @@ class HttpJsonProvider:
                         f"总结模型返回 HTTP {response.status_code}"
                         f"（{_redact(_short(response.text), self._api_key)}）"
                     )
+                escalated = self._escalate_if_truncated(response, payload, escalated)
+                if escalated is not None and escalated is not payload:
+                    payload = escalated
+                    continue
                 return self._extract_content(response)
             if not self._sleep_backoff(attempt, None, deadline):
                 break
@@ -363,6 +371,27 @@ class HttpJsonProvider:
         if delay > 0:
             self._sleep(delay)
         return True
+
+    def _escalate_if_truncated(
+        self,
+        response: httpx.Response,
+        payload: dict[str, Any],
+        already: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        """输出因额度耗尽被截断时返回放大额度后的请求体（只放大一次）；否则返回当前请求体。
+
+        推理模型的 reasoning token 与正文共用 ``max_tokens``：额度不够时正文为空或 JSON 被截断，
+        按"空回答/格式无效"降级是误伤——给足额度重试一次即可，不增加正常请求的代价。
+        """
+        if already is not None:
+            return already
+        try:
+            body = response.json()
+        except ValueError:
+            return payload
+        if not truncated_by_length(self._protocol, body):
+            return payload
+        return escalate_max_tokens(self._protocol, payload) or payload
 
     def _extract_content(self, response: httpx.Response) -> str:
         """按协议抽答案文本；形状不对/空白 → :class:`AnswerResponseError`。
@@ -603,6 +632,17 @@ class AnswerOutcome:
     valid_citations: int
     invalid_citations: int
     citation_coverage: float | None
+
+
+def no_usable_evidence(pack: ContextPack) -> bool:
+    """ask 是否应跳过 LLM：只有**一条证据都没有**才短路（HTTP 与 MCP 两个入口共用）。
+
+    ``pack.answerable`` 是多通道共识的质量提示（给 search 用），对 ask 过严：中文问句对英文
+    代码时 BM25 常无贡献，共识不足但前几条证据其实够答；而无关问题的 ``confidence`` 也是
+    ``low``，这道闸门分不开二者（benchmark 实测）。有证据就交给 LLM，由它在强制引用回验下
+    作答或如实说明缺口——无有效引用的结论会被移除并写明"证据不足"。
+    """
+    return not (pack.evidence or pack.docs or pack.flows)
 
 
 def answer_question(

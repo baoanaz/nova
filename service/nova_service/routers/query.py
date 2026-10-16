@@ -65,7 +65,7 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from nova_service import audit
-from nova_service.answer import AnswerError, answer_question
+from nova_service.answer import AnswerError, answer_question, no_usable_evidence
 from nova_service.auth import llm_owner, quota_identity
 from nova_service.deps import get_engine_manager, get_settings, require_project_id
 from nova_service.errors import (
@@ -227,7 +227,7 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
         pack = trace.pack
         # 两条路都如实记 ``degraded=True``（都不含 LLM 总结），但"为什么"不同：
         # 证据不足是 D-24，无 LLM 是 D-26。审计的 answerable 由 pack.answerable 出（TASK-084）。
-        insufficient = not pack.answerable
+        insufficient = no_usable_evidence(pack)
         meta = pack_meta(
             pack,
             project_id=project_id,
@@ -359,7 +359,7 @@ async def ask_workspace(payload: WorkspaceAskRequest, request: Request) -> dict[
         meta["sources"] = origins
         meta["coverageGaps"] = gaps
         ctx["degraded"] = True
-        if not pack.answerable:
+        if no_usable_evidence(pack):
             ctx["answerStatus"] = audit.STATUS_INSUFFICIENT
             return _insufficient_package(pack, meta)
         provider = await run_in_threadpool(_ask_provider, request)

@@ -1009,6 +1009,10 @@ def test_ask_surfaces_use_independent_deep_evidence(
     from nova_service.mcp import _ask_text
     from nova_service.routers.query import ASK_MAX_TOKENS
 
+    # "insufficient" 分支验证短路包的结构契约：用"不可答即短路"的旧口径构造它。
+    monkeypatch.setattr("nova_service.routers.query.no_usable_evidence", lambda p: not p.answerable)
+    monkeypatch.setattr("nova_service.mcp.no_usable_evidence", lambda p: not p.answerable)
+
     traces = []
     ask_evidence = ask_env.manager.ask_evidence
 
@@ -1076,3 +1080,68 @@ def test_ask_surfaces_use_independent_deep_evidence(
         assert "未配置总结模型" in text
     else:
         assert "证据不足" in text
+
+
+def test_provider_retries_once_with_larger_budget_when_reasoning_eats_the_output() -> None:
+    """推理模型的 reasoning 与正文共用额度：正文为空且 finish_reason=length → 放大额度重试一次。"""
+    import json as _json
+
+    budgets: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        budgets.append(_json.loads(request.content)["max_tokens"])
+        if len(budgets) == 1:
+            return httpx.Response(
+                200,
+                json={"choices": [{"message": {"content": "", "reasoning_content": "想了很久"},
+                                   "finish_reason": "length"}]},
+            )
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "答案"}, "finish_reason": "stop"}]}
+        )
+
+    provider = HttpAnswerProvider(
+        base_url=FAKE_BASE_URL,
+        api_key=FAKE_SK_KEY,
+        model="m",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _: None,
+    )
+    assert provider.complete(system="s", user="u", max_tokens=3072, temperature=0.0) == "答案"
+    assert budgets == [3072, 3072 * 4], "只放大一次，且不超过上限"
+
+
+def test_provider_escalates_only_once_and_never_beyond_the_cap() -> None:
+    import json as _json
+
+    budgets: list[int] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        budgets.append(_json.loads(request.content)["max_tokens"])
+        return httpx.Response(
+            200,
+            json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}]},
+        )
+
+    provider = HttpAnswerProvider(
+        base_url=FAKE_BASE_URL,
+        api_key=FAKE_SK_KEY,
+        model="m",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        sleep=lambda _: None,
+    )
+    with pytest.raises(AnswerResponseError):
+        provider.complete(system="s", user="u", max_tokens=8000, temperature=0.0)
+    assert budgets == [8000, 16384], "放大一次后仍为空 → 照旧按空回答降级"
+
+
+def test_no_usable_evidence_only_when_the_pack_is_truly_empty() -> None:
+    """ask 的 LLM 闸门：有证据（即便 answerable=false / low）就交给 LLM，零证据才短路。"""
+    from types import SimpleNamespace
+
+    from nova_service.answer import no_usable_evidence
+
+    assert no_usable_evidence(SimpleNamespace(evidence=[], docs=[], flows=[]))
+    assert not no_usable_evidence(SimpleNamespace(evidence=[object()], docs=[], flows=[]))
+    assert not no_usable_evidence(SimpleNamespace(evidence=[], docs=[object()], flows=[]))
+    assert not no_usable_evidence(SimpleNamespace(evidence=[], docs=[], flows=[object()]))

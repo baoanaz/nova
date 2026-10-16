@@ -90,7 +90,7 @@ class Provider:
 
 
 @pytest.mark.parametrize("raw", ['{"claims":', '{"claims":{},"gaps":[]}',
-                                 '{"claims":[],"claims":[]}', '[{"claims":[]}]', "[",
+                                 '[{"claims":[]}]', "[",
                                  '```json\nnot JSON\n```', '"uncited summary"', "null",
                                  "[tru", "[fals", "[nul"])
 def test_bad_json_is_one_call_then_existing_failure_type(raw):
@@ -98,6 +98,22 @@ def test_bad_json_is_one_call_then_existing_failure_type(raw):
     with pytest.raises(AnswerResponseError):
         answer_question(provider=provider, settings=Settings(), pack=pack(), question="q")
     assert len(provider.calls) == 1
+
+
+@pytest.mark.parametrize("raw", [
+    '{"claims":[{"text":"检查条件","references":["E1"]}]}',
+    '```\n{"claims":[{"text":"检查条件","references":["E1"]}]}\n```',
+    '```json\n{"claims":[{"text":"检查条件","references":["E1"]}]}\n```',
+    '好的，结果如下：\n{"claims":[{"text":"检查条件","references":["E1"]}]}\n以上。',
+    '{"claims":[{"text":"检查条件","references":["E1"]}],"gaps":[],"gaps":["重复键以后者为准"]}',
+])
+def test_structured_answer_tolerates_fence_prose_and_duplicate_keys(raw):
+    result = render_grounded(raw, pack())
+    assert result is not None and "检查条件" in result.answer and "[E1]" in result.answer
+
+
+def test_markdown_with_braces_is_not_mistaken_for_structured():
+    assert render_grounded("函数 `f` 的体是 {return 1}，见 [E1]。", pack()) is None
 
 
 def test_structured_call_keeps_code_literal_and_legacy_markdown_still_works():

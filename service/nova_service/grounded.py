@@ -68,13 +68,45 @@ class GroundedResult:
     coverage: float = 0.0
 
 
-def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    obj: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in obj:
-            raise ValueError("duplicate JSON key")
-        obj[key] = value
-    return obj
+def _last_wins(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    """重复键以最后一个为准：模型偶发的重复字段不该让整份答案作废。"""
+    return dict(pairs)
+
+
+_FENCE = re.compile(r"^```[A-Za-z0-9_-]*\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+
+
+def _json_candidate(text: str) -> str | None:
+    """从模型输出里取出 JSON 对象文本：容忍围栏（含无语言标记）和 JSON 前后的说明文字。
+
+    找不到以 ``{`` 开头的平衡对象返回 ``None``（按非结构化 Markdown 处理）。
+    """
+    fenced = _FENCE.match(text)
+    if fenced:
+        text = fenced.group(1).strip()
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_string = escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+        elif char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : index + 1]
+    return None
 
 
 def _list(obj: dict[str, Any], name: str, limit: int) -> list[Any]:
@@ -95,23 +127,31 @@ def _text(value: Any, limit: int) -> str | None:
 def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
     """JSON 失败抛 ValueError；非 JSON 返回 None，兼容旧 Markdown provider。"""
     text = raw.strip()
-    fenced = text.lower().startswith("```json")
-    if fenced:
-        if not text.endswith("```"):
-            raise ValueError("incomplete JSON fence")
-        text = text[7:-3].strip()
     markdown_prefix = _CITATION.match(text) or re.match(r"^\[[^\]\n]+\]\(", text)
-    explicit = fenced or text.startswith("{") or (
+    # 以 ``{``、围栏开头视为结构化意图；JSON 前有说明文字时按"含 claims 的对象"识别。
+    explicit = text.startswith(("{", "```")) or (
         text.startswith("[") and not markdown_prefix
     )
-    if explicit and len(text) > 32_000:
+    # 以 ``[`` 开头的是 JSON 数组或 Markdown 链接，整段按 JSON 判断，不从里面摘对象。
+    candidate = text if text.startswith("[") else _json_candidate(text)
+    if candidate is None:
+        try:
+            json.loads(text)  # 整段本身是合法 JSON 标量（"x"、null）：不是结构化回答
+        except (json.JSONDecodeError, RecursionError):
+            if explicit:
+                raise ValueError("invalid structured JSON") from None
+            return None
+        raise ValueError("missing claims")
+    if len(candidate) > 32_000:
         raise ValueError("structured answer too large")
     try:
-        obj = json.loads(text, object_pairs_hook=_unique_object)
+        obj = json.loads(candidate, object_pairs_hook=_last_wins)
     except (json.JSONDecodeError, RecursionError) as exc:
         if not explicit:
             return None
         raise ValueError("invalid structured JSON") from exc
+    if not explicit and not (isinstance(obj, dict) and "claims" in obj):
+        return None  # 普通 Markdown 里恰好含花括号，不是结构化回答
     if not isinstance(obj, dict) or not isinstance(obj.get("claims"), list):
         raise ValueError("missing claims")  # 核心字段缺失/类型错：无从构造答案，才整体降级
     items = {e.id: e for e in (*pack.evidence, *pack.docs)}
