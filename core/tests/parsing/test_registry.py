@@ -41,13 +41,13 @@ def test_detect_language(path: str, expected: str | None) -> None:
 
 def test_registry_covers_registered_languages() -> None:
     assert set(PARSER_ENTRIES) == {
-        "python", "c", "cpp", "markdown", "javascript", "typescript", "tsx",
+        "python", "c", "cpp", "markdown", "javascript", "typescript", "tsx", "rust", "kotlin",
     }
     # registry.py 一次写全四语言懒加载条目（TASK-003/004/005 只实现模块文件）
     for module_name, class_name in PARSER_ENTRIES.values():
         assert module_name.startswith("nova_core.parsing.")
         assert class_name.endswith("Parser")
-    for language in ("python", "c", "cpp", "markdown"):
+    for language in ("python", "c", "cpp", "markdown", "rust", "kotlin"):
         assert language in EXTENSION_LANGUAGE.values()
 
 
