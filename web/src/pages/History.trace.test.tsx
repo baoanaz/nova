@@ -1,5 +1,6 @@
 /**
- * TASK-094 §C + TASK-100 §需求2：历史页的 trace id 与合并后的表格。
+ * 历史页（TASK-094 §C / TASK-100 §需求2，随「历史记录重构」改为：列表 + 汇总卡 + 详情弹窗）。
+ * trace id 与阶段耗时在详情弹窗里；列表只保留时间 / 类型 / 项目 / 内容 / 结果 / 耗时 / 体量。
  *
  * 迁移说明（TASK-100）：历史页从"索引记录 / 使用记录两个页签"合并成**一张表**
  * （用户 2026-09-14 要求），因此不再需要点页签；断言内容**一条未删**，只调整了定位方式：
@@ -114,25 +115,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** 打开某行的详情弹窗。 */
+async function openDetail(match: string) {
+  const table = await screen.findByRole("table");
+  const row = within(table)
+    .getAllByRole("row")
+    .find((item) => item.textContent?.includes(match))!;
+  await userEvent.click(within(row).getByRole("button", { name: "详情" }));
+  return screen.findByRole("dialog");
+}
+
 describe("§C 历史页 trace id（TASK-094）", () => {
-  it("检索记录显示可复制的 trace id", async () => {
+  it("检索记录的详情里显示可复制的 trace id", async () => {
     stubAll();
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    expect(within(table).getByText("trace id")).toBeInTheDocument();
-    expect(within(table).getByText("trace-094-abcdef")).toBeInTheDocument();
-    expect(within(table).getByRole("button", { name: "复制" })).toBeInTheDocument();
+    const dialog = await openDetail("令牌在哪里刷新");
+    expect(within(dialog).getByText("trace id")).toBeInTheDocument();
+    expect(within(dialog).getByText("trace-094-abcdef")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: "复制" }).length).toBeGreaterThanOrEqual(1);
   });
 
-  it("旧记录没有 requestId → 显示 —，不编造一个 id", async () => {
+  it("旧记录没有 requestId → 不显示 trace id 行，不编造一个 id", async () => {
     stubAll([{ ...record, requestId: null }]);
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    expect(within(table).queryByText(/trace-094/)).not.toBeInTheDocument();
-    // 初始化那行也没有 trace id（它不产生 trace），因此 `—` 至少一处。
-    expect(within(table).getAllByText("—").length).toBeGreaterThanOrEqual(1);
+    const dialog = await openDetail("令牌在哪里刷新");
+    expect(within(dialog).queryByText("trace id")).not.toBeInTheDocument();
+    expect(within(dialog).queryByText(/trace-094/)).not.toBeInTheDocument();
   });
 });
 
@@ -145,10 +155,10 @@ describe("§需求2 合并表格（TASK-100）", () => {
     // 两种记录都在同一张表里（这是用户要求的核心：不用切页签）。
     // TASK-100（用户 2026-09-14）：「类型」列改为显示**实际工具名**。
     expect(within(table).getByText("仓库初始化")).toBeInTheDocument();
-    expect(within(table).getByText("search_context")).toBeInTheDocument();
-    // 项目与查询分列。
+    expect(within(table).getByText("search")).toBeInTheDocument();
+    // 项目与内容分列。
     expect(within(table).getByText("项目")).toBeInTheDocument();
-    expect(within(table).getByText("查询")).toBeInTheDocument();
+    expect(within(table).getByText("内容")).toBeInTheDocument();
     // 两行都属于 demo 项目，因此项目名出现两次（这正是分列后的正确表现）。
     expect(within(table).getAllByText("demo").length).toBe(2);
     expect(within(table).getByText("令牌在哪里刷新")).toBeInTheDocument();
@@ -157,7 +167,7 @@ describe("§需求2 合并表格（TASK-100）", () => {
     expect(within(table).getByText("576 token")).toBeInTheDocument();
   });
 
-  it("仓库初始化那行的「查询」列为 —（它不是提问，没有输入文本）", async () => {
+  it("仓库初始化那行的「内容」列写文件数与 chunks，而不是空着", async () => {
     stubAll();
     renderPage(<HistoryPage />);
 
@@ -166,9 +176,9 @@ describe("§需求2 合并表格（TASK-100）", () => {
       .getAllByRole("row")
       .find((row) => row.textContent?.includes("仓库初始化"))!;
     const cells = within(initRow).getAllByRole("cell");
-    // 列序：时间 0 / 类型 1 / 项目 2 / 查询 3 / trace id 4 / 结果 5 / 耗时 6 / 体量 7 / 查看 8
+    // 列序：时间 0 / 类型 1 / 项目 2 / 内容 3 / 结果 4 / 耗时 5 / 体量 6 / 详情 7
     expect(cells[2]).toHaveTextContent("demo");
-    expect(cells[3]).toHaveTextContent("—");
+    expect(cells[3]).toHaveTextContent("338 / 344 个文件 · 4210 chunks");
   });
 
   it("按时间倒序：较新的记录排在前面", async () => {
@@ -180,78 +190,127 @@ describe("§需求2 合并表格（TASK-100）", () => {
     const rows = within(table).getAllByRole("row").slice(1); // 去掉表头
     expect(rows.length).toBe(2);
     // 第一行必须是较新的那条（检索 NOW > 初始化 NOW-566）。
-    expect(within(rows[0]!).getByText("search_context")).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("search")).toBeInTheDocument();
     expect(within(rows[1]!).getByText("仓库初始化")).toBeInTheDocument();
   });
 
-  it("「查看」按钮弹出两个可滚动代码块（Tool 输入 / 输出）", async () => {
+  it("「详情」弹出两个可滚动代码块（Tool 输入 / 输出）", async () => {
     stubAll();
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    const searchRow = within(table)
-      .getAllByRole("row")
-      .find((row) => row.textContent?.includes("令牌在哪里刷新"))!;
-
-    await userEvent.click(within(searchRow).getByRole("button", { name: "查看" }));
-
-    const dialog = await screen.findByRole("dialog");
-    // 用户 2026-09-14 定稿：**上下两个块**——Tool 输入 / Tool 输出（不再单列 LLM 答案）。
+    const dialog = await openDetail("令牌在哪里刷新");
     expect(within(dialog).getByText("Tool 输入")).toBeInTheDocument();
     expect(within(dialog).getByText("Tool 输出")).toBeInTheDocument();
     expect(within(dialog).queryByText("LLM 答案")).not.toBeInTheDocument();
-    // 代码块是 <pre>（可滚动容器）。
     const pres = dialog.querySelectorAll("pre");
     expect(pres.length).toBe(2);
     expect(pres[0]?.textContent).toContain("令牌在哪里刷新");
     expect(pres[0]?.className).toContain("overflow-auto");
-    // 底层元信息（TASK-108 定稿排版：信心 / Token / 证据数量（代码/文档/测试），键值间带冒号）。
-    expect(within(dialog).getByText("信心：")).toBeInTheDocument();
-    expect(within(dialog).getByText("Token：")).toBeInTheDocument();
-    expect(within(dialog).getByText("证据数量（代码/文档/测试）：")).toBeInTheDocument();
-    // 弹窗内「Token」只能出现一次（表格那列的小写 `token`/「体量」不在弹窗里渲染）。
-    // 写法注意：`getAllByText` 在**找不到时会抛错**而非返回空数组，故这里必须用 `queryAllByText`；
-    // 且 label 渲染为 'Token：'（带全职号）——用 `^Token：$` 而不是 `^Token$`
-    // （TASK-108 提交时曾写成 `getAllByText(/^Token$/)`，永远匹配不到且必抛错）。
-    expect(within(dialog).queryAllByText(/^Token：$/)).toHaveLength(1);
-    // 诚实边界：测试夹具的 answerText 为 null，弹窗要如实说明这条是 search（不调 LLM），
-    // 而不是拿证据清单冒充 LLM 输出。
-    expect(within(dialog).getByText(/search_context 不调用 LLM|未调用 LLM|调用了 LLM 但失败/)).toBeInTheDocument();
+    expect(within(dialog).getByText("信心")).toBeInTheDocument();
+    expect(within(dialog).getByText("Token")).toBeInTheDocument();
+    expect(within(dialog).getByText("证据（代码/文档/测试）")).toBeInTheDocument();
+    // 诚实边界：检索只有整次耗时，如实说明没有分段。
+    expect(within(dialog).getByText(/没有拆分检索 \/ LLM 的分段耗时/)).toBeInTheDocument();
   });
 
   it("弹窗标题不重复输入内容（用户：太长了）", async () => {
     stubAll();
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    const searchRow = within(table)
-      .getAllByRole("row")
-      .find((row) => row.textContent?.includes("令牌在哪里刷新"))!;
-    await userEvent.click(within(searchRow).getByRole("button", { name: "查看" }));
-
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await openDetail("令牌在哪里刷新");
     const heading = within(dialog).getByRole("heading");
-    // 标题只写工具名 + 项目名，**不含**查询全文。
-    expect(heading.textContent).toContain("search_context");
+    expect(heading.textContent).toContain("search");
     expect(heading.textContent).toContain("demo");
     expect(heading.textContent).not.toContain("令牌在哪里刷新");
   });
 
-  it("弹窗可关闭（Esc 与按钮都行）", async () => {
+  it("弹窗可关闭", async () => {
     stubAll();
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    const searchRow = within(table)
-      .getAllByRole("row")
-      .find((row) => row.textContent?.includes("令牌在哪里刷新"))!;
-    await userEvent.click(within(searchRow).getByRole("button", { name: "查看" }));
-    await screen.findByRole("dialog");
-
+    await openDetail("令牌在哪里刷新");
     await userEvent.click(screen.getByRole("button", { name: "关闭" }));
     await waitFor(() => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("汇总卡与筛选", () => {
+  const ASK = { ...record, queryId: 2, query: "登录流程是什么", answerText: "见 auth.py", answerStatus: "answered" };
+
+  it("三类各一张汇总卡，ask 与 search 分开计数", async () => {
+    stubAll([record, ASK]);
+    renderPage(<HistoryPage />);
+
+    const group = await screen.findByRole("group", { name: "按类型筛选" });
+    const cards = within(group).getAllByRole("button");
+    expect(cards.map((card) => card.textContent)).toEqual([
+      expect.stringContaining("仓库初始化"),
+      expect.stringContaining("search"),
+      expect.stringContaining("ask"),
+    ]);
+    for (const card of cards) expect(card).toHaveTextContent("1次");
+  });
+
+  it("点汇总卡按类型筛选，再点取消", async () => {
+    stubAll([record, ASK]);
+    renderPage(<HistoryPage />);
+
+    const group = await screen.findByRole("group", { name: "按类型筛选" });
+    await userEvent.click(within(group).getAllByRole("button")[2]!);
+    const table = screen.getByRole("table");
+    expect(within(table).getAllByRole("row").slice(1)).toHaveLength(1);
+    expect(within(table).getByText("登录流程是什么")).toBeInTheDocument();
+
+    await userEvent.click(within(group).getAllByRole("button")[2]!);
+    expect(within(screen.getByRole("table")).getAllByRole("row").slice(1)).toHaveLength(3);
+  });
+
+  it("「只看异常」隐藏成功的记录", async () => {
+    stubAll([record, { ...record, queryId: 3, query: "坏掉的问题", answerable: null, degraded: true }]);
+    renderPage(<HistoryPage />);
+
+    await screen.findByRole("table");
+    await userEvent.click(screen.getByRole("button", { name: "只看异常" }));
+    const rows = within(screen.getByRole("table")).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toHaveTextContent("坏掉的问题");
+  });
+});
+
+describe("初始化的分阶段耗时", () => {
+  const STAGES = [
+    { name: "engine_open", wallMs: 400, cpuMs: 10 },
+    { name: "collect", wallMs: 1000, cpuMs: 900 },
+    { name: "write_batch", wallMs: 6000, cpuMs: 1500 },
+    { name: "prepare", wallMs: 2500, cpuMs: 2400 },
+    { name: "persist", wallMs: 1800, cpuMs: 800 },
+    { name: "graph", wallMs: 500, cpuMs: 480 },
+    { name: "vector_drain", wallMs: 100, cpuMs: 1 },
+  ];
+
+  it("有阶段数据：按顶层阶段列出毫秒与占比，嵌套阶段缩进在「解析并写入索引」下", async () => {
+    stubAll([], [{ ...RUN, durationMs: 8000, elapsedMs: 8400, stages: STAGES }]);
+    renderPage(<HistoryPage />);
+
+    const dialog = await openDetail("仓库初始化");
+    for (const label of ["打开项目", "收集待索引文件", "解析并写入索引", "建立调用关系图", "解析与切块", "写入存储"]) {
+      expect(within(dialog).getByText(label)).toBeInTheDocument();
+    }
+    // 总耗时取实测毫秒（8400），不是整秒的 8000。
+    expect(dialog.textContent).toContain("8.4 s");
+    // 原始阶段表可展开对账。
+    expect(within(dialog).getByText("原始阶段数据（墙钟 / CPU）")).toBeInTheDocument();
+  });
+
+  it("没有阶段数据（旧记录）→ 如实说明，不画空瀑布", async () => {
+    stubAll([], [RUN]);
+    renderPage(<HistoryPage />);
+
+    const dialog = await openDetail("仓库初始化");
+    expect(within(dialog).getByText(/没有分阶段数据/)).toBeInTheDocument();
+    expect(within(dialog).queryByText("打开项目")).not.toBeInTheDocument();
   });
 });
 
@@ -428,7 +487,8 @@ describe("§需求5 同一次调用折叠（TASK-100 用户 2026-09-14 提问）
     // 三条 run 折叠后只剩一行。
     expect(rows.length).toBe(1);
     // 工具名标出批次数（用户能看出它分了几批）。
-    expect(within(rows[0]!).getByText("仓库初始化（3 批）")).toBeInTheDocument();
+    expect(within(rows[0]!).getByText("仓库初始化")).toBeInTheDocument();
+    expect(rows[0]!.textContent).toContain("287 / 287 个文件");
     // 耗时**求和**：4000+2000+2000 = 8000ms → "8.0 s"（不是单批的 4.0 s）。
     expect(rows[0]!.textContent).toContain("8.0 s");
     expect(rows[0]!.textContent).not.toContain("4.0 s");
@@ -444,21 +504,17 @@ describe("§需求5 同一次调用折叠（TASK-100 用户 2026-09-14 提问）
     expect(within(table).getAllByRole("row").slice(1).length).toBe(3);
   });
 
-  it("弹窗里说明分批原因（用户看不到这一点会以为出了 bug）", async () => {
+  it("详情里列出每一批的文件数与耗时", async () => {
     stubAll([], BATCHED);
     renderPage(<HistoryPage />);
 
-    const table = await screen.findByRole("table");
-    const row = within(table).getAllByRole("row")[1]!;
-    await userEvent.click(within(row).getByRole("button", { name: "查看" }));
-
-    const dialog = await screen.findByRole("dialog");
-    // 弹窗内容是 <pre> 代码块（纯文本），因此断言其整体文本。
-    const pres = dialog.querySelectorAll("pre");
-    const all = [...pres].map((node) => node.textContent ?? "").join("\n");
-    expect(all).toContain("上传批次：3 批");
-    expect(all).toContain("1MB 分批");
-    // 文件数**求和**：113+119+55 = 287（输出区）。
-    expect(all).toContain("解析文件：287 / 287");
+    const dialog = await openDetail("仓库初始化");
+    expect(within(dialog).getByText("上传批次（3 批）")).toBeInTheDocument();
+    const batchRows = within(dialog).getAllByRole("row").slice(1);
+    expect(batchRows).toHaveLength(3);
+    expect(batchRows[0]).toHaveTextContent("113 / 113");
+    expect(batchRows[0]).toHaveTextContent("4.0 s");
+    const input = dialog.querySelectorAll("pre")[0]?.textContent ?? "";
+    expect(input).toContain("上传批次：3 批");
   });
 });

@@ -10,6 +10,7 @@ const NAV: { to: string; label: string; end: boolean; icon: IconName }[] = [
   { to: "/", label: "控制台", end: true, icon: "dashboard" },
   { to: "/connect", label: "接入指南", end: false, icon: "connect" },
   { to: "/keys", label: "API Key", end: false, icon: "key" },
+  { to: "/history", label: "历史记录", end: false, icon: "history" },
   { to: "/projects", label: "项目", end: false, icon: "folder" },
   { to: "/settings", label: "设置", end: false, icon: "settings" },
 ];

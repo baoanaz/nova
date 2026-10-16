@@ -183,6 +183,28 @@ def test_batch_upload_path_records_a_run(env: SimpleNamespace) -> None:
     assert len(body["recent"]) == 1
 
 
+def test_upload_run_persists_stage_timings_and_real_elapsed(env: SimpleNamespace) -> None:
+    """上传路径把 ``IngestReport.timings`` 与实测毫秒落库，并经 index-runs 暴露给前端。"""
+    upload(env)
+
+    run = project_index_stats(env)["history"]["recent"][0]
+    assert isinstance(run["elapsedMs"], int) and run["elapsedMs"] >= 0
+    names = [stage["name"] for stage in run["stages"]]
+    assert "collect" in names and "write_batch" in names
+    assert all(stage["wallMs"] >= 0 and stage["cpuMs"] >= 0 for stage in run["stages"])
+
+
+def test_runs_without_stage_data_expose_empty_stages(env: SimpleNamespace) -> None:
+    """旧记录 / 未测量：``stages`` 为空、``elapsedMs`` 为 ``None``，不编造 0。"""
+    db: MetaDB = env.meta_db
+    db.record_index_run(
+        env.project_id, state="done", started_at=1_700_000_000, finished_at=1_700_000_003
+    )
+
+    run = db.index_runs(env.project_id, limit=1)[0].to_json()
+    assert run["stages"] == [] and run["elapsedMs"] is None
+
+
 def test_cross_project_stats_work_after_resolve(env: SimpleNamespace) -> None:
     """**TASK-085 的第二个必须条件**：``resolve`` 归属后，汇总端点能看到上传产生的记录。
 

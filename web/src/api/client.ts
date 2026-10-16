@@ -519,6 +519,18 @@ export interface IndexRun {
    * `null` = 旧服务端或旧客户端（无法关联，按独立记录展示）。
    */
   callId?: string | null;
+  /** 实测毫秒耗时；`null`/缺省 = 旧记录，只有整秒精度的 `durationMs`。 */
+  elapsedMs?: number | null;
+  /** 分阶段耗时（含嵌套阶段）；空 = 未测量，不是 0。 */
+  stages?: IndexStage[];
+}
+
+export interface IndexStage {
+  name: string;
+  /** 墙钟毫秒。 */
+  wallMs: number;
+  /** 调用线程 CPU 毫秒（wall 远大于 cpu = 在等 IO / 网络）。 */
+  cpuMs: number;
 }
 
 export interface IndexStats {

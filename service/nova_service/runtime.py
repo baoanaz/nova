@@ -828,6 +828,8 @@ class EngineManager:
                 # 因此这几条 run 的 call_id 相同，与同一次调用的 ``query_audit.request_id``
                 # 也相同——分组靠这一个值，不需要额外的映射表（卡内 §B-3）。
                 call_id=current_request_id(),
+                stages=report.timings,
+                elapsed_ms=elapsed_ms,
             )
         except Exception:  # 记不上账不能把已经成功的索引变成失败（TASK-062 §C 的既有纪律）
             logger.exception("索引记录落库失败（不影响索引结果）：%s", project_id)
@@ -865,6 +867,7 @@ class EngineManager:
                 # TASK-099 §B：失败的上传同样属于这次调用（否则时间线上会缺一块，
                 # 而"哪一步慢了/挂了"恰恰是用户最想看的）。
                 call_id=current_request_id(),
+                elapsed_ms=elapsed_ms,
             )
         except Exception:  # 同上：记帐失败不改变索引结果（原异常仍在向上传播）
             logger.exception("索引失败记录落库失败（不影响错误上报）：%s", project_id)

@@ -282,6 +282,12 @@ _INDEX_RUN_COLUMNS: tuple[tuple[str, str], ...] = (
     #: 因此它与同一次调用里 ``query_audit.request_id`` 的值**天然相等**。
     #: ``NULL`` = 旧客户端未带头 / 旧版本写入的记录（不填编造的 id）。
     ("call_id", "TEXT"),
+    #: 分阶段耗时（JSON ``[[阶段名, 墙钟秒, CPU 秒], ...]``，来自 ``IngestReport.timings``）。
+    #: ``NULL`` = 旧记录 / 非上传路径（没有测量就不编造）。
+    ("stages_json", "TEXT"),
+    #: 真实毫秒耗时。``duration_ms`` 沿用整秒口径（亚秒上传会是 0），这一列存实测值；
+    #: ``NULL`` = 旧记录，前端回退到 ``duration_ms``。
+    ("elapsed_ms", "INTEGER"),
 )
 
 
@@ -402,6 +408,10 @@ class IndexRun:
     error_text: str | None
     #: 同一次 Tool 调用的 id（TASK-099 §B）；``None`` = 旧客户端未带 ``X-Request-Id``。
     call_id: str | None = None
+    #: 分阶段耗时 ``(阶段名, 墙钟秒, 主线程 CPU 秒)``；空 = 未测量。
+    stages: tuple[tuple[str, float, float], ...] = ()
+    #: 实测毫秒耗时；``None`` = 旧记录（只有整秒的 ``duration_ms``）。
+    elapsed_ms: int | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -419,6 +429,11 @@ class IndexRun:
             # TASK-099 §B：与 ``query_audit.requestId`` 同值，前端按它把一次调用的
             # N 次初始化 + 1 次检索归成一组（NULL → 每行独立展示）。
             "callId": self.call_id,
+            "elapsedMs": self.elapsed_ms,
+            "stages": [
+                {"name": name, "wallMs": round(wall * 1000, 1), "cpuMs": round(cpu * 1000, 1)}
+                for name, wall, cpu in self.stages
+            ],
         }
 
 
@@ -1264,8 +1279,12 @@ class MetaDB:
         errors: int = 0,
         error_text: str | None = None,
         call_id: str | None = None,
+        stages: Sequence[tuple[str, float, float]] | None = None,
+        elapsed_ms: float | None = None,
     ) -> int:
         """写一条索引记录并裁剪到 :data:`INDEX_RUN_KEEP` 条（返回 ``run_id``）。
+
+        ``stages`` / ``elapsed_ms``：分阶段耗时与实测毫秒耗时（可选；缺省 ``NULL`` = 未测量）。
 
         ``call_id``（TASK-099 §B）：**同一次 Tool 调用**的 id，由客户端经 ``X-Request-Id``
         携带（与服务端 ``current_request_id()`` 同源）。缺省 ``None`` = 旧客户端未带头或
@@ -1275,8 +1294,9 @@ class MetaDB:
         with self._write() as conn:
             cursor = conn.execute(
                 "INSERT INTO index_runs (project_id, state, started_at, finished_at,"
-                " duration_ms, files_total, files_processed, chunks, errors, error_text, call_id)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " duration_ms, files_total, files_processed, chunks, errors, error_text, call_id,"
+                " stages_json, elapsed_ms)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     project_id,
                     state,
@@ -1289,6 +1309,8 @@ class MetaDB:
                     int(errors),
                     error_text,
                     call_id,
+                    json.dumps([list(item) for item in stages]) if stages else None,
+                    None if elapsed_ms is None else max(0, int(round(elapsed_ms))),
                 ),
             )
             run_id = int(cursor.lastrowid or 0)
@@ -1791,7 +1813,18 @@ def _index_run(row: sqlite3.Row) -> IndexRun:
         errors=int(row["errors"]),
         error_text=row["error_text"],
         call_id=row["call_id"],
+        stages=_parse_stages(row["stages_json"]),
+        elapsed_ms=None if row["elapsed_ms"] is None else int(row["elapsed_ms"]),
     )
+
+
+def _parse_stages(raw: str | None) -> tuple[tuple[str, float, float], ...]:
+    if not raw:
+        return ()
+    try:
+        return tuple((str(n), float(w), float(c)) for n, w, c in json.loads(raw))
+    except (ValueError, TypeError):
+        return ()
 
 
 def _audit_record(row: sqlite3.Row) -> QueryAuditRecord:
