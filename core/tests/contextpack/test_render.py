@@ -168,8 +168,9 @@ def test_render_meta_budget_and_index_fresh(store, seed_file, sym, cand) -> None
     text = render_markdown(pack, now=NOW)
     assert "index: fresh (5 min ago)" in text
     # TASK-096 §A：预算账 = 框架开销 + 渲染开销（header+reason+行号），不再是只算正文 → 504 → 515。
+    # 2026-10：reason 行改为面向 Agent 的短标签后为 511。
     # TASK-MCP-BUDGET：默认预算 10K→14K，分母随之变化（分子 515 与预算无关，未变）。
-    assert "budget: 515/14.0K" in text   # <1000 用原值，≥1000 用 K（Module/03 §6 例）
+    assert "budget: 511/14.0K" in text   # <1000 用原值，≥1000 用 K（Module/03 §6 例）
     assert "confidence: low" in text
 
 
@@ -293,3 +294,15 @@ def test_render_markdown_snapshot(store, seed_file, sym, cand) -> None:
     pack = _build_pack(store, seed_file, sym, cand)
     expected = SNAPSHOT_PATH.read_text(encoding="utf-8").rstrip("\n")
     assert render_markdown(pack, now=NOW) == expected
+
+
+def test_retry_tips_only_for_low_confidence(store, seed_file, sym, cand) -> None:
+    """低置信度才附重试提示；高/中置信度不占 token。"""
+    low = assemble(store, "nothing", [])
+    assert low.confidence == "low"
+    assert "### Retry Tips" in render_markdown(low)
+    assert "ask_project" in render_markdown(low)
+
+    rich = _build_pack(store, seed_file, sym, cand)
+    assert rich.confidence != "low"
+    assert "### Retry Tips" not in render_markdown(rich, now=NOW)

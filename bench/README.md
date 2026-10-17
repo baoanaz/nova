@@ -31,6 +31,20 @@ bash bench/stack.sh down
 结果写入 `bench/results/<时间戳>/{results.jsonl,report.md,meta.json}`（已被 `.gitignore` 忽略）。
 `stack.sh down` 之后再 `up` 请间隔几秒，等旧进程退出。
 
+## LLM 审核（出新题、不看固定题库）
+
+```bash
+.venv/bin/python bench/run.py judge --n 4 --seed 1          # 每个仓库随机抽 4 个函数出题
+.venv/bin/python bench/run.py judge --repo fastapi --tools search
+```
+
+流程：从索引里随机抽函数（排除测试/示例/文档）→ LLM 写一个“不含标识符”的问题并给出应有事实 →
+调用真实 `search` / `ask` → LLM 按评分表打分（search：是否包含依据、相关度、够不够答、噪声；
+ask：正确、有依据、有用、是否幻觉）并指出最主要的问题和一个改进建议。
+输出 `bench/results/judge-<时间戳>/{cases.jsonl,report.md}`，`cases.jsonl` 保留工具原始输出。
+LLM 打分只当发现问题的线索，需要人工抽查原文；换 `--seed` 可以得到另一批题。
+LLM 用 `secrets.env` 里的 `ANSWER_*`（与 ask 同一个模型）。
+
 ## 评分口径（自动粗筛，不是最终裁判）
 
 - **search**：期望依据（文件，可带符号）在返回证据列表里的名次；报告 命中@5 / @10、MRR。

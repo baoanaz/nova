@@ -146,12 +146,33 @@ def test_single_file_cap_25_percent_lets_other_files_fill(store, seed_file, sym,
         cand("src/big.py", f"big{index}", index * 50 + 1, score=1.0 - index / 10)
         for index in range(3)
     ] + [cand("src/other.py", "other", 1, score=0.5)]
-    config = BudgetConfig(hard_cap=1_000, framework_overhead=0)
+    # 本测试验证单文件配额本身，关闭“核心证据免上限”（见下一个测试）。
+    config = BudgetConfig(hard_cap=1_000, framework_overhead=0, core_uncapped_ratio=None)
 
     pack = assemble(store, "q", candidates, config=config)
     assert sum(1 for item in pack.evidence if item.path == "src/big.py") == 2
     assert any(item.path == "src/other.py" for item in pack.evidence)  # 其他文件补位
     assert pack.budget is not None and pack.budget.truncated is True
+
+
+def test_core_evidence_is_exempt_from_the_single_file_cap(store, seed_file, sym, cand) -> None:
+    """分数接近 top1 的核心证据不受单文件上限约束；次要证据仍受约束。"""
+    seed_file(
+        store,
+        path="src/big.py",
+        symbols=[sym(f"big{i}", f"big{i}", start=i * 50 + 1) for i in range(3)],
+        bodies={f"big{i}": "x" * 396 for i in range(3)},
+    )
+    candidates = [
+        cand("src/big.py", f"big{index}", index * 50 + 1, score=score)
+        for index, score in enumerate((1.0, 0.9, 0.5))
+    ]
+    base = {"hard_cap": 1_000, "framework_overhead": 0, "score_ratio": 0.0}
+    capped = assemble(store, "q", candidates, config=BudgetConfig(core_uncapped_ratio=None, **base))
+    open_ = assemble(store, "q", candidates, config=BudgetConfig(**base))
+    count = lambda pack: sum(1 for item in pack.evidence if item.path == "src/big.py")  # noqa: E731
+    assert count(capped) == 2          # 单文件上限 250 token → 前两块
+    assert count(open_) >= count(capped)   # 核心块（1.0、0.9）免上限，次要块（0.5）仍受约束
 
 
 def test_tier3_quota_uses_30_percent_of_used_budget(store, seed_file, sym, cand) -> None:

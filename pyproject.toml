@@ -18,6 +18,7 @@ select = ["E", "F", "W", "I", "UP", "B"]
 # bench 的 CLI 帮助与报告模板是长中文字符串，不值得为行宽拆开。
 "bench/nova_bench/cli.py" = ["E501"]
 "bench/nova_bench/report.py" = ["E501"]
+"bench/nova_bench/judge.py" = ["E501"]
 
 [tool.pytest.ini_options]
 # ``tests/``：根级跨制品护栏（npm 平台子包一致性 D-48/D-49 等）。

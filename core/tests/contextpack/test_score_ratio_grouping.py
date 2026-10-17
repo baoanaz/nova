@@ -417,6 +417,7 @@ def test_existing_top_level_sections_are_unchanged(store, seed_file, sym, cand):
         "### Docs",
         "### Missing Evidence",
         "### Suggested Next Queries",
+        "### Retry Tips",  # 2026-10：低置信度时给 Agent 的重试提示
         "### Meta",
     ]
     # 在场者必须严格按 canonical 顺序出现，且不得有 canonical 之外的新顶层节。

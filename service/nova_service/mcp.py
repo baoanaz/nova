@@ -73,6 +73,7 @@ from nova_service.metadb import MetaDB
 from nova_service.packmeta import pack_meta
 from nova_service.quota import append_warning, warning_for
 from nova_service.ratelimit import enforce_ask_rate
+from nova_service.recent import RecentEvidence
 from nova_service.routers.query import (
     ASK_MAX_TOKENS,
     DEFAULT_MAX_TOKENS,
@@ -449,6 +450,10 @@ def manager_for_app(app: FastAPI) -> EngineManager:
 # --------------------------------------------------------------------------- 工具实现（线程池）
 
 
+#: 进程内的“最近返回过”记录（会话级去重，见 :mod:`nova_service.recent`）。
+_RECENT = RecentEvidence()
+
+
 def _search_text(
     manager: EngineManager,
     settings: Settings,
@@ -462,6 +467,8 @@ def _search_text(
     trace = _call_engine(lambda: manager.search(project_id, query, max_tokens))
     _audit(manager, project_id, audit.MODE_SEARCH, query, trace.pack, started,
            degraded=trace.degraded)
+    # 审计记的是完整证据；去重只影响这次返回给 Agent 的文本。
+    _RECENT.dedupe(str(getattr(current_user(), "id", None) or "local"), project_id, trace.pack)
     meta = pack_meta(
         trace.pack,
         project_id=project_id,

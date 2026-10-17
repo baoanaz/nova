@@ -2,23 +2,23 @@
 ### Code
 #### Core
 [E1] TokenService.refresh — src/auth/token_service.py:45-46
-     reason: explicit symbol TokenService.refresh + 3-channel consensus +0.5
+     reason: exact match "TokenService.refresh" · multi-signal match
      45 | def refresh(self):
      46 |     return self.store.rotate()
 #### Related
 [E2] TokenStore.rotate — src/store.py:210-212
-     reason: bm25 -1.2 + vector 0.81
+     reason: keyword + semantic match
      210 | def rotate(self):
      211 |     return 'rotated'
 [E3] AuthMiddleware.verify — src/mw.py:88-89
-     reason: bm25 -1.0 + vector 0.77
+     reason: keyword + semantic match
      88 | def verify(self, request):
      89 |     return refresh()
 ### Flow
 [F1] AuthMiddleware.verify → TokenService.refresh
 ### Docs
 [E4] docs/design/auth.md > 认证 > Token Refresh（design）
-     reason: bm25 -2.1 + high-value doctype +0.8
+     reason: keyword match · key document
      30 | 刷新流程说明
      31 | 
      32 | 使用 refresh_token
@@ -29,4 +29,4 @@
 - [stale_doc_reference] (LegacyToken.rotate) 文档 docs/design/auth.md 引用了已删除或改名的符号（LegacyToken.rotate），该文档可能已过时；需要以代码为准并更新文档。
 - [retrieval_truncated] 候选池被裁剪：省略 1 个候选（其中 1 个因低于相对分数阈值（top1×0.4）未予装填），可能有相关但未展示的证据；可提高预算或收窄查询。
 ### Meta
-confidence: high | index: stale (1 files) | budget: 708/10.0K
+confidence: high | index: stale (1 files) | budget: 705/10.0K

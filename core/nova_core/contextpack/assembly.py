@@ -53,6 +53,7 @@ import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
+from nova_core.contextpack.reason import agent_reason
 from nova_core.parsing.markdown import classify_doctype
 from nova_core.storage import Store
 from nova_core.types import (
@@ -226,7 +227,10 @@ def evidence_markdown_lines(item: EvidenceItem) -> list[str]:
         if item.lines is not None:
             span = f":{item.lines[0]}-{item.lines[1]}"
         header = f"[{item.id}] {target} — {item.path}{span}"
-    lines = [header, f"{_EVIDENCE_INDENT}reason: {item.reason}"]
+    lines = [header]
+    reason = agent_reason(item.reason)
+    if reason:
+        lines.append(f"{_EVIDENCE_INDENT}reason: {reason}")
     lines.extend(f"{_EVIDENCE_INDENT}{line}" for line in item.content.splitlines())
     if item.elided_lines > 0 and not has_elision_note(item.content):
         lines.append(f"{_EVIDENCE_INDENT}{elision_note(item.elided_lines)}")
@@ -313,6 +317,11 @@ class BudgetConfig:
     # 均在池序 40+）拿不到任何预算。0.25 = 单成员不得超补检配额的四分之一，
     # 等价于“保证至少四个成员能上场”——补检是补断层，不是补某一个方法。
     backfill_single_ratio: float = 0.25
+    # 核心证据不设单文件上限：分数 ≥ ``top1 × core_uncapped_ratio`` 的候选是这次查询最相关的那批，
+    # 一个 400 行的核心函数不该因为“单文件 2500 token”被砍成骨架；单文件上限只约束次要证据。
+    # 总预算与相对分数阈值仍然生效。``None`` = 关闭（所有候选都受单文件上限约束，旧行为）。
+    # 与 render 的 Core 分组同一比例（0.70）。
+    core_uncapped_ratio: float | None = 0.70
     # TASK-095：相对分数阈值——低于 ``top1_score × score_ratio`` 的候选**不装填**。
     # 只在贪心主循环生效；code_floor / spec_floor 的保底装填**不受它约束**
     # （保底是"至少给这些"，与"最多给到哪"不冲突，否则纯文档查询可能被清空）。
@@ -374,7 +383,48 @@ def budget_for(mode: str) -> BudgetConfig:
             raise ValueError(f"mode 必须是 'fast' 或 'deep'，收到 {mode!r}")
         base = FAST_BUDGET
     ratio = _score_ratio_from_env(os.environ)
-    return base if ratio == base.score_ratio else replace(base, score_ratio=ratio)
+    changes: dict[str, int | float] = {}
+    if ratio != base.score_ratio:
+        changes["score_ratio"] = ratio
+    # 单元上限的实验开关：``NOVA_SINGLE_FILE_TOKENS`` / ``NOVA_DOCS_TOKENS``。
+    # 取值 ``-1`` = 关闭该上限（只受总预算与相对分数阈值约束），``0`` 或未设 = 用预设。
+    for env, field_name in (
+        ("NOVA_SINGLE_FILE_TOKENS", "single_file_tokens"),
+        ("NOVA_DOCS_TOKENS", "docs_tokens"),
+        ("NOVA_HARD_CAP", "hard_cap"),
+    ):
+        value = _int_from_env(os.environ, env)
+        if value is None:
+            continue
+        if value < 0:
+            if field_name == "single_file_tokens":
+                changes["single_file_tokens"] = 0
+                changes["single_file_ratio"] = 1.0
+            elif field_name == "docs_tokens":
+                changes["docs_tokens"] = 0
+                changes["docs_ratio"] = 1.0
+        elif value > 0:
+            changes[field_name] = value
+    raw = os.environ.get("NOVA_CORE_UNCAPPED_RATIO")
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            # 负数 = 关闭“核心证据免单文件上限”（对照实验用）。
+            changes["core_uncapped_ratio"] = None if parsed < 0 else parsed
+    return replace(base, **changes) if changes else base
+
+
+def _int_from_env(source: Mapping[str, str], name: str) -> int | None:
+    raw = source.get(name)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
 
 
 def _docs_cap(active: BudgetConfig, content_budget: int) -> int:
@@ -387,6 +437,18 @@ def _docs_cap(active: BudgetConfig, content_budget: int) -> int:
     if active.docs_tokens > 0:
         return active.docs_tokens
     return int(content_budget * active.docs_ratio)
+
+
+#: “不设上限”的哨兵值（比任何 hard_cap 都大）。
+_UNCAPPED = 10**9
+
+
+def _is_core_candidate(candidate: Candidate, top1_score: float, active: BudgetConfig) -> bool:
+    """是否核心证据（免单文件上限）：非 spec，且分数 ≥ top1 × core_uncapped_ratio。"""
+    ratio = active.core_uncapped_ratio
+    if ratio is None or top1_score <= 0.0 or candidate.kind == _SPEC_KIND:
+        return False
+    return candidate.score >= top1_score * ratio
 
 
 def _single_file_cap(active: BudgetConfig) -> int:
@@ -430,6 +492,10 @@ _PLAIN_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0
 _MAX_LISTED_UNRESOLVED = 3
 
 
+#: 统计未解析引用时只看前 N 个候选所在的文件（与装进包里的证据同量级）。
+_UNRESOLVED_SCOPE_CANDIDATES = 12
+
+
 def collect_index_signals(store: Store, candidates: Sequence[Candidate]) -> IndexSignals:
     """从 Store 收集 Phase 1 可得的缺失证据信号（G4 stale + unresolved_refs）。"""
     stale: dict[str, tuple[str, ...]] = {}
@@ -440,7 +506,15 @@ def collect_index_signals(store: Store, candidates: Sequence[Candidate]) -> Inde
         names = tuple(_symbol_name_from_id(ref.symbol_id) for ref in refs if ref.stale)
         if names:
             stale[candidate.chunk_id] = names
-    unresolved = store.unresolved_refs(status="failed")
+    # 只统计排名靠前候选所在文件里的未解析引用：全项目口径（"12847 个符号引用无法解析：
+    # slice, error, exit"）与本次查询无关，只会让 Agent 误以为结果不可信（benchmark 实测），
+    # 也要白白扫一遍整张表。
+    unresolved: list = []
+    seen_files: set[str] = set()
+    for candidate in candidates[:_UNRESOLVED_SCOPE_CANDIDATES]:
+        if candidate.path and candidate.path not in seen_files:
+            seen_files.add(candidate.path)
+            unresolved.extend(store.unresolved_refs(status="failed", file_path=candidate.path))
     symbols: list[str] = []
     for row in unresolved:
         name = row.name_tail or row.reference_name
@@ -789,13 +863,18 @@ def assemble(
         tokens = slot.tokens
         file_key = candidate.path or ""
         hard_limit = _hard_limit()
-        over_file_cap = file_usage.get(file_key, 0) + tokens > single_file_cap
+        file_cap = (
+            _UNCAPPED
+            if _is_core_candidate(candidate, top1_score, active)
+            else single_file_cap
+        )
+        over_file_cap = file_usage.get(file_key, 0) + tokens > file_cap
         if over_file_cap or used + tokens > hard_limit:
             degraded = _degrade(candidate, slot, active, store, query=query)
             if degraded is not None:
                 tokens = degraded.tokens
 
-        if file_usage.get(file_key, 0) + tokens > single_file_cap:
+        if file_usage.get(file_key, 0) + tokens > file_cap:
             omitted += 1
             capacity_cut += 1
             continue

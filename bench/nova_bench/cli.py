@@ -139,7 +139,7 @@ def _run_one(api: Api, project_id: str, question: Question) -> dict:
             pack = response["meta"].get("pack")
             record.update(ms=ms, score=scoring.score_search(question, pack).to_json())
             record["evidence"] = _digest(pack)
-            record["meta"] = {k: response["meta"].get(k) for k in ("answerable", "confidence", "degraded", "candidateCount", "channelsUsed")}
+            record["meta"] = {k: response["meta"].get(k) for k in ("answerable", "confidence", "degraded", "candidateCount", "channelsUsed", "budget", "evidenceCount")}
         else:
             body = {"projectId": project_id, "question": question.query}
             response, ms = api.post("/api/query/ask", body, timeout=300)
@@ -294,6 +294,74 @@ def cmd_diagnose(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_judge(args: argparse.Namespace) -> int:
+    """LLM 审核：随机抽函数出题 → 调真实 search/ask → LLM 打分。需要服务在跑。"""
+    import os
+
+    from . import diagnose, judge
+
+    diagnose.load_embed_env()
+    from nova_core.engine import Engine
+
+    cfg = judge.load_llm()
+    api = Api(args.base)
+    selected = _select_targets(args.repo)
+    for target in selected:
+        _attach_and_wait(api, target, quiet=True)
+    ids = _project_ids(api)
+    data_root = os.environ.get("NOVA_BENCH_DATA", str(Path.home() / ".nova" / "bench-data"))
+    engine = Engine(data_root)
+    tools = args.tools.split(",")
+    cases: list[dict] = []
+    out_dir = RESULTS_DIR / f"judge-{datetime.now():%Y%m%d-%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for target in selected:
+        pid = ids[target.name]
+        with engine._open_project(pid) as (store, _vectors, _provider):  # noqa: SLF001 - 诊断工具
+            picks = judge.sample_chunks(store._conn, args.n, args.seed)  # noqa: SLF001
+        for index, pick in enumerate(picks):
+            lang = "中文" if index % 2 == 0 else "英文"
+            generated = judge.chat(cfg, judge.GEN_PROMPT.format(
+                lang=lang, path=pick["file_path"], code=pick["content"][:6000]))
+            question = generated.get("question")
+            if not question:
+                print(f"[{target.name}] 出题失败：{generated}")
+                continue
+            facts = generated.get("facts") or []
+            symbol = pick["symbol_fqn"]
+            for tool in tools:
+                case = {"repo": target.name, "tool": tool, "question": question, "lang": lang,
+                        "path": pick["file_path"], "symbol": symbol, "facts": facts}
+                try:
+                    if tool == "search":
+                        response, ms = api.post("/api/query/search", {"projectId": pid, "query": question})
+                        output = response["markdown"]
+                        case["tokens"] = (response["meta"].get("budget") or {}).get("usedTokens", 0)
+                        prompt = judge.SEARCH_JUDGE_PROMPT.format(
+                            question=question, path=pick["file_path"], symbol=symbol,
+                            code=pick["content"][:4000], limit=16000, output=output[:16000])
+                    else:
+                        response, ms = api.post("/api/query/ask", {"projectId": pid, "question": question}, timeout=300)
+                        output = response.get("answer") or response.get("bestEffortContext") or ""
+                        case["status"] = response.get("status")
+                        prompt = judge.ASK_JUDGE_PROMPT.format(
+                            question=question, path=pick["file_path"], symbol=symbol,
+                            code=pick["content"][:4000], facts="；".join(facts), output=output[:8000])
+                    case["ms"] = ms
+                    case["output"] = output
+                    case["judge"] = judge.chat(cfg, prompt)
+                except Exception as exc:  # noqa: BLE001
+                    case["error"] = f"{type(exc).__name__}: {exc}"
+                cases.append(case)
+                print(f"[{target.name}] {tool:6} {question[:50]} → {case.get('judge', case.get('error'))}")
+    (out_dir / "cases.jsonl").write_text(
+        "\n".join(json.dumps(c, ensure_ascii=False) for c in cases) + "\n", encoding="utf-8")
+    meta = {"model": cfg["ANSWER_MODEL"], "seed": args.seed}
+    (out_dir / "report.md").write_text(judge.render_report(cases, meta), encoding="utf-8")
+    print(f"报告：{out_dir / 'report.md'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bench")
     parser.add_argument("--base", default=DEFAULT_BASE, help="nova-service 地址")
@@ -312,6 +380,12 @@ def main(argv: list[str] | None = None) -> int:
     diag.add_argument("--repo", action="append")
     diag.add_argument("--ids")
     diag.set_defaults(func=cmd_diagnose)
+    judge_p = sub.add_parser("judge", help="LLM 出题并评审 search/ask 的返回")
+    judge_p.add_argument("--repo", action="append")
+    judge_p.add_argument("--n", type=int, default=4, help="每个仓库抽多少个函数出题")
+    judge_p.add_argument("--seed", type=int, default=1)
+    judge_p.add_argument("--tools", default="search,ask")
+    judge_p.set_defaults(func=cmd_judge)
     compare = sub.add_parser("compare", help="逐题对比两次运行")
     compare.add_argument("--base", nargs="+", required=True, help="基线结果目录（可多个）")
     compare.add_argument("--new", nargs="+", required=True, help="本次结果目录（可多个）")

@@ -30,6 +30,7 @@ import time
 from collections.abc import Sequence
 
 from nova_core.contextpack.assembly import elision_note, has_elision_note
+from nova_core.contextpack.reason import agent_reason
 from nova_core.types import ContextPack, EvidenceItem, Freshness
 
 __all__ = ["evidence_group", "render_evidence_for_prompt", "render_markdown"]
@@ -81,6 +82,7 @@ def render_markdown(pack: ContextPack, *, now: int | None = None) -> str:
     sections.extend(_docs_section(pack))
     sections.extend(_missing_section(pack))
     sections.extend(_next_queries_section(pack))
+    sections.extend(_retry_tips_section(pack))
     sections.append(_meta_section(pack, now=now))
     return "\n".join(sections)
 
@@ -186,6 +188,23 @@ def _missing_section(pack: ContextPack) -> list[str]:
     return lines
 
 
+#: 低置信度时给 Agent 的重试提示（确定性文案，不调用任何模型）。
+RETRY_TIPS = (
+    "相关性较低：这次返回的内容可能不是你要找的，请不要直接当作答案。可以这样提高命中：",
+    "1. 换成代码里真实会出现的词重新搜索：函数/类/文件名，或英文关键词（例如把“怎么挑选线程”换成 "
+    "`getNextLoop`、`round robin event loop`）；",
+    "2. 已知文件路径或行号时直接 read，不必再搜；",
+    "3. 需要跨文件的综合解释、机制或比较时改用 ask_project。",
+)
+
+
+def _retry_tips_section(pack: ContextPack) -> list[str]:
+    """``### Retry Tips``：只在 ``confidence == "low"`` 时出现（高/中置信度不占 token）。"""
+    if pack.confidence != "low":
+        return []
+    return ["### Retry Tips", *RETRY_TIPS]
+
+
 def _next_queries_section(pack: ContextPack) -> list[str]:
     """D-24 的自愈查询（``pack.next_queries``）；为空时整节不渲染。
 
@@ -211,7 +230,10 @@ def _evidence_lines(item: EvidenceItem, *, is_doc: bool = False) -> list[str]:
         if item.lines is not None:
             span = f":{item.lines[0]}-{item.lines[1]}"
         header = f"[{item.id}] {target} — {item.path}{span}"
-    lines = [header, f"     reason: {item.reason}"]
+    lines = [header]
+    reason = agent_reason(item.reason)
+    if reason:
+        lines.append(f"     reason: {reason}")
     lines.extend(f"     {line}" for line in item.content.splitlines())
     if item.elided_lines > 0 and not has_elision_note(item.content):
         lines.append(f"     {elision_note(item.elided_lines)}")
