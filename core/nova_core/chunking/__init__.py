@@ -32,12 +32,12 @@ from nova_core.chunking.resolver import (
 from nova_core.chunking.splitter import (
     CLASS_SKELETON_KIND,
     EMBEDDING_BODY_MAX_CHARS,
+    EMBEDDING_TEXT_VERSION,
     FALLBACK_KIND,
     ID_DISAMBIGUATION_SEP,
     MODULE_FQN,
     SPEC_BLOCK_KIND,
     chunk_id,
-    EMBEDDING_TEXT_VERSION,
     embedding_text,
     spec_block_id,
     split_file,

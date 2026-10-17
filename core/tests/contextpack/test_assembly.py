@@ -373,7 +373,10 @@ def test_overloads_in_same_file_are_not_aggregated(store, seed_file, sym, cand) 
     seed_file(
         store,
         path="src/a.cc",
-        symbols=[sym("a", "Conn::send", start=10, end=14), sym("b", "Conn::send", start=200, end=240)],
+        symbols=[
+            sym("a", "Conn::send", start=10, end=14),
+            sym("b", "Conn::send", start=200, end=240),
+        ],
     )
     candidates = [
         cand("src/a.cc", "Conn::send", 10, score=1.0, end=14),

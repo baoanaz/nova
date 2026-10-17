@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from nova_core.chunking import EMBEDDING_TEXT_VERSION, embedding_text
 from nova_core.pipeline.embedding_sink import (
     DEFAULT_EMBED_WORKERS,
     MAX_EMBED_WORKERS,
@@ -23,7 +24,6 @@ from nova_core.pipeline.embedding_sink import (
     EmbeddingSink,
     embed_workers,
 )
-from nova_core.chunking import EMBEDDING_TEXT_VERSION, embedding_text
 from nova_core.types import ChunkDef, VectorRow
 from nova_core.vectors import VectorStore
 from nova_core.vectors.cache import EmbeddingCache
