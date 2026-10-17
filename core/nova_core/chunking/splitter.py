@@ -240,7 +240,7 @@ def _reject_duplicate_ids(path: str, chunks: Sequence[ChunkDef]) -> None:
     raise ValueError(f"{path}: 切分产物出现重复 chunk id（禁止静默去重/丢弃）：{detail}")
 
 
-#: embedding 文本格式版本：改 :func:`embedding_text` 的拼法必须递增（并入向量缓存键，避免混用旧向量）。
+#: embedding 文本格式版本：改 :func:`embedding_text` 的拼法必须递增（并入向量缓存键）。
 EMBEDDING_TEXT_VERSION = 2
 
 
