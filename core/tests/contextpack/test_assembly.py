@@ -330,6 +330,30 @@ def test_dedup_cpp_declarations_keep_score_order(store, seed_file, sym, cand) ->
     assert pack.budget is not None and pack.budget.omitted_count == 1
 
 
+def test_same_named_free_functions_in_different_files_are_not_merged(
+    store, seed_file, sym, cand
+) -> None:
+    """不同文件里的同名函数（C 的 static 函数、各编码器的 create_session_params）互不聚合。"""
+    paths = ("libavcodec/enc_h264.c", "libavcodec/enc_h265.c")
+    for path in paths:
+        seed_file(
+            store,
+            path=path,
+            language="c",
+            symbols=[sym("create_params", "create_params", start=10, end=20)],
+            bodies={"create_params": "static int create_params(void) { return 0; }"},
+        )
+    candidates = [
+        cand(paths[0], "create_params", 10, score=1.0, end=20),
+        cand(paths[1], "create_params", 10, score=0.9, end=20),
+    ]
+    config = BudgetConfig(hard_cap=10_000, framework_overhead=0, single_file_ratio=1.0)
+
+    pack = assemble(store, "create_params", candidates, config=config)
+
+    assert sorted(item.path for item in pack.evidence) == sorted(paths)
+
+
 def test_dedup_same_symbol_aggregation(store, seed_file, sym, cand) -> None:
     seed_file(
         store,

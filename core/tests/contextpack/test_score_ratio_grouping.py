@@ -77,9 +77,11 @@ def test_candidates_below_score_floor_are_not_placed_nor_rendered(store, seed_fi
 
     assert [item.path for item in pack.evidence] == ["src/f0.py", "src/f1.py"]
     assert "src/f2.py" not in md
-    # 不静默丢弃：缺口进 missingEvidence（CF-03 message 为自由文本，不新增字段）。
-    message = next(m.message for m in pack.missing_evidence if m.code == "retrieval_truncated")
-    assert "低于相对分数阈值" in message and "top1×0.5" in message
+    # 2026-10：仅被相对分数阈值筛掉的低分候选不是“缺口”（它们本来就不相关），不再写进
+    # missingEvidence——否则几乎每次返回都带一句 Agent 无法执行的“可提高预算”。
+    # 被筛掉的数量仍记在 budget.omitted_count 里，诊断可查。
+    assert all(m.code != "retrieval_truncated" for m in pack.missing_evidence)
+    assert pack.budget is not None and pack.budget.omitted_count >= 1
 
 
 def test_threshold_is_relative_to_non_spec_top_not_pool_top(store, seed_file, sym, cand):
@@ -427,4 +429,4 @@ def test_existing_top_level_sections_are_unchanged(store, seed_file, sym, cand):
     assert md.startswith("## Relevant Context\n"), "首行节名逐字未变"
     positions = [md.index(heading) for heading in canonical if heading in md]
     assert positions == sorted(positions)
-    assert "### Missing Evidence" in md, "语料前提：闸门确实截掉了 c9"
+    assert "c9" not in md, "语料前提：闸门确实截掉了 c9（低分候选不再产生 Missing Evidence 条目）"

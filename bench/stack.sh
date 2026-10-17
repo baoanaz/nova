@@ -52,6 +52,8 @@ up() {
     export EMBED_BATCH_TOKEN_BUDGET="${EMBED_BATCH_TOKEN_BUDGET:-300000}"
     export EMBED_MAX_INPUT_TOKENS="${EMBED_MAX_INPUT_TOKENS:-32000}" NOVA_EMBED_WORKERS="${NOVA_EMBED_WORKERS:-2}"
     export NOVA_ASK_RATE_PER_MIN=0 NOVA_DATA_ROOT="$DATA"
+    # 基准的索引数据远超默认存储配额；0 = 不限，避免每条返回都带存储告警。
+    export NOVA_STORAGE_LIMIT_PER_USER_BYTES=0 NOVA_STORAGE_LIMIT_PER_PROJECT_BYTES=0
     cd "$ROOT"
     exec nohup "$ROOT/.venv/bin/nova-service" local --host 127.0.0.1 --port "$PORT" \
       --data-root "$DATA" --repo "$SEED_REPO" --name muduo >"$RUN/service.log" 2>&1

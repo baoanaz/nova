@@ -76,7 +76,8 @@ def test_elided_lines_and_boolean_ranges_are_not_emitted():
     }), pack())
     assert result is not None
     assert "80 |" not in result.answer
-    assert "2 个" in result.answer
+    # 不可校验的源码范围静默丢弃：那是校验细节，不是证据缺口（不写进回答）。
+    assert "2 个" not in result.answer
 
 
 class Provider:

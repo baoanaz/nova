@@ -439,6 +439,27 @@ def _docs_cap(active: BudgetConfig, content_budget: int) -> int:
     return int(content_budget * active.docs_ratio)
 
 
+_CPP_SUFFIXES = (
+    ".h", ".hh", ".hpp", ".hxx", ".h++", ".c", ".cc", ".cpp", ".cxx", ".c++", ".ipp", ".tpp",
+)
+
+
+def _symbol_key(candidate: Candidate) -> tuple[str, str]:
+    """同符号聚合的键。
+
+    - 默认 **路径 + 符号**：只用符号名会把不同文件里的同名函数当成一个（C 的 ``static``
+      函数、各编码器里的 ``create_session_params``…），后者被静默聚合掉——LLM 评审里 3 题的
+      目标函数排在候选第 3、4 名却没出现在返回里，根因就在这里；
+    - 例外：C/C++ 里**带类/命名空间限定**的成员（``DBImpl::Get``）在头文件声明与源文件实现里
+      是同一个实体，仍按符号名聚合（保留既有的声明/实现去重）。
+    """
+    fqn = candidate.symbol_fqn or ""
+    path = candidate.path or ""
+    if "::" in fqn and path.lower().endswith(_CPP_SUFFIXES):
+        return ("", fqn)
+    return (path, fqn)
+
+
 #: “不设上限”的哨兵值（比任何 hard_cap 都大）。
 _UNCAPPED = 10**9
 
@@ -739,7 +760,7 @@ def assemble(
     spec_used = 0
     docs_capped = 0
     file_usage: dict[str, int] = {}
-    symbol_slots: dict[str, _Slot] = {}
+    symbol_slots: dict[tuple[str, str], _Slot] = {}
     slots: list[_Slot] = []
 
     #: 已装填 chunk_id（R15）：同一 chunk 只装一次——保底分支、贪心循环与合并路径共用。
@@ -760,7 +781,7 @@ def assemble(
         slots.append(slot)
         placed_ids.add(candidate.chunk_id)
         if candidate.symbol_fqn:
-            symbol_slots.setdefault(candidate.symbol_fqn, slot)
+            symbol_slots.setdefault(_symbol_key(candidate), slot)
 
     # spec 保底：为最高分 spec 候选**预留预算**（存在相关 spec 时），贪心后再补入——
     # 保留"装填顺序 = score 降序"的语义（Module/03 §4.1 的 spec 保底配额）。
@@ -842,7 +863,7 @@ def assemble(
             omitted += 1
             continue
 
-        existing = symbol_slots.get(candidate.symbol_fqn) if candidate.symbol_fqn else None
+        existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
         if existing is not None and existing is not slot:
             omitted += 1  # 同符号聚合：留最高分，其余计入 omittedCount 并在 reason 注明
             existing.aggregated += 1
@@ -931,7 +952,7 @@ def assemble(
             slot = _build_slot(store, candidate, index_signals)
             if slot is None:
                 continue
-            existing = symbol_slots.get(candidate.symbol_fqn) if candidate.symbol_fqn else None
+            existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
             if existing is not None and existing is not slot:
                 continue  # 同符号聚合优先（不覆盖 R15）
             tokens = slot.tokens
@@ -1006,7 +1027,7 @@ def assemble(
         slot = _build_slot(store, candidate, index_signals)
         if slot is None:
             continue
-        existing = symbol_slots.get(candidate.symbol_fqn) if candidate.symbol_fqn else None
+        existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
         if existing is not None and existing is not slot:
             continue  # 同符号聚合：该符号已在包内，不必重复补
         if reason and reason not in slot.item.reason:
@@ -1585,7 +1606,9 @@ def _missing_evidence(
                 symbol=item.stale_refs[0],
             )
         )
-    if truncated or docs_capped or score_capped:
+    # 仅被相对分数阈值筛掉的低分候选不是缺口（它们本来就不相关），不报告：
+    # 否则几乎每次返回都带一句 Agent 无法执行的“可提高预算”。
+    if truncated or docs_capped:
         # R21 §C + TASK-095 §A：份额上限 / 相对分数阈值挡下的候选在这里如实说明
         # （CF-03 无新增字段，message 为自由文本）。
         #

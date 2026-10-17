@@ -297,7 +297,7 @@ def test_warning_and_exceeded_markdown_differ(env: Env) -> None:
     assert "已超出上限" in exceeded
     assert "上传会被拒绝" in exceeded, "超限必须写明上传会被拒（TASK-110 硬拒新索引）"
     assert "检索" in exceeded and "不受影响" in exceeded
-    assert "删除" in exceeded and "源码文件不受影响" in exceeded
+    assert "删除" in exceeded and "源码不受影响" in exceeded
     assert exceeded != warning
 
 

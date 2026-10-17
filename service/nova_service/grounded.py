@@ -216,8 +216,8 @@ def render_grounded(raw: str, pack: ContextPack) -> GroundedResult | None:
             bad_ranges += 1
             continue
         snippets.setdefault(ref, []).extend(visible[line] for line in range(a, b+1))
-    if bad_ranges:
-        gaps.append(f"省略 {bad_ranges} 个不可从本次可见证据校验的源码范围。")
+    # bad_ranges：模型选的源码范围不在可见行里时静默丢弃——这是校验细节，不是证据缺口，
+    # 写进回答只会让读者以为结论缺依据（LLM 评审里反复被指出）。
     out = ["## Answer", *(claims or ["证据不足，无法形成有引用的结论。"])]
     if selected_flows:
         out.append("## Code Flow")
