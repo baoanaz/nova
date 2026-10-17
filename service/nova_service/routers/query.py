@@ -53,7 +53,7 @@ TASK-099 §A：上面四个 **``status`` 逐一落进 ``query_audit.answer_statu
 from __future__ import annotations
 
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any
@@ -79,6 +79,7 @@ from nova_service.metadb import MetaDB
 from nova_service.packmeta import evidence_summary, pack_meta
 from nova_service.quota import append_warning, warning_for
 from nova_service.ratelimit import enforce_ask_rate
+from nova_service.research import QUERY_MAX_TOKENS as RESEARCH_QUERY_MAX_TOKENS
 from nova_service.runtime import EngineManager
 from nova_service.workspace import combine_evidence
 
@@ -192,6 +193,11 @@ def search(payload: SearchRequest, request: Request) -> dict[str, Any]:
         return {"markdown": markdown, "meta": meta}
 
 
+def _research_search(manager: Any, project_id: str) -> Callable[[str], ContextPack]:
+    """ask 多轮调研用的补检：Fast 检索（零 LLM），只取证据包。"""
+    return lambda query: manager.search(project_id, query, RESEARCH_QUERY_MAX_TOKENS).pack
+
+
 @router.post("/api/query/ask")
 async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
     """Deep 模式：LLM grounded 总结；未配置/失败/证据不足各自**不报错也不 500**。
@@ -271,6 +277,7 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
                 settings=get_settings(request),
                 pack=pack,
                 question=question,
+                search=_research_search(manager, project_id),
             )
         except AnswerError as exc:
             # D-26 故障矩阵：超时/API 错误/密钥无效/形状不对 → 都是降级包，永不 500。
@@ -306,10 +313,12 @@ async def ask(payload: AskRequest, request: Request) -> dict[str, Any]:
         # 模型给出的东西，而不是 audit 层另做一遍加工。
         ctx["answerText"] = outcome.answer
         ctx["answerStatus"] = audit.STATUS_ANSWERED
+        if outcome.research is not None:
+            meta["research"] = outcome.research
         return {
             "status": "answered",
             "answer": append_warning(outcome.answer, warning),
-            "evidenceSummary": evidence_summary(pack),
+            "evidenceSummary": evidence_summary(outcome.pack or pack),
             "meta": meta,
         }
 

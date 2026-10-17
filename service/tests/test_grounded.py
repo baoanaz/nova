@@ -186,3 +186,20 @@ def test_invalid_references_are_still_rejected_per_claim() -> None:
     result = render_grounded(json.dumps(obj), _pack_with_ids())
     assert "有据" in result.answer and "幻觉" not in result.answer
     assert result.invalid_references == 1
+
+
+def test_render_repairs_citations_swallowed_into_claim_text() -> None:
+    pack = ContextPack(
+        query="q", mode="deep", answerable=True, confidence="high", freshness=Freshness(),
+        evidence=[
+            EvidenceItem(
+                id=f"E{i}", type="code", path="a.py", content="1 | x", score=1.0,
+                evidence_tier=1, reason="t", symbol=None, lines=(1, 1),
+            )
+            for i in (1, 4)
+        ],
+    )
+    raw = '{"claims":[{"text":"parsed in app(). [E1","E4"],"kind":"fact"}],"gaps":[]}'
+    result = render_grounded(raw, pack)
+    assert result is not None and "parsed in app()." in result.answer
+    assert result.references == ("E1", "E4") or list(result.references) == ["E1", "E4"]

@@ -25,6 +25,7 @@ __all__ = ["ReadCachedStore"]
 _MEMOIZED = frozenset(
     {
         "exact_symbols",
+        "file_exists",
         "edges_for",
         "chunk_by_id",
         "chunks_by_ids",

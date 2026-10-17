@@ -121,6 +121,24 @@ def test_unresolved_edges_and_retarget(
     assert {e.target for e in store.edges_for("f")} == {"util.greet", "builtins.int"}
 
 
+
+def test_unresolved_edges_target_prefix(
+    store: Store, make_parsed: Callable[..., ParsedFile], make_chunk: Callable[..., ChunkDef]
+) -> None:
+    parsed = make_parsed(
+        edges=(
+            EdgeDef(source_fqn="f", target_name="js:./a#run", kind="calls", line=1),
+            EdgeDef(source_fqn="f", target_name="js_helper", kind="calls", line=2),
+            EdgeDef(source_fqn="f", target_name="int", kind="calls", line=3),
+        ),
+    )
+    store.apply_file_change(parsed, [make_chunk()], "h1")
+    # 前缀走范围比较：``js_helper`` 不匹配 ``js:``（下划线不是通配符）。
+    assert [e.target for e in store.unresolved_edges(["calls"], target_prefix="js:")] == [
+        "js:./a#run"
+    ]
+    assert len(store.unresolved_edges(["calls"])) == 3
+
 def test_retarget_collision_drops_duplicate_row(
     store: Store, make_parsed: Callable[..., ParsedFile], make_chunk: Callable[..., ChunkDef]
 ) -> None:
@@ -141,3 +159,15 @@ def test_retarget_collision_drops_duplicate_row(
     )
     assert changed == 1
     assert len(store.edges_for("f")) == 1  # 唯一索引（source,target,kind,line）下只剩一条
+
+
+def test_content_signature_changes_on_write(
+    store: Store, make_parsed: Callable[..., ParsedFile], make_chunk: Callable[..., ChunkDef]
+) -> None:
+    before = store.content_signature()
+    assert before == store.content_signature()  # 只读不变
+    parsed = make_parsed(
+        edges=(EdgeDef(source_fqn="f", target_name="js:./a#run", kind="calls", line=1),),
+    )
+    store.apply_file_change(parsed, [make_chunk()], "h1")
+    assert store.content_signature() != before

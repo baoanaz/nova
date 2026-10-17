@@ -725,13 +725,24 @@ class Store:
                 marked += 1
         return marked
 
-    def unresolved_edges(self, kinds: Sequence[str] | None = None) -> list[EdgeRow]:
-        """读取 target 尚未落成 fqn 的边（TASK-006 二阶段解析输入，按 source/target 稳定排序）。"""
+    def unresolved_edges(
+        self, kinds: Sequence[str] | None = None, *, target_prefix: str | None = None
+    ) -> list[EdgeRow]:
+        """读取 target 尚未落成 fqn 的边（TASK-006 二阶段解析输入，按 source/target 稳定排序）。
+
+        ``target_prefix``：只取 target 以此开头的边（走 ``idx_edges_target_kind`` 的范围扫描）。
+        查询路径只需要 ``js:`` 前缀的边；不加过滤时大仓的未解析边有数万条，全部物化成
+        Python 对象在并发检索下会因 GIL 争用放大十几倍（实测 4 路并发单条 1s → 20s）。
+        """
         sql = (
             "SELECT source, target, kind, line, provenance FROM edges"
             " WHERE target NOT IN (SELECT fqn FROM symbols)"
         )
         params: list[str] = []
+        if target_prefix:
+            # 前缀范围 [prefix, 末字符+1)：等价 LIKE 'prefix%'，但走索引、不受通配符影响。
+            sql += " AND target >= ? AND target < ?"
+            params.extend((target_prefix, target_prefix[:-1] + chr(ord(target_prefix[-1]) + 1)))
         if kinds:
             placeholders = ", ".join("?" for _ in kinds)
             sql += f" AND kind IN ({placeholders})"
@@ -1109,6 +1120,21 @@ class Store:
         row = self._conn.execute("SELECT MAX(indexed_at) AS latest FROM files").fetchone()
         latest = None if row is None or row["latest"] is None else int(row["latest"])
         return Freshness(indexed_at=latest)
+
+    def content_signature(self) -> tuple[int | None, ...]:
+        """索引内容的廉价签名（跨查询缓存失效用）：任何一次索引写入都会改变其中至少一项。
+
+        files 的 ``MAX(indexed_at)`` 与行数覆盖增删改文件；edges/symbols 的 ``MAX(rowid)``
+        覆盖新写入的行（只读 B-tree 末端，O(log n)）。不用文件 mtime：每次查询的只读连接
+        关闭时也会 checkpoint WAL，mtime 会变。
+        """
+        row = self._conn.execute(
+            "SELECT (SELECT MAX(indexed_at) FROM files) AS latest,"
+            " (SELECT COUNT(*) FROM files) AS files,"
+            " (SELECT MAX(rowid) FROM edges) AS edges,"
+            " (SELECT MAX(rowid) FROM symbols) AS symbols"
+        ).fetchone()
+        return tuple(None if value is None else int(value) for value in row)
 
     def counts(self) -> dict[str, int]:
         """表行数快照（Phase 2 sync_status / 集成检查用，避免调用方直连 SQLite）。"""

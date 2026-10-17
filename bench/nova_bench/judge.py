@@ -4,7 +4,8 @@
 对 Agent 到底有没有用”。题目由 LLM 根据索引里随机抽到的函数生成（自带参考依据），
 评分也由 LLM 给出，所以只当作发现问题的线索，不当作绝对分数；每条都保留原文便于人工复核。
 
-LLM 用 ``~/.key/nova/secrets.env`` 里的 ``ANSWER_*``（与 ask 同一个模型），密钥不会被打印。
+LLM 默认用 ``~/.key/nova/secrets.env`` 里的 ``ANSWER_*``（与 ask 同一个模型）；配了 ``JUDGE_*``
+就用它评审，避免“自己评自己”。密钥不会被打印。
 """
 
 from __future__ import annotations
@@ -78,6 +79,11 @@ ASK_JUDGE_PROMPT = """你是严格的评审，评估“代码问答工具”的�
  ,"fix": "如果要改进，最值得做的一件事"}}
 """
 
+GIST_RULE = """先给二值结论 gist：站在“助手只拿到这段内容”的角度，它能否答对问题的大意——
+核心机制、关键位置/调用关系正确，足以回答用户或直接开始改代码，而不必另起一轮搜索。
+缺少次要细节（具体常量值、边角分支、某个变量名）不影响 gist=true；核心机制缺失、答错或会误导才判 false。
+参考答案只用来核对事实，不要求逐条覆盖。"""
+
 SCENARIO_SEARCH_PROMPT = """你是严格的评审。一个 AI 编程助手在真实开发场景里向“代码检索工具”提了问题，下面是工具返回的上下文。
 场景类型：{kind}
 问题：{question}
@@ -87,8 +93,11 @@ SCENARIO_SEARCH_PROMPT = """你是严格的评审。一个 AI 编程助手在真
 -----
 {output}
 -----
-评审时请站在“助手只能看到这段返回、之后要回答用户或改代码”的角度。只输出 JSON：
-{{"coverage": 1-5  // 参考答案里的关键要点/位置，返回内容覆盖了多少（5=全部）
+{gist_rule}
+只输出 JSON：
+{{"gist": true/false
+ ,"gist_reason": "一句话说明 gist 判定依据"
+ ,"coverage": 1-5  // 参考答案里的关键要点/位置，返回内容覆盖了多少（5=全部）
  ,"missing": ["返回里缺少的关键要点或文件，没有则空数组"]
  ,"actionable": 1-5  // 仅凭返回，助手能否直接回答或动手（5=无需再搜）
  ,"noise": 1-5  // 5=几乎全是有用内容，1=大量无关内容或元信息
@@ -106,8 +115,11 @@ SCENARIO_ASK_PROMPT = """你是严格的评审。开发者在真实场景里向�
 -----
 {output}
 -----
+{gist_rule}
 只输出 JSON：
-{{"correct": 1-5  // 与参考答案相比，关键要点是否正确、完整
+{{"gist": true/false
+ ,"gist_reason": "一句话说明 gist 判定依据"
+ ,"correct": 1-5  // 与参考答案相比，关键要点是否正确、完整
  ,"grounded": 1-5  // 结论是否有引用支撑、没有编造
  ,"useful": 1-5  // 对开发者是否直接可用、不啰嗦、结构清晰
  ,"hallucination": true/false
@@ -119,11 +131,14 @@ SCENARIO_ASK_PROMPT = """你是严格的评审。开发者在真实场景里向�
 
 
 def load_llm() -> dict[str, str]:
+    """评审模型配置：``JUDGE_*`` 优先（与 ask 不同的模型），没配则回落到 ``ANSWER_*``。"""
     cfg: dict[str, str] = {}
     for line in SECRETS.read_text(encoding="utf-8").splitlines():
-        match = re.match(r"^(?:export )?(ANSWER_[A-Z_]+)=(.*)$", line.strip())
+        match = re.match(r"^(?:export )?((?:ANSWER|JUDGE)_[A-Z_]+)=(.*)$", line.strip())
         if match:
             cfg[match.group(1)] = match.group(2).strip().strip("'\"")
+    for key in ("BASE_URL", "API_KEY", "MODEL"):
+        cfg[f"ANSWER_{key}"] = os.environ.get(f"JUDGE_{key}") or cfg.get(f"JUDGE_{key}") or cfg.get(f"ANSWER_{key}", "")
     missing = [k for k in ("ANSWER_BASE_URL", "ANSWER_API_KEY", "ANSWER_MODEL") if not cfg.get(k)]
     if missing:
         raise SystemExit(f"缺少 {SECRETS} 里的 {missing}")
@@ -194,7 +209,18 @@ def load_scenarios(root: Path, repos: list[str] | None) -> list[dict]:
 
 
 def render_scenario_report(cases: list[dict], meta: dict) -> str:
-    lines = ["# 场景评测报告", "", f"- 评审模型：{meta['model']}　题数：{len(cases)}", ""]
+    lines = ["# 场景评测报告", "", f"- 评审模型：{meta['model']}　题数：{len(cases)}", "",
+             "## 大意通过率（gist：仅凭返回能否答对大意/直接动手）", "",
+             "| 集合 | search | ask |", "|---|---|---|"]
+    for split in ("tune", "holdout", None):
+        cells = []
+        for tool in ("search", "ask"):
+            rows = [c for c in cases if c["tool"] == tool and "gist" in c.get("judge", {})
+                    and (split is None or c.get("split", "tune") == split)]
+            ok = sum(1 for c in rows if c["judge"]["gist"] is True)
+            cells.append(f"{ok}/{len(rows)}" + (f"（{ok / len(rows):.0%}）" if rows else ""))
+        lines.append(f"| {split or '全部'} | {cells[0]} | {cells[1]} |")
+    lines.append("")
     for tool in ("search", "ask"):
         rows = [c for c in cases if c["tool"] == tool and "judge" in c and "_error" not in c["judge"]]
         if not rows:
@@ -222,7 +248,8 @@ def render_scenario_report(cases: list[dict], meta: dict) -> str:
                 score = f"文件{c['path_hits'][0]}/{c['path_hits'][1]} cov={j.get('coverage')} act={j.get('actionable')} noise={j.get('noise')} {c['tokens']}tok"
             else:
                 score = f"c={j.get('correct')} g={j.get('grounded')} u={j.get('useful')} halluc={j.get('hallucination')}"
-            lines += [f"### {c['id']} · {c['kind']} · {score}", f"- 问：{c['question']}",
+            lines += [f"### {c['id']} · {c['kind']} · gist={j.get('gist')} · {score}", f"- 问：{c['question']}",
+                      f"- 大意判定：{j.get('gist_reason')}",
                       f"- 缺：{j.get('missing')}", f"- 问题：{j.get('issue')}", f"- 建议：{j.get('fix')}"]
             if tool == "search":
                 lines.append(f"- 低价值片段：{j.get('wasted')}")
@@ -273,3 +300,34 @@ def render_report(cases: list[dict], meta: dict) -> str:
     if errors:
         lines += [f"## 失败 {len(errors)} 条", ""] + [f"- {c['repo']}: {c.get('error') or c['judge']}" for c in errors]
     return "\n".join(lines) + "\n"
+
+
+AGENT_PROMPT = """你是在开发者本地仓库里工作的 AI 编程助手（类似 Claude Code）。当前仓库：{repo}（主要语言 {lang}）。
+你看不到代码，只能通过下面两个 MCP 工具了解仓库。用户刚发来一条请求。
+
+工具 1：search_context
+描述：{search_desc}
+参数 query：{search_param}
+
+工具 2：ask_project
+描述：{ask_desc}
+参数 question：{ask_param}
+
+用户请求：
+{request}
+
+请严格按两个工具描述里的指引，分别写出：如果用 search_context 解决这条请求，你会（并行）发出的 1~3 条 query
+（像真实助手一样，按需要决定条数）；如果用 ask_project，你会传的 question；再说明你会优先用哪一个。只输出 JSON：
+{{"search_queries": ["..."], "ask_question": "...", "preferred": "search_context 或 ask_project", "why": "一句话"}}"""
+
+
+def load_tool_descriptions(root: Path) -> dict[str, dict]:
+    """Agent 实际看到的 MCP 工具描述（``docs/contracts/mcp-tools.json``，与 client 副本一致）。"""
+    payload = json.loads((root / "docs" / "contracts" / "mcp-tools.json").read_text(encoding="utf-8"))
+    out = {}
+    for tool in payload["tools"]:
+        schema = tool.get("inputSchema") or tool.get("input_schema") or {}
+        props = schema.get("properties", {})
+        out[tool["name"]] = {"description": tool["description"],
+                             "params": {k: v.get("description", "") for k, v in props.items()}}
+    return out

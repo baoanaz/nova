@@ -50,7 +50,7 @@ from dataclasses import dataclass, field, replace
 from nova_core.parsing.markdown import classify_doctype
 from nova_core.pipeline.generated import is_generated_path as _is_generated_path
 from nova_core.retrieval.exact import extract_inferred, parse_explicit
-from nova_core.retrieval.expand import GRAPH_REASON_PREFIX, SYNTHESIZED_REASON
+from nova_core.retrieval.expand import FLOW_CHAIN_REASON, GRAPH_REASON_PREFIX, SYNTHESIZED_REASON
 from nova_core.retrieval.fusion import (
     CHANNEL_VECTOR,
     KIND_FALLBACK,
@@ -117,6 +117,7 @@ FEATURE_LITERAL_ROOT = "literal root name hit"
 FEATURE_SYMBOL_MATCH = "query symbol == chunk symbol"
 FEATURE_CONSENSUS3 = "3-channel consensus"
 FEATURE_VECTOR_TOP = "vector rank (semantic relevance)"
+FEATURE_FLOW_CHAIN = "call chain of a top seed"
 FEATURE_GRAPH_1HOP = "graph connected to top-1 seed (1 hop)"
 FEATURE_DOCTYPE = "high-value doctype"
 FEATURE_ENTRY_POINT = "entry point / exported symbol"
@@ -147,6 +148,7 @@ FEATURE_NAMES = (
     FEATURE_SYMBOL_MATCH,
     FEATURE_CONSENSUS3,
     FEATURE_VECTOR_TOP,
+    FEATURE_FLOW_CHAIN,
     FEATURE_GRAPH_1HOP,
     FEATURE_DOCTYPE,
     FEATURE_ENTRY_POINT,
@@ -231,6 +233,9 @@ class RerankWeights:
     #: 原特征表没有“语义相关性”这一项，导致“多通道沾边”恒压过“语义最相关”（实测：正确答案
     #: 常在 vector rank 1-3，却因只命中单通道而掉到 17-58）。拆成两档，避免硬阈值跳变。
     vector_rank_top: float = 1.5
+    #: 调用链上的节点（seed → 调用 → 再调用）：问“怎么工作”时链上的函数是答案的一部分，
+    #: 但没有任何召回通道命中它们，分数只能来自这条特征。取 0.6：预算用不满时才会被装进来。
+    flow_chain: float = 0.6
     graph_1hop_top1: float = 0.5
     doctype_high_value: float = 0.8
     entry_point: float = 0.2
@@ -362,6 +367,8 @@ def features(
     if vector_rank is not None:
         bonus = weights.vector_rank_top * math.exp(-(vector_rank - 1) / VECTOR_DECAY)
         hit(FEATURE_VECTOR_TOP, round(bonus, 3), bonus >= VECTOR_MIN_BONUS)
+
+    hit(FEATURE_FLOW_CHAIN, weights.flow_chain, FLOW_CHAIN_REASON in candidate.reasons)
 
     parent = _graph_parent(candidate)
     hit(

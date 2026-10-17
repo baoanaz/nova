@@ -153,6 +153,7 @@ ANSWER_MODEL_ENV = "ANSWER_MODEL"
 ANSWER_TIMEOUT_S_ENV = "ANSWER_TIMEOUT_S"
 #: 单次回答的 ``max_tokens``（Module/04 §2：3072）。
 ANSWER_MAX_TOKENS_ENV = "ANSWER_MAX_TOKENS"
+ASK_RESEARCH_ROUNDS_ENV = "ASK_RESEARCH_ROUNDS"
 #: 采样温度（Module/04 §2：0.2——调查要事实不要创意）。
 ANSWER_TEMPERATURE_ENV = "ANSWER_TEMPERATURE"
 #: 该 LLM 的**最大上下文窗口**（token）。仅用于设置页展示，不参与任何调优。
@@ -177,7 +178,9 @@ EMBED_TPM_ENV = "EMBED_TPM"
 EMBED_RPM_ENV = "EMBED_RPM"
 #: 三个必填项的默认值（未配置任一 → ``answer_configured`` 为 False，``ask`` 走降级包）。
 DEFAULT_ANSWER_TIMEOUT_S = 60.0
-DEFAULT_ANSWER_MAX_TOKENS = 1536
+DEFAULT_ANSWER_MAX_TOKENS = 3072
+#: ask 多轮调研的补检轮数（0 = 单次检索 + 单次总结的旧行为）。
+DEFAULT_ASK_RESEARCH_ROUNDS = 2
 DEFAULT_ANSWER_TEMPERATURE = 0.2
 #: 默认懒重扫间隔（秒）：本地模式下检索前最多每 2s 扫一次（Module/05 §3.6 的 freshness 语义）。
 DEFAULT_LOCAL_RESCAN_INTERVAL_S = 2.0
@@ -222,6 +225,8 @@ class Settings:
     answer_timeout_s: float = DEFAULT_ANSWER_TIMEOUT_S
     answer_max_tokens: int = DEFAULT_ANSWER_MAX_TOKENS
     answer_temperature: float = DEFAULT_ANSWER_TEMPERATURE
+    #: ask 多轮调研：首轮证据后由 LLM 指出缺口、定向补检，最多这么多轮（0 关闭）。
+    ask_research_rounds: int = DEFAULT_ASK_RESEARCH_ROUNDS
     #: 展示用元数据（TASK-107）：模型上下文窗口与厂商。**不参与任何调优**，
     #: 未配置时设置页如实显示 `—`，不猜。
     answer_max_context_tokens: int | None = None
@@ -348,6 +353,11 @@ class Settings:
                 source.get(ANSWER_TEMPERATURE_ENV),
                 ANSWER_TEMPERATURE_ENV,
                 default=DEFAULT_ANSWER_TEMPERATURE,
+            ),
+            ask_research_rounds=_as_non_negative_int(
+                source.get(ASK_RESEARCH_ROUNDS_ENV),
+                ASK_RESEARCH_ROUNDS_ENV,
+                default=DEFAULT_ASK_RESEARCH_ROUNDS,
             ),
             answer_max_context_tokens=_as_optional_int(
                 source.get(ANSWER_MAX_CONTEXT_TOKENS_ENV), ANSWER_MAX_CONTEXT_TOKENS_ENV

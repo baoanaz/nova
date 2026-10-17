@@ -388,7 +388,7 @@ CONSENSUS_SCORE_RATIO = 2.15
 #: 都过不了线，小仓库的流程题只返回 1–2K token（14K 预算几乎没用）。预算有富余时多给一些
 #: 次相关证据比少给更有用；放宽后仍受单文件 / tier3 / docs 份额与硬顶约束。
 UNDERFILL_RATIO = 0.35
-RELAXED_SCORE_RATIO = 0.2
+RELAXED_SCORE_RATIOS = (0.2, 0.1, 0.04)
 
 
 def budget_for(mode: str) -> BudgetConfig:
@@ -733,17 +733,24 @@ def assemble(
     if (
         budget is None
         or not active.underfill_relax
-        or active.score_ratio <= RELAXED_SCORE_RATIO
         or budget.used_tokens >= active.hard_cap * UNDERFILL_RATIO
         or not budget.omitted_count
     ):
         return pack
-    relaxed = replace(active, score_ratio=RELAXED_SCORE_RATIO)
-    again = _assemble_once(store, query, candidates, config=relaxed, mode=mode, **kwargs)
-    again_budget = again.budget
-    if again_budget is not None and again_budget.used_tokens > budget.used_tokens:
-        return again
-    return pack
+    best = pack
+    for ratio in RELAXED_SCORE_RATIOS:
+        if ratio >= active.score_ratio:
+            continue
+        relaxed = replace(active, score_ratio=ratio)
+        again = _assemble_once(store, query, candidates, config=relaxed, mode=mode, **kwargs)
+        again_budget = again.budget
+        best_used = best.budget.used_tokens if best.budget else 0
+        if again_budget is None or again_budget.used_tokens <= best_used:
+            continue
+        best = again
+        if again_budget.used_tokens >= active.hard_cap * UNDERFILL_RATIO:
+            break
+    return best
 
 
 def _assemble_once(

@@ -74,6 +74,7 @@ from nova_service.packmeta import pack_meta
 from nova_service.quota import append_warning, warning_for
 from nova_service.ratelimit import enforce_ask_rate
 from nova_service.recent import RecentEvidence
+from nova_service.research import QUERY_MAX_TOKENS as RESEARCH_QUERY_MAX_TOKENS
 from nova_service.routers.query import (
     ASK_MAX_TOKENS,
     DEFAULT_MAX_TOKENS,
@@ -582,7 +583,10 @@ def _ask_text(
         )
     try:
         outcome = answer_question(
-            provider=provider, settings=settings, pack=trace.pack, question=question
+            provider=provider, settings=settings, pack=trace.pack, question=question,
+            search=lambda query: manager.search(
+                project_id, query, RESEARCH_QUERY_MAX_TOKENS
+            ).pack,
         )
     except AnswerError as exc:
         logger.warning(

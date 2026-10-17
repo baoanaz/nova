@@ -4,7 +4,45 @@
 > 安装清单是 [ENVIRONMENT.txt](ENVIRONMENT.txt)，操作指南在 [docs/handbook/](docs/handbook/README.md)。
 > 本文件记录开发现状；旧机器的环境、服务状态和历史成绩不代表当前 VPS。
 
-## 2026-10-17 检索与 ask 优化轮（先读这一节）
+## 2026-10-18 真实 Agent 场景优化轮（先读这一节）
+
+目标：模拟真实使用——Agent 只看 MCP 工具描述、自己写 search/ask 参数——两个工具的返回都能让评审判“答得出大意”。
+评测用新增的 `bench/run.py agentsim`（见 [bench/README.md](bench/README.md#模拟真实-agentagentsim与大意判定2026-10-18)），
+评审与模拟 Agent 都是 `gpt-6-astra`，服务内 ask 用 `gpt-6-luna`；33 题 × 2 工具，留出集 13 题只验收不调参。
+
+| 大意通过率（调参 / 留出） | search | ask | ask 耗时 |
+|---|---|---|---|
+| A0 基线：旧描述、单次 ask | 87% / 69% | 83% / 69% | 平均 24s，长尾 77~138s |
+| **A4 本轮结果** | **94% / 85%**（全部 92%） | **94% / 92%**（全部 94%） | 中位 21s，最长 < 30s，0 降级 |
+
+改了什么（按收益排序）：
+
+1. **工具描述**（`docs/contracts/mcp-tools.json`，client 副本同步）：search 写明“零 LLM、3 秒内、一条 query 一个关注点，
+   多问拆成多条并行查”；ask 写明“多轮调研、10~30 秒，适合跨函数调用链 / 多问合一 / 模糊问题”，删掉过时的“最多一次 LLM 调用”。
+   Agent 从“把整句塞进一条 search”变成拆 2~3 条，search 通过率提升最大的一项。
+2. **ask 多轮调研**（新 `service/nova_service/research.py`，`ASK_RESEARCH_ROUNDS` 默认 2，0 = 旧的单次总结）：
+   首轮证据 → luna 规划缺口并给出检索词（优先证据里出现过但没展示定义的标识符）→ 并发补检 → 按 (路径, 行区间) 去重合并、
+   统一重编 E/F 号 → 总结。调研预算 15 秒，超时的补检直接丢弃。
+3. **宽回答格式**（`grounded.py`）：最多 12 条结论、要求逐一覆盖每个子问题/步骤；`ANSWER_MAX_TOKENS` 默认 1536 → 3072；
+   证据只覆盖部分要点时先答已有部分再列缺口，不再整题“证据不足”。
+4. **ask 尾延迟与稳定性**：LLM 调用对冲（规划 8 秒、总结 11 秒未返回就并发补发一份，取先到的；每个 ask 最多多占 1 个上游并发）；
+   luna 偶尔把引用写进 claim 文本把 JSON 弄坏（`…结论。 [E1","E4"],"kind"`），现在按该形状修复，修不好在多轮模式下重问一次。
+5. **core：并发检索的 expand 瓶颈**（与本轮其它改动无关的存量问题）：找 callers 时每次查询都把全仓未解析的 `js:` 调用边
+   全部读出并逐条做 ESM 解析（数千条 × 十几次小查询），4 路并发时单条检索从 1 秒变成 14~18 秒。现在
+   `Store.unresolved_edges(target_prefix=)` 在 SQL 里按前缀范围过滤，解析结果跨查询缓存、按 `Store.content_signature()` 失效。
+   **检索输出逐字不变**（40 条查询对比），4 路并发单条约 1 秒。ask 补检因此改为 4 路并发。
+6. core 检索小改（上一轮遗留，本轮 A/B 后保留）：图扩展邻居补“虚拟向量名次”（`vector.semanticize_expanded`）、
+   成员调用解析与二跳、装填不足时逐级放宽。对 HEAD：大意 36 vs 35、参考文件命中 58 vs 56、单条 search +0.4s（仍 < 3s）。
+7. 评测本身的修正：search 评审原来只看返回的前 20000 字符（34/45 被截断，误判集中在这里），现在 60000。
+
+注意 / 未做：
+- 评审噪声约 10%（luna 与 astra 对同一批输出的一致率 89%），单题翻转很常见，看整体。
+- `benches/golden` 回归本轮没跑（需要 embedding 密钥环境）；第 5 项是纯性能改动且输出逐字一致。
+- 本机没有 cargo，client 侧只改了契约 JSON 副本（Rust 测试校验两份一致，已确认字节相同）。
+- 仍失败的题多是“流程中间一环没被补检到”（如 gkd `ResolvedRule.status` 的计算、cc-switch 新增 CLI 应用的适配模块面），
+  可继续从规划提示或检索侧补。
+
+## 2026-10-17 检索与 ask 优化轮
 
 用新增的 [`bench/`](bench/README.md)（六个真实公开仓库 × 60 题，靶场见
 [靶场清单](docs/handbook/benchmark/targets.md)）驱动，结果：

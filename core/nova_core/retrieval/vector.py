@@ -26,6 +26,7 @@ from nova_core.retrieval.fusion import CHANNEL_VECTOR, TIER_VECTOR, make_candida
 from nova_core.types import Candidate, VectorHit
 
 __all__ = [
+    "semanticize_expanded",
     "DEFAULT_QUERY_CACHE_TTL_S",
     "REASON_VECTOR",
     "QueryEmbeddingCache",
@@ -225,3 +226,62 @@ def recall_vector(
         )
         for rank, hit in enumerate(hits, start=1)
     ]
+
+
+def semanticize_expanded(
+    store,
+    vector_store,
+    query_vector: Sequence[float] | None,
+    recalled: Sequence[Candidate],
+    expanded: Sequence[Candidate],
+) -> int:
+    """给图扩展邻居补一个“虚拟向量名次”，返回补上的个数。
+
+    图扩展出来的邻居没有进过任何召回通道，分数只能来自固定特征：``queueInLoop`` 这种答案关键
+    函数和一个 ``data()`` getter 同分，谁先被预算装进去全凭运气。这里用它们已有的向量和查询向量
+    算余弦，与真实向量召回的前 50 名比较，得到“如果它参与了向量召回会排第几”，写进
+    ``channel_ranks['vector']``，让 rerank 的向量名次加分对两类候选一视同仁。
+    查不到向量（没索引到 / 缺 provider）的邻居保持原样，任何异常都只是放弃这一步。
+    """
+    import numpy as np
+
+    if query_vector is None or vector_store is None or not expanded:
+        return 0
+    try:
+        query = np.asarray(query_vector, dtype=np.float32)
+        norm = float(np.linalg.norm(query))
+        if norm == 0.0:
+            return 0
+        query = query / norm
+        reals = [c for c in recalled if c.channel_ranks.get(CHANNEL_VECTOR)]
+        targets = [c for c in expanded if CHANNEL_VECTOR not in c.channel_ranks]
+        chunks = {c.id: c.content_hash for c in store.chunks_by_ids(
+            [c.chunk_id for c in (*reals, *targets)]
+        )}
+        found = vector_store.get_vector_arrays_by_hash(list(chunks.values()))
+
+        def cosine(candidate: Candidate) -> float | None:
+            hit = found.get(chunks.get(candidate.chunk_id, ""))
+            if hit is None:
+                return None
+            vector = np.asarray(hit[1], dtype=np.float32)
+            length = float(np.linalg.norm(vector))
+            return None if length == 0.0 else float(vector @ query) / length
+
+        real_scores = sorted(
+            (score for score in (cosine(c) for c in reals) if score is not None), reverse=True
+        )
+        if not real_scores:
+            return 0
+        assigned = 0
+        for candidate in targets:
+            score = cosine(candidate)
+            if score is None:
+                continue
+            rank = 1 + sum(1 for real in real_scores if real > score)
+            if rank <= len(real_scores):
+                candidate.channel_ranks[CHANNEL_VECTOR] = rank
+                assigned += 1
+        return assigned
+    except Exception:  # noqa: BLE001 - 纯增强：失败就按原来的固定分
+        return 0

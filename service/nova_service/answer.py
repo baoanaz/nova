@@ -53,6 +53,7 @@ from nova_service.llmprotocol import (
     extract_text as extract_protocol_text,
 )
 from nova_service.logging import get_logger, redact_text, register_secret
+from nova_service.research import ANSWER_HEDGE_S, hedged, research
 
 __all__ = [
     "DEFAULT_PROTOCOL",
@@ -632,6 +633,10 @@ class AnswerOutcome:
     valid_citations: int
     invalid_citations: int
     citation_coverage: float | None
+    #: 实际用来作答的证据包（多轮调研后可能比首轮大）；``None`` = 与传入的包相同。
+    pack: ContextPack | None = None
+    #: 多轮调研过程（轮次、补检词、新增证据数），写进 meta 便于诊断。
+    research: dict | None = None
 
 
 def no_usable_evidence(pack: ContextPack) -> bool:
@@ -651,27 +656,50 @@ def answer_question(
     settings: Settings,
     pack: ContextPack,
     question: str,
+    search: Callable[[str], ContextPack] | None = None,
 ) -> AnswerOutcome:
-    """调用 LLM 并做 Citation 回验（Module/04 §4 §5）。
+    """（可选多轮调研后）调用 LLM 并做 Citation 回验（Module/04 §4 §5）。
+
+    ``search`` 给出时按 ``settings.ask_research_rounds`` 先做定向补检（见 :mod:`research`），
+    再在合并后的证据上作答；不给或轮数为 0 时是单次总结。
 
     ``max_tokens`` / ``temperature`` **一律取自配置**（``Settings.answer_*``）——用户改
     ``ANSWER_MAX_TOKENS`` / ``ANSWER_TEMPERATURE`` 即改行为，本函数里没有硬编码的策略值。
 
     失败时抛 :class:`AnswerError`（消息已脱敏），由调用方转成 D-26 降级包。
     """
+    research_meta = None
+    if search is not None and settings.ask_research_rounds > 0:
+        pack, trace = research(
+            provider, search, question, pack, rounds=settings.ask_research_rounds
+        )
+        research_meta = trace.as_meta()
     user = build_user_prompt(pack, question)
     started = time.perf_counter()
-    raw = provider.complete(
-        system=SYSTEM_PROMPT,
-        user=user,
-        max_tokens=settings.answer_max_tokens,
-        temperature=settings.answer_temperature,
-    )
+    def call() -> str:
+        return provider.complete(
+            system=SYSTEM_PROMPT,
+            user=user,
+            max_tokens=settings.answer_max_tokens,
+            temperature=settings.answer_temperature,
+        )
+
+    # 多轮模式才对冲（单次总结路径保持"恰好一次调用"）。
+    raw = hedged(call, hedge_after_s=ANSWER_HEDGE_S) if research_meta is not None else call()
     latency_ms = (time.perf_counter() - started) * 1000.0
     try:
         grounded = render_grounded(raw, pack)
     except ValueError as exc:
-        raise AnswerResponseError("结构化回答格式无效") from exc
+        if research_meta is None:
+            raise AnswerResponseError("结构化回答格式无效") from exc
+        # 多轮模式允许多次调用：偶发的坏 JSON 重问一次，比把整题降级成证据包划算。
+        logger.info("ask 结构化回答无效，重问一次：%s", exc)
+        raw = hedged(call, hedge_after_s=ANSWER_HEDGE_S)
+        latency_ms = (time.perf_counter() - started) * 1000.0
+        try:
+            grounded = render_grounded(raw, pack)
+        except ValueError as again:
+            raise AnswerResponseError("结构化回答格式无效") from again
     if grounded is not None:
         return AnswerOutcome(
             answer=grounded.answer, latency_ms=latency_ms,
@@ -679,6 +707,7 @@ def answer_question(
             valid_citations=len(grounded.references),
             invalid_citations=grounded.invalid_references,
             citation_coverage=grounded.coverage,
+            pack=pack, research=research_meta,
         )
     check = verify_citations(raw, pack)
     return AnswerOutcome(
@@ -688,6 +717,7 @@ def answer_question(
         valid_citations=len(check.valid),
         invalid_citations=len(check.invalid),
         citation_coverage=check.coverage,
+        pack=pack, research=research_meta,
     )
 
 

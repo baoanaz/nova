@@ -81,3 +81,27 @@ LLM 用 `secrets.env` 里的 `ANSWER_*`（与 ask 同一个模型）。
 
 报告在 `bench/results/scenario-*/report.md`，每题保留原文（`cases.jsonl`）便于人工复核。评审模型与 ask
 同源，分数只当线索；`reference` 写得过窄会误判（例如返回了等价实现却没命中指定函数），读报告时要回看原文。
+
+## 模拟真实 Agent（agentsim）与大意判定（2026-10-18）
+
+`scenario` 把题目原文直接塞进工具，和真实使用不一样：真实场景是 Agent 只看到 MCP 工具描述，自己决定怎么调用。
+`agentsim` 模拟这一点：
+
+    JUDGE_MODEL=gpt-6-astra uv run python bench/run.py agentsim [--repo X] [--split tune|holdout] [--jobs 3] [--label x]
+
+1. 评审模型扮演 Agent，只看 `docs/contracts/mcp-tools.json` 里两个工具的描述和用户原话，写出 1~3 条
+   `search_context` 查询（可并行）和一条 `ask_project` 问题，并说明它更倾向用哪个工具；
+2. 分别调用 nova（多条 search 的返回按顺序拼接）；
+3. 评审模型对照**用户原话**和参考答案打分。
+
+**大意判定（gist，二值）**是主指标：仅凭工具返回，Agent 能否答对问题的大意、或直接动手修改。缺次要细节不扣，
+核心机制缺失或答错判不通过。各分项分数只当线索。报告顶部是 调参集/留出集 × search/ask 的通过率表。
+
+- **评审模型**：用 `JUDGE_*` 覆盖 `ANSWER_*`（环境变量优先，其次 secrets 文件）。约定评审用 `gpt-6-astra`，
+  nova 服务内的 ask 用 `gpt-6-luna`，两者分开，避免自评。同一批输出 luna 与 astra 的大意判定一致率约 89%，
+  单题有约 10% 的评审噪声，比较两版时看整体，不要盯单题。
+- **留出集**：`scenarios/*.jsonl` 里 `split: "holdout"`（id 以 `h-` 开头）的题只用于验收，调参时不看。
+- **并发**：`--jobs` 是题目级并发（1~10）。LLM 网关并发上限 10，多组并行时各组之和不要超过 10。
+  同一服务进程里检索吃 CPU，4 路并发检索比串行慢 2~3 倍；评测时测到的延迟高于单个 Agent 实际使用。
+- **重评**：`bench/run.py rejudge <结果目录>` 用当前评审口径重评已保存的输出，结果写到 `<目录>-rejudge-<时间>`。
+- search 的评审最多看 60000 字符的返回（原来 20000 会截掉多数返回的后半段，导致误判）。

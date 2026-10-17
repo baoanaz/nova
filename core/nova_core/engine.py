@@ -86,7 +86,7 @@ from nova_core.retrieval.gap import (
     plan_gaps,
 )
 from nova_core.retrieval.rerank import collect_signals, rerank
-from nova_core.retrieval.vector import QueryEmbeddingCache, embed_query
+from nova_core.retrieval.vector import QueryEmbeddingCache, embed_query, semanticize_expanded
 from nova_core.storage import DB_FILENAME, Store
 from nova_core.storage.readcache import ReadCachedStore
 from nova_core.types import (
@@ -151,6 +151,16 @@ DEEP_GAP_LIMITS = GapLimits(
 
 _PROJECT_ID_RE = re.compile(r"^[0-9a-f]{16}$")
 _GIT_TIMEOUT_S = 5.0
+
+
+def _resolved_query_vector(handle) -> list[float] | None:
+    """``_start_query_embedding`` 返回的 Future 的结果；失败/未启动返回 ``None``。"""
+    if handle is None:
+        return None
+    try:
+        return handle.result(timeout=5)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 class EngineError(RuntimeError):
@@ -720,6 +730,10 @@ class Engine:
                 query_vector=query_vector,
             )
             expansion = expand(store, recalled.candidates, limits=self._expansion_limits)
+            semanticize_expanded(
+                store, vectors, _resolved_query_vector(query_vector),
+                recalled.candidates, expansion.candidates,
+            )
             pool = [*recalled.candidates, *expansion.candidates]
             return rerank(pool, collect_signals(store, query, pool))
 
@@ -761,6 +775,10 @@ class Engine:
             state_gap = self._index_state_gap(project_id, store, vectors)
             marks.append(("recall", time.perf_counter()))
             expansion = expand(store, recalled.candidates, limits=self._expansion_limits)
+            semanticize_expanded(
+                store, vectors, _resolved_query_vector(query_vector),
+                recalled.candidates, expansion.candidates,
+            )
             pool = [*recalled.candidates, *expansion.candidates]
             marks.append(("expand", time.perf_counter()))
             ranked = rerank(pool, collect_signals(store, query, pool))

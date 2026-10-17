@@ -105,6 +105,8 @@ def _make(tmp_path: Path, **overrides: object) -> tuple[FastAPI, EngineManager, 
         "data_root": tmp_path / "data",
         "local_mode": True,
         "local_rescan_interval_s": 0.0,
+        # 既有用例守的是单次总结路径（一次 ask 一次 LLM、不调 search）；多轮调研另有专门用例。
+        "ask_research_rounds": 0,
     }
     settings = Settings(**{**defaults, **overrides})  # type: ignore[arg-type]
     manager = EngineManager.open(
@@ -192,7 +194,7 @@ def test_unconfigured_settings_have_defaults_and_missing_env_names(
     settings = Settings(data_root=tmp_path, local_mode=True)
     assert settings.answer_configured is False
     assert settings.answer_missing_env == ("ANSWER_BASE_URL", "ANSWER_API_KEY", "ANSWER_MODEL")
-    assert (settings.answer_timeout_s, settings.answer_max_tokens) == (60.0, 1536)
+    assert (settings.answer_timeout_s, settings.answer_max_tokens) == (60.0, 3072)
     assert settings.answer_temperature == 0.2
     assert build_provider(settings) is None, "未配置 → 没有 provider（调用方走降级包）"
 
@@ -469,6 +471,7 @@ def test_model_timeout_and_temperature_come_from_config(
         answer_timeout_s=7.5,
         answer_max_tokens=321,
         answer_temperature=0.75,
+        ask_research_rounds=0,
     )
     ask_env.app.state.settings = settings
     test_client = httpx.Client(transport=httpx.MockTransport(handler))
@@ -921,7 +924,7 @@ def test_meta_exposes_effective_config_without_key_material(ask_env: SimpleNames
     assert config["llm"]["maxContextTokens"] == 1_048_576
     assert config["llm"]["baseUrl"] == "http://llm.invalid/v1"
     assert config["llm"]["timeoutS"] == 60.0
-    assert config["llm"]["maxTokens"] == 1536
+    assert config["llm"]["maxTokens"] == 3072
     assert config["llm"]["temperature"] == 0.2
     # embedding 侧同样给展示值（本机默认 local；测试环境读不到 api 配置时不强求）。
     assert config["embedding"]["mode"] in {"local", "api"}

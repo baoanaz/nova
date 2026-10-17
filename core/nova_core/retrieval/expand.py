@@ -27,6 +27,8 @@ seeds = 候选池 top 20（按 score）
 
 from __future__ import annotations
 
+import re
+import threading
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 
@@ -35,9 +37,11 @@ from nova_core.chunking.esm import ESMIndex
 from nova_core.parsing.registry import detect_language
 from nova_core.retrieval.fusion import KIND_SPEC, classify_kind
 from nova_core.storage import Store
+from nova_core.storage.readcache import ReadCachedStore
 from nova_core.types import Candidate, Flow, FlowNode
 
 __all__ = [
+    "FLOW_CHAIN_REASON",
     "GRAPH_REASON_PREFIX",
     "GRAPH_TIER",
     "REASON_REEXPORT",
@@ -56,6 +60,11 @@ GRAPH_REASON_PREFIX = "graph-expanded from "
 
 #: synthesized 边扩展标记（provenance='synthesized'，rerank −0.2）。
 SYNTHESIZED_REASON = "synthesized edge"
+
+#: 候选来自 seed 的调用链（seed → 调用 → 再调用），rerank 据此给一点加分。
+FLOW_CHAIN_REASON = "flow chain"
+#: 第二跳扩展的总量上限（独立于第一跳的 ``max_expanded``）。
+SECOND_HOP_CAP = 12
 
 #: 公开导出点标记（TASK-MCP-CHAIN）：该候选是 seed 符号的包入口重导出处。
 REASON_REEXPORT = "re-export site"
@@ -90,9 +99,41 @@ def _by_score(candidates: Iterable[Candidate]) -> list[Candidate]:
 def _symbol_row(store: Store, fqn: str):
     """按 fqn 精确取符号行（优先带 chunk 的那条）。"""
     rows = [r for r in store.exact_symbols(fqn, limit=None) if r.fqn == fqn]
+    if not rows:
+        return _resolve_member_call(store, fqn)
     if len(rows) > 1 and any(detect_language(r.file_path or "") in ESM_LANGUAGES for r in rows):
         return None  # 歧义检查包含无切片行，不能因一个声明没切片就任取另一个
     return next((r for r in rows if r.chunk_id is not None), None)
+
+
+def _resolve_member_call(store: Store, target: str):
+    """``loop_.runInLoop`` / ``conn->send`` 这类带接收者的调用目标：按方法名唯一匹配。
+
+    解析器只能把本类内的调用解析成完整 fqn，``成员.方法`` 的目标留的是原文（C++ 的
+    ``loop_.runInLoop`` → 实际是 ``EventLoop::runInLoop``），整条调用边因此在图扩展与 flow 里
+    断掉（ask 问“send 为什么线程安全”拿不到 runInLoop → queueInLoop → wakeup 这条链）。
+    项目里该方法名只对应**一个**可取到切片的符号时才采用，有歧义宁可断开，不编造。
+    """
+    for separator in ("->", ".", "::"):
+        if separator in target:
+            method = target.rsplit(separator, 1)[1]
+            break
+    else:
+        return None
+    if not method.isidentifier():
+        return None
+    rows = [
+        r
+        for r in store.exact_symbols(method, limit=None)
+        if r.name == method and r.chunk_id is not None and r.kind in ("function", "method")
+    ]
+    # 头文件声明与源文件实现的 fqn 写法不同（``muduo::net::EventLoop::runInLoop`` vs
+    # ``EventLoop::runInLoop``），按“类名 + 方法名”折叠成同一个实体，并优先取实现所在的文件。
+    entities = {tuple(re.split(r"::|\.", r.fqn)[-2:]) for r in rows}
+    if len(entities) != 1:
+        return None
+    rows.sort(key=lambda r: (r.file_path or "").lower().endswith((".h", ".hh", ".hpp", ".hxx")))
+    return rows[0]
 
 
 def _is_entry_point(store: Store, fqn: str, is_exported: bool) -> bool:
@@ -135,17 +176,51 @@ def _callee_rank(store: Store, target: str) -> int:
     return 0 if (name.startswith("_") and not _is_dunder(name)) else 1
 
 
+#: 全仓未解析的 ``js:`` 调用边解析结果，跨查询复用，按索引库文件签名失效。
+#: 找 callers 时要知道哪些 ESM 导入调用最终指向本符号：TS 大仓有数千条这样的边，
+#: 每条要十几次 exact_symbols/file_exists 小查询。逐查询重算时它占 expand 的大头，
+#: 并发检索下互相拖慢（pi：4 路并发单条 1s → 7s）。结果只依赖索引内容，
+#: 按 :meth:`Store.content_signature` 失效。
+_JS_CALLS: dict[tuple, list] = {}
+_JS_CALLS_LOCK = threading.Lock()
+_JS_CALLS_MAX = 32
+
+
+def _index_signature(store: Store) -> tuple | None:
+    try:
+        return (str(store.project_dir), *store.content_signature())
+    except Exception:  # noqa: BLE001 - 拿不到签名就不缓存
+        return None
+
+
+def _resolved_js_calls(store: Store) -> list:
+    # 只缓存请求内只读的 ReadCachedStore；裸 Store（索引/测试路径）可能在两次扩展之间被写入。
+    key = _index_signature(store) if isinstance(store, ReadCachedStore) else None
+    if key is not None:
+        with _JS_CALLS_LOCK:
+            cached = _JS_CALLS.get(key)
+        if cached is not None:
+            return cached
+    unresolved = store.unresolved_edges(["calls"], target_prefix="js:")
+    edges = ESMIndex(store).edges(list(dict.fromkeys(unresolved))) if unresolved else []
+    if key is not None:
+        with _JS_CALLS_LOCK:
+            if len(_JS_CALLS) >= _JS_CALLS_MAX:
+                _JS_CALLS.pop(next(iter(_JS_CALLS)))
+            _JS_CALLS[key] = edges
+    return edges
+
+
 def _calls_neighbours(store: Store, fqn: str, kind: str, limits: ExpansionLimits):
     """``kind='callers'``：指向本符号的 calls 入边；``kind='callees'``：本符号的出边。
 
     返回 ``(neighbour_fqn, provenance)`` 列表（callers 爆炸时按入口点评分截断）。
     """
     edges = store.edges_for(fqn, kinds=["calls"])
-    if kind == "callers":
-        edges.extend(e for e in store.unresolved_edges(["calls"]) if e.target.startswith("js:"))
     if any(e.target.startswith("js:") for e in edges):
         edges = ESMIndex(store).edges(list(dict.fromkeys(edges)))
     if kind == "callers":
+        edges = list(dict.fromkeys([*edges, *_resolved_js_calls(store)]))
         selected = [edge for edge in edges if edge.target == fqn]
         if len(selected) > limits.caller_explosion_threshold:
             selected.sort(key=lambda edge: _caller_sort_key(store, edge.source))
@@ -250,9 +325,32 @@ def expand(
             _expand_spec_seed(store, seed, _add)
             continue
         _expand_code_seed(store, seed, active, _add)
+    flows = build_flows(store, seeds, limits=active)
+    # 第二跳：top 种子的 callees 再调用了谁（send → runInLoop → queueInLoop → wakeup）。
+    # 问“它是怎么工作的”时答案常在第二、三跳；只沿**能解析到项目内切片**的调用走
+    # （外部符号如 ``std::move`` 取不到切片，自然被排除），总量封顶，打“调用链”标记供 rerank 加分。
+    second_hop = 0
+    for seed in seeds[: active.flow_seeds]:
+        fqn = seed.symbol_fqn
+        if not fqn or seed.kind == KIND_SPEC:
+            continue
+        for neighbour, _p in _calls_neighbours(store, fqn, "callees", active):
+            row = _symbol_row(store, neighbour)
+            if row is None:
+                continue
+            for target, provenance in _calls_neighbours(store, row.fqn, "callees", active):
+                if second_hop >= SECOND_HOP_CAP:
+                    break
+                candidate = _expansion_candidate(store, target, seed=seed, provenance=provenance)
+                if candidate is None or candidate.chunk_id in known:
+                    continue
+                known.add(candidate.chunk_id)
+                candidate.reasons.append(FLOW_CHAIN_REASON)
+                expanded.append(candidate)  # 第二跳有自己的上限，不占第一跳的 max_expanded
+                second_hop += 1
     return ExpansionResult(
         candidates=expanded,
-        flows=build_flows(store, seeds, limits=active),
+        flows=flows,
         seed_chunk_ids=tuple(seed.chunk_id for seed in seeds),
     )
 

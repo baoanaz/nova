@@ -14,6 +14,7 @@ import json
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -362,6 +363,50 @@ def cmd_judge(args: argparse.Namespace) -> int:
     return 0
 
 
+def _scenario_prompt(judge, sc: dict, output: str) -> str:
+    if sc["tool"] == "search":
+        return judge.SCENARIO_SEARCH_PROMPT.format(
+            kind=sc["kind"], question=sc["query"], reference=sc["reference"], limit=60000,
+            output=output[:60000], gist_rule=judge.GIST_RULE)
+    return judge.SCENARIO_ASK_PROMPT.format(
+        kind=sc["kind"], question=sc["query"], reference=sc["reference"], output=output[:10000],
+        gist_rule=judge.GIST_RULE)
+
+
+def cmd_rejudge(args: argparse.Namespace) -> int:
+    """用当前评分表重新评审一次已保存的场景结果（不重新查询），也用来测评审本身的波动。"""
+    from . import judge
+
+    cfg = judge.load_llm()
+    src = RESULTS_DIR / args.run if not Path(args.run).is_absolute() else Path(args.run)
+    scenarios = {s["id"]: s for s in judge.load_scenarios(BENCH_DIR / "scenarios", None)}
+    cases = [json.loads(line) for line in (src / "cases.jsonl").read_text(encoding="utf-8").splitlines() if line]
+    out: list[dict] = []
+    for case in cases:
+        sc = scenarios.get(case["id"])
+        if sc is None or "output" not in case:
+            continue
+        case = dict(case, split=sc.get("split", "tune"))
+        case["judge"] = judge.chat(cfg, _scenario_prompt(judge, sc, case["output"]))
+        out.append(case)
+        print(f"[{case['id']}] {case['tool']:6} gist={case['judge'].get('gist')} {case['judge'].get('gist_reason', '')}")
+    out_dir = RESULTS_DIR / f"{src.name}-rejudge-{datetime.now():%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "cases.jsonl").write_text(
+        "\n".join(json.dumps(c, ensure_ascii=False) for c in out) + "\n", encoding="utf-8")
+    (out_dir / "report.md").write_text(
+        judge.render_scenario_report(out, {"model": cfg["ANSWER_MODEL"]}), encoding="utf-8")
+    print(f"报告：{out_dir / 'report.md'}")
+    return 0
+
+
+def _jobs(raw: str) -> int:
+    value = int(raw)
+    if not 1 <= value <= 10:
+        raise argparse.ArgumentTypeError("--jobs 取 1~10（LLM 网关并发上限 10）")
+    return value
+
+
 def cmd_scenario(args: argparse.Namespace) -> int:
     """场景评测：人工读过仓库后写的场景题 → 调真实 search/ask → LLM 对照参考答案评审。"""
     from . import judge
@@ -374,15 +419,18 @@ def cmd_scenario(args: argparse.Namespace) -> int:
         scenarios = [s for s in scenarios if s["id"] in wanted]
     if args.tool:
         scenarios = [s for s in scenarios if s["tool"] == args.tool]
+    if args.split:
+        scenarios = [s for s in scenarios if s.get("split", "tune") == args.split]
     for target in _select_targets(sorted({s["repo"] for s in scenarios})):
         _attach_and_wait(api, target, quiet=True)
     ids = _project_ids(api)
-    out_dir = RESULTS_DIR / f"scenario-{datetime.now():%Y%m%d-%H%M%S}"
+    suffix = f"-{args.label}" if args.label else ""
+    out_dir = RESULTS_DIR / f"scenario-{datetime.now():%Y%m%d-%H%M%S}{suffix}"
     out_dir.mkdir(parents=True, exist_ok=True)
-    cases: list[dict] = []
-    for sc in scenarios:
+    def run_case(sc: dict) -> dict:
         pid = ids[sc["repo"]]
-        case = {"id": sc["id"], "repo": sc["repo"], "tool": sc["tool"], "kind": sc["kind"], "question": sc["query"]}
+        case = {"id": sc["id"], "repo": sc["repo"], "tool": sc["tool"], "kind": sc["kind"],
+                "split": sc.get("split", "tune"), "question": sc["query"]}
         try:
             if sc["tool"] == "search":
                 response, ms = api.post("/api/query/search", {"projectId": pid, "query": sc["query"]})
@@ -390,25 +438,114 @@ def cmd_scenario(args: argparse.Namespace) -> int:
                 case["tokens"] = (response["meta"].get("budget") or {}).get("usedTokens", 0)
                 keys = sc.get("key_paths", [])
                 case["path_hits"] = [sum(1 for k in keys if k in output), len(keys)]
-                prompt = judge.SCENARIO_SEARCH_PROMPT.format(
-                    kind=sc["kind"], question=sc["query"], reference=sc["reference"], limit=20000, output=output[:20000])
             else:
                 response, ms = api.post("/api/query/ask", {"projectId": pid, "question": sc["query"]}, timeout=300)
                 output = response.get("answer") or response.get("bestEffortContext") or ""
                 case["status"] = response.get("status")
-                prompt = judge.SCENARIO_ASK_PROMPT.format(
-                    kind=sc["kind"], question=sc["query"], reference=sc["reference"], output=output[:10000])
+                case["research"] = (response.get("meta") or {}).get("research")
             case["ms"] = ms
             case["output"] = output
-            case["judge"] = judge.chat(cfg, prompt)
+            case["judge"] = judge.chat(cfg, _scenario_prompt(judge, sc, output))
         except Exception as exc:  # noqa: BLE001
             case["error"] = f"{type(exc).__name__}: {exc}"
-        cases.append(case)
-        print(f"[{sc['id']}] {sc['tool']:6} {case.get('judge', case.get('error'))}")
+        print(f"[{sc['id']}] {sc['tool']:6} {case.get('judge', case.get('error'))}", flush=True)
+        return case
+
+    # 每个 worker 同一时刻最多一个 LLM 调用在途（先查询、后评审），--jobs 即 LLM 并发上限。
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        cases = list(pool.map(run_case, scenarios))
     (out_dir / "cases.jsonl").write_text(
         "\n".join(json.dumps(c, ensure_ascii=False) for c in cases) + "\n", encoding="utf-8")
     (out_dir / "report.md").write_text(
         judge.render_scenario_report(cases, {"model": cfg["ANSWER_MODEL"]}), encoding="utf-8")
+    print(f"报告：{out_dir / 'report.md'}")
+    return 0
+
+
+def cmd_agentsim(args: argparse.Namespace) -> int:
+    """模拟真实 Agent：只看 MCP 工具描述 → 自己写 search query / ask question → 调 nova → 评审大意。
+
+    同一条用户请求两个工具各跑一次（各自的大意通过率），并记录 Agent 会优先选哪个。
+    出题与评审都用 ``JUDGE_*`` 模型（与服务内的 ask 模型不同）。
+    """
+    from . import judge
+
+    cfg = judge.load_llm()
+    api = Api(args.base)
+    tools = judge.load_tool_descriptions(BENCH_DIR.parent)
+    scenarios = judge.load_scenarios(BENCH_DIR / "scenarios", args.repo)
+    if args.split:
+        scenarios = [s for s in scenarios if s.get("split", "tune") == args.split]
+    seen: set[str] = set()
+    requests: list[dict] = []
+    for sc in scenarios:  # 留出集的 -s/-a 是同一问题，只取一次
+        if sc["query"] not in seen:
+            seen.add(sc["query"])
+            requests.append(sc)
+    for target in _select_targets(sorted({s["repo"] for s in requests})):
+        _attach_and_wait(api, target, quiet=True)
+    ids = _project_ids(api)
+    langs = {t.name: t.language for t in _select_targets(sorted({s["repo"] for s in requests}))}
+    suffix = f"-{args.label}" if args.label else ""
+    out_dir = RESULTS_DIR / f"agentsim-{datetime.now():%Y%m%d-%H%M%S}{suffix}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    def run_one(sc: dict) -> list[dict]:
+        plan = judge.chat(cfg, judge.AGENT_PROMPT.format(
+            repo=sc["repo"], lang=langs.get(sc["repo"], ""), request=sc["query"],
+            search_desc=tools["search_context"]["description"],
+            search_param=tools["search_context"]["params"].get("query", ""),
+            ask_desc=tools["ask_project"]["description"],
+            ask_param=tools["ask_project"]["params"].get("question", "")), max_tokens=1200)
+        cases = []
+        queries = [q for q in plan.get("search_queries") or [] if isinstance(q, str) and q.strip()][:3]
+        for tool, key in (("search", "search_queries"), ("ask", "ask_question")):
+            if tool == "search":
+                arg = " || ".join(queries) if queries else sc["query"]
+            else:
+                arg = plan.get(key) if isinstance(plan.get(key), str) and plan.get(key).strip() else sc["query"]
+            case = {"id": sc["id"].removesuffix("-s").removesuffix("-a"), "repo": sc["repo"], "tool": tool,
+                    "kind": sc["kind"], "split": sc.get("split", "tune"), "question": sc["query"],
+                    "agent_input": arg, "preferred": plan.get("preferred"), "why": plan.get("why")}
+            try:
+                pid = ids[sc["repo"]]
+                if tool == "search":
+                    # Agent 并行发出的几条 query：各自返回，按调用顺序拼给评审（Agent 也是这样一起看）。
+                    outputs, ms, tokens = [], 0.0, 0
+                    for q in (queries or [sc["query"]]):
+                        response, one_ms = api.post("/api/query/search", {"projectId": pid, "query": q})
+                        outputs.append(f"### search_context(query={q!r})\n" + response["markdown"])
+                        ms = max(ms, one_ms)
+                        tokens += (response["meta"].get("budget") or {}).get("usedTokens", 0)
+                    output = "\n\n".join(outputs)
+                    case["tokens"] = tokens
+                    case["calls"] = len(outputs)
+                    keys = sc.get("key_paths", [])
+                    case["path_hits"] = [sum(1 for k in keys if k in output), len(keys)]
+                else:
+                    response, ms = api.post("/api/query/ask", {"projectId": pid, "question": arg}, timeout=300)
+                    output = response.get("answer") or response.get("bestEffortContext") or ""
+                    case["status"] = response.get("status")
+                    case["research"] = (response.get("meta") or {}).get("research")
+                case["ms"] = ms
+                case["output"] = output
+                # 评审对照的是用户的原始请求（Agent 改写后的检索词只是手段）。
+                case["judge"] = judge.chat(cfg, _scenario_prompt(judge, {**sc, "tool": tool}, output))
+            except Exception as exc:  # noqa: BLE001
+                case["error"] = f"{type(exc).__name__}: {exc}"
+            print(f"[{case['id']}] {tool:6} gist={case.get('judge', {}).get('gist')} <- {arg[:70]}", flush=True)
+            cases.append(case)
+        return cases
+
+    with ThreadPoolExecutor(max_workers=args.jobs) as pool:
+        cases = [c for group in pool.map(run_one, requests) for c in group]
+    (out_dir / "cases.jsonl").write_text(
+        "\n".join(json.dumps(c, ensure_ascii=False) for c in cases) + "\n", encoding="utf-8")
+    report = judge.render_scenario_report(cases, {"model": cfg["ANSWER_MODEL"]})
+    prefer = [c["preferred"] for c in cases if c["tool"] == "search"]
+    report = report.replace("## 大意通过率", f"- Agent 优先选择：search {sum('search' in str(p) for p in prefer)} / ask "
+                            f"{sum('ask' in str(p) for p in prefer)}\n\n## 大意通过率", 1)
+    (out_dir / "report.md").write_text(report, encoding="utf-8")
     print(f"报告：{out_dir / 'report.md'}")
     return 0
 
@@ -435,7 +572,21 @@ def main(argv: list[str] | None = None) -> int:
     sc_p.add_argument("--repo", action="append")
     sc_p.add_argument("--tool", choices=("search", "ask"))
     sc_p.add_argument("--ids")
+    sc_p.add_argument("--split", choices=("tune", "holdout"), help="只跑调参集或留出集")
+    sc_p.add_argument("--label", default="", help="结果目录后缀（并行跑多组时区分）")
+    sc_p.add_argument("--jobs", type=_jobs, default=1,
+                      help="题目级并发（1~10）；LLM 网关并发上限 10，多组并行时各组之和不要超过 10")
     sc_p.set_defaults(func=cmd_scenario)
+    ag = sub.add_parser("agentsim", help="模拟 Agent：只看工具描述自己写查询 → 调 search/ask → 评审大意")
+    ag.add_argument("--repo", action="append")
+    ag.add_argument("--split", choices=("tune", "holdout"))
+    ag.add_argument("--label", default="")
+    ag.add_argument("--jobs", type=_jobs, default=1,
+                    help="请求级并发（1~10）；每个请求最多同时 1 个 LLM 调用在途")
+    ag.set_defaults(func=cmd_agentsim)
+    rj = sub.add_parser("rejudge", help="用当前评分表重评已保存的场景结果（不重新查询）")
+    rj.add_argument("run", help="bench/results 下的目录名或绝对路径")
+    rj.set_defaults(func=cmd_rejudge)
     judge_p = sub.add_parser("judge", help="LLM 出题并评审 search/ask 的返回")
     judge_p.add_argument("--repo", action="append")
     judge_p.add_argument("--n", type=int, default=4, help="每个仓库抽多少个函数出题")
