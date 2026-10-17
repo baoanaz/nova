@@ -70,9 +70,13 @@
   前者在真实仓库上暴露“根本没进索引”这类系统性问题。**两者都保留，别删 `benches/`。**
   下一步可把 `bench/` 的几个检索细节（译文去重、大文件、无解析器语言）补成 `benches/golden` 风格的
   细粒度用例，覆盖各个检索细节。
-- 本机的 ask 模型是网关里的 `deepseek/deepseek-v4.1-flash`（推理模型）。用户提到过
-  `gpt-6-luna`，但该网关账号的 `/models` 只有 4 个模型（haiku-5-5、deepseek-v4.1-flash、
-  deepseek-v4.1-flash-fast、mimo-v2.6-flash），没有它；需要确切 id 或另一个网关后再换。
+- **ask 模型统一为 `gpt-6-luna`**（非推理模型，约 3 秒返回）。模型完全由配置决定，代码里没有默认值：
+  本机 `~/.key/nova/secrets.env`、部署文档示例（vps.md / wsl-live.md）、`.env.example` 已切换。
+  **线上 VPS 需要同步**：把 `/root/.key/zace/secrets.env`（或实际生效的环境文件）里的
+  `ANSWER_MODEL` 改为 `gpt-6-luna`，`ANSWER_API_KEY` 换成网关 **GPT 分组**的 key
+  （`xiugou` 有 deepseek 与 GPT 两个分组，key 与分组绑定；DeepSeek 分组的 key 看不到 gpt 系列），
+  然后重启 `nova-service`。设置页里用户自己配置的 LLM 不受影响。
+  旧的 DeepSeek 推理模型会因推理 token 占满 `max_tokens` 而空回答，已有长度截断重试兜底，但不推荐。
 - 提交 `bench/` 后本地跑法见 [bench/README.md](bench/README.md)；`bench/results/` 被忽略。
 
 ## 当前工作区

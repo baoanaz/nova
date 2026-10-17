@@ -91,7 +91,7 @@ NOVA_EMBED_WORKERS=2
 
 # ---- LLM（OpenAI-compatible 网关）
 ANSWER_BASE_URL=http://<网关地址>:8080/v1
-ANSWER_MODEL=deepseek-flash
+ANSWER_MODEL=gpt-6-luna
 ANSWER_TIMEOUT_S=120
 ANSWER_MAX_TOKENS=16384
 

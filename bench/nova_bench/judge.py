@@ -91,7 +91,7 @@ def load_llm() -> dict[str, str]:
     return cfg
 
 
-def chat(cfg: dict[str, str], prompt: str, *, max_tokens: int = 1200) -> dict:
+def chat(cfg: dict[str, str], prompt: str, *, max_tokens: int = 4000) -> dict:
     """调用 OpenAI 兼容接口并解析第一个 JSON 对象；失败返回 ``{"_error": ...}``。"""
     url = cfg["ANSWER_BASE_URL"].rstrip("/") + "/chat/completions"
     body = {
@@ -101,13 +101,17 @@ def chat(cfg: dict[str, str], prompt: str, *, max_tokens: int = 1200) -> dict:
         "temperature": 0.2,
     }
     headers = {"Authorization": f"Bearer {cfg['ANSWER_API_KEY']}"}
-    for attempt in range(3):
+    last = "empty"
+    for attempt in range(4):
         try:
             response = httpx.post(url, json=body, headers=headers, timeout=120)
             if response.status_code >= 500:
                 time.sleep(2 * (attempt + 1))
                 continue
             text = response.json()["choices"][0]["message"]["content"] or ""
+            if not text.strip():  # 推理模型的思考吃光了额度：加倍重试
+                body["max_tokens"] = min(body["max_tokens"] * 2, 16000)
+                continue
             match = re.search(r"\{.*\}", text, re.DOTALL)
             return json.loads(match.group(0)) if match else {"_error": "no json", "_text": text[:200]}
         except Exception as exc:  # noqa: BLE001 - 评审工具容错，记录原因即可
