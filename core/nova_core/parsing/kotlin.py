@@ -17,6 +17,8 @@
 
 from __future__ import annotations
 
+import re
+
 import tree_sitter as ts
 
 from nova_core.parsing.base import (
@@ -38,6 +40,14 @@ class KotlinParser(TreeSitterParser):
     language = "kotlin"
     grammar_module = "tree_sitter_kotlin"
     recover_syntax_errors = True
+
+    #: Kotlin 2.x 的显式幕后字段（属性下一行 ``field = init``）grammar 不认识，会让整个 object / 类
+    #: 被一个 ERROR 吞掉（gkd 的 ``SubscriptionRepository`` 整文件退化为兜底块），改成等长局部属性。
+    _BACKING_FIELD = re.compile(r"(?m)^(\s+)field(\s*=)")
+
+    def repair_source(self, content: str) -> str | None:
+        repaired = self._BACKING_FIELD.sub(r"\1val f\2", content)
+        return repaired if repaired != content else None
 
     def extract(self, root: ts.Node, ctx: FileContext, out: Extraction) -> None:
         self._members(root, ctx, out, scope=(), owner=ctx.path, in_type=False, top=True)

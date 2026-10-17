@@ -19,7 +19,6 @@ from nova_core.retrieval.rerank import (
     FEATURE_SYMBOL_MATCH,
     FEATURE_SYNTHESIZED,
     FEATURE_TEST_FIXTURE,
-    FEATURE_VECTOR_NEAR,
     FEATURE_VECTOR_TOP,
     RRF_BASE_SCALE,
     RerankSignals,
@@ -98,9 +97,11 @@ def test_feature_symbol_match_positive_and_negative() -> None:
 
 def test_feature_consensus3_positive_and_negative() -> None:
     three = _candidate(channel_ranks={"exact": 1, "bm25": 2, "vector": 30})
-    assert _hits(three) == {FEATURE_EXPLICIT: 2.0, FEATURE_CONSENSUS3: 0.5}
+    hits3 = _hits(three)
+    hits3.pop(FEATURE_VECTOR_TOP)  # vector rank 30 仍有一点衰减加分，与共识特征独立
+    assert hits3 == {FEATURE_EXPLICIT: 2.0, FEATURE_CONSENSUS3: 0.5}
     two = _candidate(channel_ranks={"bm25": 1, "vector": 40})
-    assert _hits(two) == {}
+    assert FEATURE_CONSENSUS3 not in _hits(two)
 
 
 def test_feature_vector_semantic_rank(TASK_105=False) -> None:
@@ -111,14 +112,14 @@ def test_feature_vector_semantic_rank(TASK_105=False) -> None:
     """
     top = _candidate(channel_ranks={"vector": 1})
     assert _hits(top) == {FEATURE_VECTOR_TOP: 1.5}
-    boundary = _candidate(channel_ranks={"vector": 8})
-    assert _hits(boundary) == {FEATURE_VECTOR_TOP: 1.5}
-    near = _candidate(channel_ranks={"vector": 9})
-    assert _hits(near) == {FEATURE_VECTOR_NEAR: 0.7}
-    edge = _candidate(channel_ranks={"vector": 10})
-    assert _hits(edge) == {FEATURE_VECTOR_NEAR: 0.7}
-    outside = _candidate(channel_ranks={"vector": 11})
-    assert _hits(outside) == {}
+    # 连续衰减，不是台阶：相邻名次分数相近，rank 20 仍有可观加分，很靠后才归零。
+    r8 = _hits(_candidate(channel_ranks={"vector": 8}))[FEATURE_VECTOR_TOP]
+    r9 = _hits(_candidate(channel_ranks={"vector": 9}))[FEATURE_VECTOR_TOP]
+    r20 = _hits(_candidate(channel_ranks={"vector": 20}))[FEATURE_VECTOR_TOP]
+    assert 1.5 > r8 > r9 > r20 > 0.4
+    assert r8 - r9 < 0.1
+    outside = _candidate(channel_ranks={"vector": 50})
+    assert _hits(outside) == {FEATURE_VECTOR_TOP: pytest.approx(0.13, abs=0.01)}
     # 语义相关性比"通道数多"更接近用户意图：单通道 vector rank 1 应胜过双通道平庸命中。
     semantic_only = _candidate("src/a.py:f:1", rrf_score=1 / 61, channel_ranks={"vector": 1})
     weak_pair = _candidate(
@@ -210,8 +211,8 @@ def test_feature_names_cover_fifteen() -> None:
     """特征表规模（TASK-101 新增 2 条 literal；TASK-105 新增 2 条 vector rank；
     TASK-MCP-BUDGET 新增 1 条 deprecated path）。
     """
-    assert len(FEATURE_NAMES) == 20  # 17 + 路径先验 3 条（译文变体 / 变更日志 / 示例目录）
-    assert len(set(FEATURE_NAMES)) == 20
+    assert len(FEATURE_NAMES) == 19  # 向量名次合并为一条连续衰减特征
+    assert len(set(FEATURE_NAMES)) == 19
 
 
 # --------------------------------------------------------------------------- 打分与排序
@@ -265,7 +266,7 @@ def test_weights_override_does_not_change_feature_structure() -> None:
     lightweight = with_weights(RerankWeights(), explicit_hit=0.0)
     assert lightweight.explicit_hit == 0.0
     assert lightweight.symbol_match == 1.0
-    assert len(RerankWeights().__dataclass_fields__) == 20
+    assert len(RerankWeights().__dataclass_fields__) == 19
     with pytest.raises(TypeError):
         with_weights(RerankWeights(), not_a_feature=1.0)
 

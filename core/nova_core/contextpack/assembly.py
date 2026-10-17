@@ -52,6 +52,7 @@ import re
 import statistics
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
+from typing import Any
 
 from nova_core.contextpack.reason import agent_reason
 from nova_core.parsing.markdown import classify_doctype
@@ -304,6 +305,8 @@ class BudgetConfig:
     # 整个包的四分之一"——防止一个容器的全部成员淹没首轮证据（实测 cockpit-0035 的
     # ``CapabilityGateway`` 有 19 个成员、全量入包需 6598 token）。
     backfill_ratio: float = 0.35
+    #: 用不满预算时放宽闸门重装一次（只在生产预设里开；显式 ``BudgetConfig`` 保持精确语义）。
+    underfill_relax: bool = False
     #: 补检候选的 skeleton 降级行数阈值（低于常驻的 300）：100+ 行的成员方法不是
     #: "某个行为怎么实现"的答案，而是一个大调度器——实测 ``_invoke`` 149 行 / 1996 token
     #: 会独吞整个补检配额（其余 13 个成员只能分剩下的 500 token）。降级后它只留签名 +
@@ -333,7 +336,9 @@ class BudgetConfig:
     focus_symbols: tuple[str, ...] = ()
 
 
-FAST_BUDGET = BudgetConfig(hard_cap=14_000, single_file_tokens=2_500, docs_tokens=950)
+FAST_BUDGET = BudgetConfig(
+    underfill_relax=True, hard_cap=14_000, single_file_tokens=2_500, docs_tokens=950
+)
 
 #: Deep 16K 硬顶（Module/03 §4.2 裁决口径；TASK-MCP-BUDGET 将 12K→16K）。
 #:
@@ -341,7 +346,9 @@ FAST_BUDGET = BudgetConfig(hard_cap=14_000, single_file_tokens=2_500, docs_token
 #: ``mode=MODE_FAST``（该参数与 ``config`` 二选一，传了 ``config`` 后 ``mode`` 就是死参），
 #: 因此 Deep 预算从未生效——实测 ``ask_project`` 走的就是 10K Fast 装填。
 #: TASK-MCP-BUDGET 把 ``mode`` 贯通到 assemble，使本配置真正被使用。
-DEEP_BUDGET = BudgetConfig(hard_cap=16_000, single_file_tokens=2_500, docs_tokens=950)
+DEEP_BUDGET = BudgetConfig(
+    underfill_relax=True, hard_cap=16_000, single_file_tokens=2_500, docs_tokens=950
+)
 
 #: TASK-095：``score_ratio`` 的环境变量覆盖名（不暴露给 MCP 工具参数——CF-06 冻结）。
 SCORE_RATIO_ENV = "NOVA_CONTEXT_SCORE_RATIO"
@@ -374,6 +381,14 @@ _DOCS_RATIO_NOTE = "spec 份额上限"
 MIN_CONSENSUS_FILES = 2
 #: 共识最高分相对候选池分数中位数的最小倍数（堵“文档天然双通道命中”）。
 CONSENSUS_SCORE_RATIO = 2.15
+
+
+#: 返回明显用不满预算（< ``UNDERFILL_RATIO × hard_cap``）时，把相对分数闸门放宽到这个值再装一次。
+#: 闸门 ``top1 × 0.4`` 由最高分决定：top1 带着多通道共识加分时，连“同一流程里的下一个函数”
+#: 都过不了线，小仓库的流程题只返回 1–2K token（14K 预算几乎没用）。预算有富余时多给一些
+#: 次相关证据比少给更有用；放宽后仍受单文件 / tier3 / docs 份额与硬顶约束。
+UNDERFILL_RATIO = 0.35
+RELAXED_SCORE_RATIO = 0.2
 
 
 def budget_for(mode: str) -> BudgetConfig:
@@ -703,6 +718,35 @@ def _prefer_definition_representatives(
 
 
 def assemble(
+    store: Store,
+    query: str,
+    candidates: Sequence[Candidate],
+    *,
+    config: BudgetConfig | None = None,
+    mode: str = MODE_FAST,
+    **kwargs: Any,
+) -> ContextPack:
+    """候选 → ContextPack；首轮用不满预算时放宽相对分数闸门重装一次（见 ``UNDERFILL_RATIO``）。"""
+    active = config or budget_for(mode)
+    pack = _assemble_once(store, query, candidates, config=active, mode=mode, **kwargs)
+    budget = pack.budget
+    if (
+        budget is None
+        or not active.underfill_relax
+        or active.score_ratio <= RELAXED_SCORE_RATIO
+        or budget.used_tokens >= active.hard_cap * UNDERFILL_RATIO
+        or not budget.omitted_count
+    ):
+        return pack
+    relaxed = replace(active, score_ratio=RELAXED_SCORE_RATIO)
+    again = _assemble_once(store, query, candidates, config=relaxed, mode=mode, **kwargs)
+    again_budget = again.budget
+    if again_budget is not None and again_budget.used_tokens > budget.used_tokens:
+        return again
+    return pack
+
+
+def _assemble_once(
     store: Store,
     query: str,
     candidates: Sequence[Candidate],

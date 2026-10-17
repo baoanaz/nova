@@ -217,6 +217,20 @@ class TreeSitterParser:
             )
 
         errors = collect_parse_errors(tree.root_node, source, ignore=self.is_benign_error)
+        if errors:
+            repaired = self.repair_source(content)
+            if repaired is not None and len(repaired.encode("utf-8")) == len(source):
+                # 语法版本比 grammar 新（如 Kotlin 显式幕后字段）时，整个类会被一个 ERROR 吞掉；
+                # 用等长改写重解析，改写只用于建树，符号文本仍取自原文，偏移不变。
+                try:
+                    retry_tree = self.parser().parse(repaired.encode("utf-8"))
+                    retry_errors = collect_parse_errors(
+                        retry_tree.root_node, source, ignore=self.is_benign_error
+                    )
+                except Exception:  # noqa: BLE001 - 改写只是尽力而为
+                    retry_errors = errors
+                if len(retry_errors) < len(errors):
+                    tree, errors = retry_tree, retry_errors
         if errors and not self.recover_syntax_errors:
             return ParsedFile(
                 path=path,
@@ -258,6 +272,10 @@ class TreeSitterParser:
             unresolved=finalize_unresolved(out.unresolved),
             parse_errors=tuple(out.parse_errors),
         )
+
+    def repair_source(self, content: str) -> str | None:
+        """首次解析有语法错误时，返回**等长**改写后的源码用于重解析；无可改写则 ``None``。"""
+        return None
 
     def should_filter_recovered_syntax(self, errors: tuple[str, ...]) -> bool:
         """局部恢复后是否过滤错误子树；子类可保留已验证的窄容忍形态。"""

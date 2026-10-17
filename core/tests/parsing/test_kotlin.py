@@ -95,3 +95,23 @@ def test_edges(parsed) -> None:
 def test_syntax_error_does_not_raise() -> None:
     result = KotlinParser().parse("Bad.kt", "fun ok() {}\nclass Broken( {\n")
     assert result.language == "kotlin"
+
+
+def test_explicit_backing_field_does_not_swallow_the_object() -> None:
+    """Kotlin 2.x 的 ``field = init`` 不被 grammar 识别，旧行为是整个 object 变成一个 ERROR、
+    文件退化为兜底块（gkd 的 SubscriptionRepository）。等长改写重解析后符号应完整。"""
+    from nova_core.parsing.kotlin import KotlinParser
+
+    source = (
+        "object Repo {\n"
+        "    val flow: StateFlow<Int>\n"
+        "        field = MutableStateFlow(0)\n"
+        "\n"
+        "    fun refresh(): Int {\n"
+        "        return 1\n"
+        "    }\n"
+        "}\n"
+    )
+    parsed = KotlinParser().parse("Repo.kt", source)
+    assert not parsed.fallback
+    assert {symbol.fqn for symbol in parsed.symbols} >= {"Repo", "Repo.refresh"}

@@ -30,7 +30,7 @@ TASK-105 修正了两个实测确认的缺陷（三仓 57 正例 + 3 负例，�
 
 1. **特征表缺"语义相关性"**：正确答案常在 vector rank 1-3，却因只命中单通道而被
    "多通道沾边"压到 17-58（RRF 的 ``Σ1/(60+rank)`` 实际在奖励通道数量而非相关性）。
-   故新增 ``vector_rank_top`` / ``vector_rank_near`` 两档。
+   故新增 ``vector_rank_top``（按名次指数衰减，见 ``VECTOR_DECAY``）。
 2. **``RRF_BASE_SCALE`` 过大使特征失效**：100.0 下 base 分区间为 1.6-4.9，任何特征
    （±0.2..2.0）都压不过 base 差；降到 ``25.0`` 后特征重新具备区分度。
    隔离实验证实：只降 scale 不加向量特征反而变差（见任务卡执行记录），增益来自向量特征。
@@ -42,6 +42,7 @@ TASK-105 修正了两个实测确认的缺陷（三仓 57 正例 + 3 负例，�
 
 from __future__ import annotations
 
+import math
 import os
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -92,8 +93,12 @@ __all__ = [
 RRF_BASE_SCALE = 25.0
 
 #: 向量语义特征的覆盖窗口：top-8 拿满分档，9-10 拿次档（TASK-105 实测定档）。
-VECTOR_TOP_K = 8
-VECTOR_NEAR_K = 10
+#: 向量名次加分按指数衰减：``top × exp(-(rank-1)/VECTOR_DECAY)``，rank 1 = 1.5，rank 20 ≈ 0.55。
+#: 旧的“前 8 名 +1.5、9–10 名 +0.7、之后 0”是台阶：相似度几乎一样的两个函数分数差一倍，
+#: 返回基本只剩向量前 10 名，排在 11–40 名的流程性函数（``handleRead``、``connectEstablished``）
+#: 被相对分数闸门挡在外面（场景评测里 search“能直接回答”的题 11/22 → 15/22）。
+VECTOR_DECAY = 20.0
+VECTOR_MIN_BONUS = 0.05
 
 #: TASK-101 新增权重的环境变量覆盖名（A/B 用；见 :func:`weights_from_env`）。
 LITERAL_WEIGHT_ENV = "NOVA_W_LITERAL"
@@ -111,8 +116,7 @@ FEATURE_LITERAL = "literal hit"
 FEATURE_LITERAL_ROOT = "literal root name hit"
 FEATURE_SYMBOL_MATCH = "query symbol == chunk symbol"
 FEATURE_CONSENSUS3 = "3-channel consensus"
-FEATURE_VECTOR_TOP = "vector top-8 (semantic relevance)"
-FEATURE_VECTOR_NEAR = "vector top-10 (semantic relevance)"
+FEATURE_VECTOR_TOP = "vector rank (semantic relevance)"
 FEATURE_GRAPH_1HOP = "graph connected to top-1 seed (1 hop)"
 FEATURE_DOCTYPE = "high-value doctype"
 FEATURE_ENTRY_POINT = "entry point / exported symbol"
@@ -143,7 +147,6 @@ FEATURE_NAMES = (
     FEATURE_SYMBOL_MATCH,
     FEATURE_CONSENSUS3,
     FEATURE_VECTOR_TOP,
-    FEATURE_VECTOR_NEAR,
     FEATURE_GRAPH_1HOP,
     FEATURE_DOCTYPE,
     FEATURE_ENTRY_POINT,
@@ -228,7 +231,6 @@ class RerankWeights:
     #: 原特征表没有“语义相关性”这一项，导致“多通道沾边”恒压过“语义最相关”（实测：正确答案
     #: 常在 vector rank 1-3，却因只命中单通道而掉到 17-58）。拆成两档，避免硬阈值跳变。
     vector_rank_top: float = 1.5
-    vector_rank_near: float = 0.7
     graph_1hop_top1: float = 0.5
     doctype_high_value: float = 0.8
     entry_point: float = 0.2
@@ -358,12 +360,8 @@ def features(
     # 向量通道自身召回上限是 50，再往后排名的区分度不足以作为证据。
     vector_rank = candidate.channel_ranks.get(CHANNEL_VECTOR)
     if vector_rank is not None:
-        hit(FEATURE_VECTOR_TOP, weights.vector_rank_top, vector_rank <= VECTOR_TOP_K)
-        hit(
-            FEATURE_VECTOR_NEAR,
-            weights.vector_rank_near,
-            VECTOR_TOP_K < vector_rank <= VECTOR_NEAR_K,
-        )
+        bonus = weights.vector_rank_top * math.exp(-(vector_rank - 1) / VECTOR_DECAY)
+        hit(FEATURE_VECTOR_TOP, round(bonus, 3), bonus >= VECTOR_MIN_BONUS)
 
     parent = _graph_parent(candidate)
     hit(
