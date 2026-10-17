@@ -288,7 +288,7 @@ API_MODELS: dict[str, ApiModelSpec] = {
             batch_size=500,
             batch_token_budget=300_000,
             concurrency=8,
-            notes="代码检索专用档（未实测；与 voyage-4-lite 共享向量空间）",
+            notes="代码检索专用档（默认；场景评测里自然语言问题的目标函数向量名次从数百名升到前 5，见 HANDOFF）",
         ),
         ApiModelSpec(
             name="text-embedding-3-small", dim=1536, max_input_tokens=8191, transport="openai"

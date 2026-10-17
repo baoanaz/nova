@@ -46,7 +46,7 @@ up() {
     . "$SECRETS"
     set +a
     # 默认值与 .env.example 一致；已有值不覆盖。
-    export EMBED_MODE="${EMBED_MODE:-api}" EMBED_MODEL="${EMBED_MODEL:-voyage-4-lite}"
+    export EMBED_MODE="${EMBED_MODE:-api}" EMBED_MODEL="${EMBED_MODEL:-voyage-code-4}"
     export EMBED_BASE_URL="${EMBED_BASE_URL:-https://api.voyageai.com}" EMBED_DIM="${EMBED_DIM:-1024}"
     export EMBED_BATCH_SIZE="${EMBED_BATCH_SIZE:-500}" EMBED_CONCURRENCY="${EMBED_CONCURRENCY:-4}"
     export EMBED_BATCH_TOKEN_BUDGET="${EMBED_BATCH_TOKEN_BUDGET:-300000}"

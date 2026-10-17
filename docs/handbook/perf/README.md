@@ -13,7 +13,7 @@ TASK-115 的原始证据对应以下输入，不能与早期 golden 靶场版本
 |---|---|
 | LangChain commit | `e75dae1f53c99c2b5ddb0c7bb36022c6aea25569` |
 | 解析文件 / chunks | 2,986 / 20,931 |
-| embedding | API，`voyage-4-lite`，1024 维 |
+| embedding | API，`voyage-code-4`，1024 维 |
 | 批大小 / 并发 / 消费者 | 500 / 4 / 2 |
 | 旧设备 | `vps-la-2c2g`，Xeon E5-2680 v4，2 vCPU，1.9 GiB |
 

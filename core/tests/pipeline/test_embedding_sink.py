@@ -23,6 +23,7 @@ from nova_core.pipeline.embedding_sink import (
     EmbeddingSink,
     embed_workers,
 )
+from nova_core.chunking import EMBEDDING_TEXT_VERSION, embedding_text
 from nova_core.types import ChunkDef, VectorRow
 from nova_core.vectors import VectorStore
 from nova_core.vectors.cache import EmbeddingCache
@@ -30,6 +31,8 @@ from nova_core.vectors.cache import EmbeddingCache
 from .conftest import TEST_DIM, TEST_PROFILE, CountingEmbedding
 
 _MODEL_ID = TEST_PROFILE.model_id
+#: 缓存键带 embedding 文本版本，文本拼法变了旧向量不会被误用。
+_CACHE_KEY = f"{_MODEL_ID}|text{EMBEDDING_TEXT_VERSION}"
 
 
 def _chunk(chunk_id: str, content: str) -> ChunkDef:
@@ -167,7 +170,7 @@ def test_cache_hit_avoids_embedding(vectors: VectorStore, tmp_path: Path) -> Non
     """跨项目缓存命中：不嵌、搬 id、写回新 id。"""
     chunk = _chunk("a.py:x:1", "body")
     with EmbeddingCache.open(tmp_path, _MODEL_ID, TEST_DIM) as cache:
-        cache.put(_MODEL_ID, {chunk.content_hash: _vector()})
+        cache.put(_CACHE_KEY, {chunk.content_hash: _vector()})
         embedding = CountingEmbedding()
         sink = EmbeddingSink(embedding, vectors, cache=cache)
         sink.feed([chunk])
@@ -185,7 +188,7 @@ def test_embedded_vectors_are_written_back_to_cache(
         sink = EmbeddingSink(CountingEmbedding(), vectors, cache=cache)
         sink.feed([chunk])
         sink.flush()
-        assert cache.lookup(_MODEL_ID, [chunk.content_hash])
+        assert cache.lookup(_CACHE_KEY, [chunk.content_hash])
 
 
 def test_pipeline_reraises_consumer_error(vectors: VectorStore) -> None:
@@ -321,7 +324,7 @@ def test_sink_prefers_embed_array_and_writes_identical_vectors(
     sink.flush()
     assert provider.array_calls == 1
     assert sink.stats.embedded == 3 and sink.stats.upserted == 3
-    expected = CountingEmbedding().embed(["alpha", "beta"])
+    expected = CountingEmbedding().embed([embedding_text(chunks[0]), embedding_text(chunks[1])])
     found = vectors.get_vector_arrays_by_hash([chunks[0].content_hash, chunks[1].content_hash])
     assert np.array_equal(found[chunks[0].content_hash][1], np.float32(expected[0]))
     assert np.array_equal(found[chunks[1].content_hash][1], np.float32(expected[1]))

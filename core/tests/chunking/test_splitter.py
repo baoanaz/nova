@@ -275,7 +275,7 @@ def test_embedding_text_includes_signature_docstring_and_capped_body(parse_sourc
     chunks = _chunks_by_symbol(parsed, MODULE_SOURCE)
     text = embedding_text(chunks["refresh"])
 
-    assert text.startswith("def refresh(token):")
+    assert text.startswith("mod.py :: refresh\n\ndef refresh(token):")
     assert "刷新" in text
     assert "return token" in text
 

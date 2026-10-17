@@ -78,7 +78,7 @@ NOVA_DATA_ROOT=/home/<USER>/.nova/live
 NOVA_LOCAL_RESCAN_INTERVAL=0
 
 EMBED_MODE=api
-EMBED_MODEL=voyage-4-lite
+EMBED_MODEL=voyage-code-4
 EMBED_BASE_URL=https://api.voyageai.com
 EMBED_DIM=1024
 EMBED_CONCURRENCY=4

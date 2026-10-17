@@ -77,7 +77,7 @@ VITE_NOVA_API_BASE=/nova-service
 
 # ---- 向量（Voyage）
 EMBED_MODE=api
-EMBED_MODEL=voyage-4-lite
+EMBED_MODEL=voyage-code-4
 EMBED_BASE_URL=https://api.voyageai.com
 EMBED_DIM=1024
 EMBED_CONCURRENCY=4

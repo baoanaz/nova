@@ -362,6 +362,57 @@ def cmd_judge(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scenario(args: argparse.Namespace) -> int:
+    """场景评测：人工读过仓库后写的场景题 → 调真实 search/ask → LLM 对照参考答案评审。"""
+    from . import judge
+
+    cfg = judge.load_llm()
+    api = Api(args.base)
+    scenarios = judge.load_scenarios(BENCH_DIR / "scenarios", args.repo)
+    if args.ids:
+        wanted = set(args.ids.split(","))
+        scenarios = [s for s in scenarios if s["id"] in wanted]
+    if args.tool:
+        scenarios = [s for s in scenarios if s["tool"] == args.tool]
+    for target in _select_targets(sorted({s["repo"] for s in scenarios})):
+        _attach_and_wait(api, target, quiet=True)
+    ids = _project_ids(api)
+    out_dir = RESULTS_DIR / f"scenario-{datetime.now():%Y%m%d-%H%M%S}"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cases: list[dict] = []
+    for sc in scenarios:
+        pid = ids[sc["repo"]]
+        case = {"id": sc["id"], "repo": sc["repo"], "tool": sc["tool"], "kind": sc["kind"], "question": sc["query"]}
+        try:
+            if sc["tool"] == "search":
+                response, ms = api.post("/api/query/search", {"projectId": pid, "query": sc["query"]})
+                output = response["markdown"]
+                case["tokens"] = (response["meta"].get("budget") or {}).get("usedTokens", 0)
+                keys = sc.get("key_paths", [])
+                case["path_hits"] = [sum(1 for k in keys if k in output), len(keys)]
+                prompt = judge.SCENARIO_SEARCH_PROMPT.format(
+                    kind=sc["kind"], question=sc["query"], reference=sc["reference"], limit=20000, output=output[:20000])
+            else:
+                response, ms = api.post("/api/query/ask", {"projectId": pid, "question": sc["query"]}, timeout=300)
+                output = response.get("answer") or response.get("bestEffortContext") or ""
+                case["status"] = response.get("status")
+                prompt = judge.SCENARIO_ASK_PROMPT.format(
+                    kind=sc["kind"], question=sc["query"], reference=sc["reference"], output=output[:10000])
+            case["ms"] = ms
+            case["output"] = output
+            case["judge"] = judge.chat(cfg, prompt)
+        except Exception as exc:  # noqa: BLE001
+            case["error"] = f"{type(exc).__name__}: {exc}"
+        cases.append(case)
+        print(f"[{sc['id']}] {sc['tool']:6} {case.get('judge', case.get('error'))}")
+    (out_dir / "cases.jsonl").write_text(
+        "\n".join(json.dumps(c, ensure_ascii=False) for c in cases) + "\n", encoding="utf-8")
+    (out_dir / "report.md").write_text(
+        judge.render_scenario_report(cases, {"model": cfg["ANSWER_MODEL"]}), encoding="utf-8")
+    print(f"报告：{out_dir / 'report.md'}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bench")
     parser.add_argument("--base", default=DEFAULT_BASE, help="nova-service 地址")
@@ -380,6 +431,11 @@ def main(argv: list[str] | None = None) -> int:
     diag.add_argument("--repo", action="append")
     diag.add_argument("--ids")
     diag.set_defaults(func=cmd_diagnose)
+    sc_p = sub.add_parser("scenario", help="场景评测：人工场景题 + LLM 对照参考答案评审")
+    sc_p.add_argument("--repo", action="append")
+    sc_p.add_argument("--tool", choices=("search", "ask"))
+    sc_p.add_argument("--ids")
+    sc_p.set_defaults(func=cmd_scenario)
     judge_p = sub.add_parser("judge", help="LLM 出题并评审 search/ask 的返回")
     judge_p.add_argument("--repo", action="append")
     judge_p.add_argument("--n", type=int, default=4, help="每个仓库抽多少个函数出题")

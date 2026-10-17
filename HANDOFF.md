@@ -79,6 +79,24 @@
   旧的 DeepSeek 推理模型会因推理 token 占满 `max_tokens` 而空回答，已有长度截断重试兜底，但不推荐。
 - 提交 `bench/` 后本地跑法见 [bench/README.md](bench/README.md)；`bench/results/` 被忽略。
 
+### 场景评测与嵌入模型（本轮后半）
+
+- **评测方式改了**：随机抽函数出题会高估质量。新的 `bench/scenarios/*.jsonl` 是读完仓库、摸清某个功能的
+  结构后手写的场景题（定位 / 排错 / 影响面 / 流程 / 设计 / 怎么做），每题带人工写的参考答案；
+  `uv run python bench/run.py scenario [--repo X] [--tool search|ask]` 调真实工具，再让 LLM 对照参考答案
+  评审（覆盖、可行动、噪声；ask 的正确/有依据/有用/幻觉）。参考文件命中是自动算的。
+- **第一轮基线**（ffmpeg 除外较弱）：search 参考文件命中 23/36、噪声 2.35/5；ask 正确 2.79/5，多题答“证据不足”。
+- **根因 1：嵌入模型**。`voyage-4-lite` 下 `toggle_app`、`solve_dependencies` 这类目标函数的向量名次是
+  271 / 299 / 704，等于召回不到；换 `voyage-code-4` 后是 5 / 2 / 12，目标进向量前 50 的题从 18/22 到 22/22。
+  **默认嵌入模型已改为 `voyage-code-4`**（价格约为 lite 的 6 倍，只在建索引时发生）。
+  线上 VPS 还没改：把 `EMBED_MODEL=voyage-code-4` 写进环境文件并重启，下一次索引会按指纹自动整体重嵌。
+- **根因 2：向量文本缺位置信息**。`embedding_text` 现在带 `path :: symbol` 前缀（`EMBEDDING_TEXT_VERSION=2`，
+  并入向量缓存键，`PARSER_CONFIG_VERSION=6`）。
+- **根因 3：同文件重载被合并**。`TcpConnection::send` 的三个重载只留一个，ask 因此答“证据不足”；
+  现在同文件不同行段的同名符号不再聚合，只聚合跨文件的声明/实现。
+- **仍待做**：召回已接近满分，但最终排名没吃到红利（目标向量第 12–16 名，最终排到 37–70）；
+  返回里 `Related` 占约 35% token 而几乎只有 Core 在命中参考文件；ask 对“全流程”类问题证据偏窄。
+
 ## 当前工作区
 
 本轮恢复 Python 3.12.3/uv 0.12.23、Node 22.23.3/npm 10.9.9、

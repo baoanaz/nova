@@ -240,15 +240,23 @@ def _reject_duplicate_ids(path: str, chunks: Sequence[ChunkDef]) -> None:
     raise ValueError(f"{path}: 切分产物出现重复 chunk id（禁止静默去重/丢弃）：{detail}")
 
 
+#: embedding 文本格式版本：改动 :func:`embedding_text` 的拼法必须递增（并入向量缓存键，避免新旧向量混用）。
+EMBEDDING_TEXT_VERSION = 2
+
+
 def embedding_text(chunk: ChunkDef, *, body_max_chars: int = EMBEDDING_BODY_MAX_CHARS) -> str:
-    """embedding 通道输入 = signature + docstring + 截断体（D-05）。
+    """embedding 通道输入 = 位置前缀 + signature + docstring + 截断体（D-05）。
+
+    位置前缀（``path :: symbol``）让很短的方法（如 ``__call__``）也带着“它属于哪个文件/类”的语义，
+    自然语言问题（“AAC 编码器有哪些选项”）才能靠路径与类名召回到它。
 
     ``body_max_chars`` 是字符级安全上界；token 级截断由 EmbeddingProvider 按
     ``EmbeddingProfile.max_input_tokens`` 执行（本函数不做 token 计数）。
     """
     if body_max_chars < 0:
         raise ValueError(f"body_max_chars 必须 ≥ 0，收到 {body_max_chars}")
-    parts = [part for part in (chunk.signature, chunk.docstring) if part.strip()]
+    where = f"{chunk.file_path} :: {chunk.symbol_fqn}" if chunk.symbol_fqn else chunk.file_path
+    parts = [where] + [part for part in (chunk.signature, chunk.docstring) if part.strip()]
     body = _body_text(chunk)
     if body_max_chars and body.strip():
         parts.append(body[:body_max_chars])

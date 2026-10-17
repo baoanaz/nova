@@ -61,8 +61,9 @@ EMBEDDING_DIM_KEY = "embedding_dim"
 #: 3：C/C++ 容忍函数名前的未知修饰宏（旧索引里这类函数被压成 fallback 块）。
 #: 4：源码文件大小上限从 128 KB 提到 1 MiB（旧索引整体跳过 routing.py、forwarder.rs 这类大文件）。
 #: 5：新增 Rust、Kotlin 解析器（此前 .rs/.kt 只走兜底切分，没有符号）。
+#: 6：向量输入文本加 ``path :: symbol`` 前缀（EMBEDDING_TEXT_VERSION=2），旧向量需整体重嵌。
 #: 已有索引会在下一次索引时自动全量重解析。
-PARSER_CONFIG_VERSION = 5
+PARSER_CONFIG_VERSION = 6
 
 
 class Invalidation(StrEnum):

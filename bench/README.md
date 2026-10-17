@@ -70,3 +70,14 @@ LLM 用 `secrets.env` 里的 `ANSWER_*`（与 ask 同一个模型）。
 | `NOVA_SECRETS_FILE` | 密钥文件，默认 `~/.key/nova/secrets.env` |
 
 回环流量只在 `stack.sh` 启动的子进程里绕过宿主机代理，不修改任何全局网络设置。
+
+## 场景评测（scenario）
+
+`bench/scenarios/<repo>.jsonl`：人工读过仓库、摸清某个功能结构后写的场景题。字段：`id`、`tool`、`kind`
+（locate / debug / impact / customize / flow / design / howto）、`lang`、`query`、`key_paths`（参考文件，
+自动统计是否出现在返回里）、`reference`（参考答案要点，交给 LLM 评审对照）。
+
+    uv run python bench/run.py scenario [--repo X] [--tool search|ask] [--ids a,b]
+
+报告在 `bench/results/scenario-*/report.md`，每题保留原文（`cases.jsonl`）便于人工复核。评审模型与 ask
+同源，分数只当线索；`reference` 写得过窄会误判（例如返回了等价实现却没命中指定函数），读报告时要回看原文。

@@ -355,23 +355,33 @@ def test_same_named_free_functions_in_different_files_are_not_merged(
 
 
 def test_dedup_same_symbol_aggregation(store, seed_file, sym, cand) -> None:
-    seed_file(
-        store,
-        path="src/a.py",
-        symbols=[
-            sym("run", "Foo.run", start=10, end=20),
-            sym("run2", "Foo.run", start=200, end=210),
-        ],
-    )
+    # 跨文件的同名实体（头文件声明 + 源文件实现）才聚合；同文件不同行段是重载，各自保留。
+    seed_file(store, path="src/a.hpp", symbols=[sym("run", "Foo::run", start=10, end=20)])
+    seed_file(store, path="src/a.cpp", symbols=[sym("run2", "Foo::run", start=200, end=210)])
     candidates = [
-        cand("src/a.py", "Foo.run", 10, score=1.0, end=20),
-        cand("src/a.py", "Foo.run", 200, score=0.9, end=210),
+        cand("src/a.hpp", "Foo::run", 10, score=1.0, end=20),
+        cand("src/a.cpp", "Foo::run", 200, score=0.9, end=210),
     ]
     config = BudgetConfig(hard_cap=10_000, framework_overhead=0, single_file_ratio=1.0)
     pack = assemble(store, "q", candidates, config=config)
     assert len(pack.evidence) == 1
     assert "同符号聚合×1" in pack.evidence[0].reason
     assert pack.budget is not None and pack.budget.omitted_count == 1
+
+
+def test_overloads_in_same_file_are_not_aggregated(store, seed_file, sym, cand) -> None:
+    seed_file(
+        store,
+        path="src/a.cc",
+        symbols=[sym("a", "Conn::send", start=10, end=14), sym("b", "Conn::send", start=200, end=240)],
+    )
+    candidates = [
+        cand("src/a.cc", "Conn::send", 10, score=1.0, end=14),
+        cand("src/a.cc", "Conn::send", 200, score=0.9, end=240),
+    ]
+    config = BudgetConfig(hard_cap=10_000, framework_overhead=0, single_file_ratio=1.0)
+    pack = assemble(store, "q", candidates, config=config)
+    assert len(pack.evidence) == 2
 
 
 def test_dedup_skeleton_degradation_elides_lines(store, seed_file, sym, cand) -> None:

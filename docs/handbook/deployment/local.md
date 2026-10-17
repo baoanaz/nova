@@ -57,7 +57,7 @@ EMBED_API_KEY=填写你的_embedding_API_Key
 ANSWER_API_KEY=填写你的_LLM_API_Key
 ```
 
-`.env.example` 的当前 embedding 配置为 API 模式、Voyage `voyage-4-lite`、1024 维。真实向量索引需要有效的 `EMBED_API_KEY`；仅启动 UI 和初始化账户不代表索引已可用。API 模式会把待嵌入的代码或文档文本发送给配置的供应商。
+`.env.example` 的当前 embedding 配置为 API 模式、Voyage `voyage-code-4`、1024 维。真实向量索引需要有效的 `EMBED_API_KEY`；仅启动 UI 和初始化账户不代表索引已可用。API 模式会把待嵌入的代码或文档文本发送给配置的供应商。
 
 LLM 总结是可选项。可以在登录后的 **设置 → 自定义 LLM 总结模型** 中填写模型、接口和 Key；也可以为服务设置 `ANSWER_BASE_URL`、`ANSWER_MODEL`、`ANSWER_API_KEY`，并按服务支持的接口选择 `ANSWER_PROTOCOL`。缺少配置时 `ask_project` 明确降级，`search_context` 不依赖总结 LLM。
 

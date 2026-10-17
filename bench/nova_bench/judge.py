@@ -78,6 +78,45 @@ ASK_JUDGE_PROMPT = """你是严格的评审，评估“代码问答工具”的�
  ,"fix": "如果要改进，最值得做的一件事"}}
 """
 
+SCENARIO_SEARCH_PROMPT = """你是严格的评审。一个 AI 编程助手在真实开发场景里向“代码检索工具”提了问题，下面是工具返回的上下文。
+场景类型：{kind}
+问题：{question}
+人工读代码后写下的参考答案（要点与所在位置）：
+{reference}
+工具返回的内容（Markdown，可能被截断到前 {limit} 字符）：
+-----
+{output}
+-----
+评审时请站在“助手只能看到这段返回、之后要回答用户或改代码”的角度。只输出 JSON：
+{{"coverage": 1-5  // 参考答案里的关键要点/位置，返回内容覆盖了多少（5=全部）
+ ,"missing": ["返回里缺少的关键要点或文件，没有则空数组"]
+ ,"actionable": 1-5  // 仅凭返回，助手能否直接回答或动手（5=无需再搜）
+ ,"noise": 1-5  // 5=几乎全是有用内容，1=大量无关内容或元信息
+ ,"wasted": ["最没价值的返回片段（简述，最多2条）"]
+ ,"issue": "最主要的一个问题，没有写 无"
+ ,"fix": "最值得做的一件改进（针对检索/排序/裁剪/提示信息）"}}
+"""
+
+SCENARIO_ASK_PROMPT = """你是严格的评审。开发者在真实场景里向“代码问答工具”提问，下面是它的回答。
+场景类型：{kind}
+问题：{question}
+人工读代码后写下的参考答案：
+{reference}
+工具的回答：
+-----
+{output}
+-----
+只输出 JSON：
+{{"correct": 1-5  // 与参考答案相比，关键要点是否正确、完整
+ ,"grounded": 1-5  // 结论是否有引用支撑、没有编造
+ ,"useful": 1-5  // 对开发者是否直接可用、不啰嗦、结构清晰
+ ,"hallucination": true/false
+ ,"missing": ["回答漏掉的关键要点，没有则空数组"]
+ ,"wrong": ["回答里错误或无依据的陈述，没有则空数组"]
+ ,"issue": "最主要的一个问题，没有写 无"
+ ,"fix": "最值得做的一件改进"}}
+"""
+
 
 def load_llm() -> dict[str, str]:
     cfg: dict[str, str] = {}
@@ -138,6 +177,62 @@ def sample_chunks(conn, n: int, seed: int) -> list[dict]:
         if len(picked) >= n:
             break
     return picked
+
+
+def load_scenarios(root: Path, repos: list[str] | None) -> list[dict]:
+    """读取 ``bench/scenarios/<repo>.jsonl``（人工读过仓库后写的场景题）。"""
+    out: list[dict] = []
+    for f in sorted(root.glob("*.jsonl")):
+        if repos and f.stem not in repos:
+            continue
+        for line in f.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                item = json.loads(line)
+                item["repo"] = f.stem
+                out.append(item)
+    return out
+
+
+def render_scenario_report(cases: list[dict], meta: dict) -> str:
+    lines = ["# 场景评测报告", "", f"- 评审模型：{meta['model']}　题数：{len(cases)}", ""]
+    for tool in ("search", "ask"):
+        rows = [c for c in cases if c["tool"] == tool and "judge" in c and "_error" not in c["judge"]]
+        if not rows:
+            continue
+
+        def avg(key: str, rows: list[dict] = rows) -> float:
+            vals = [c["judge"][key] for c in rows if isinstance(c["judge"].get(key), (int, float))]
+            return sum(vals) / len(vals) if vals else 0.0
+
+        if tool == "search":
+            hit = sum(c["path_hits"][0] for c in rows)
+            tot = sum(c["path_hits"][1] for c in rows)
+            lines += [f"## search（{len(rows)} 题）", "",
+                      f"- 参考文件命中 {hit}/{tot} · 要点覆盖 {avg('coverage'):.2f} · 可直接行动 {avg('actionable'):.2f} · "
+                      f"噪声(5=干净) {avg('noise'):.2f}",
+                      f"- 平均返回 {sum(c['tokens'] for c in rows)/len(rows):.0f} token · {sum(c['ms'] for c in rows)/len(rows):.0f} ms", ""]
+        else:
+            lines += [f"## ask（{len(rows)} 题）", "",
+                      f"- 正确 {avg('correct'):.2f} · 有依据 {avg('grounded'):.2f} · 有用 {avg('useful'):.2f} · "
+                      f"幻觉 {sum(1 for c in rows if c['judge'].get('hallucination'))}/{len(rows)}",
+                      f"- 平均 {sum(c['ms'] for c in rows)/len(rows):.0f} ms", ""]
+        for c in rows:
+            j = c["judge"]
+            if tool == "search":
+                score = f"文件{c['path_hits'][0]}/{c['path_hits'][1]} cov={j.get('coverage')} act={j.get('actionable')} noise={j.get('noise')} {c['tokens']}tok"
+            else:
+                score = f"c={j.get('correct')} g={j.get('grounded')} u={j.get('useful')} halluc={j.get('hallucination')}"
+            lines += [f"### {c['id']} · {c['kind']} · {score}", f"- 问：{c['question']}",
+                      f"- 缺：{j.get('missing')}", f"- 问题：{j.get('issue')}", f"- 建议：{j.get('fix')}"]
+            if tool == "search":
+                lines.append(f"- 低价值片段：{j.get('wasted')}")
+            else:
+                lines.append(f"- 错误陈述：{j.get('wrong')}")
+            lines.append("")
+    errors = [c for c in cases if "_error" in c.get("judge", {}) or "error" in c]
+    if errors:
+        lines += [f"## 失败 {len(errors)} 条", ""] + [f"- {c['id']}: {c.get('error') or c['judge']}" for c in errors]
+    return "\n".join(lines) + "\n"
 
 
 def strip_repo_prefix(path: str) -> str:

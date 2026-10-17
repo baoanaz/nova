@@ -18,7 +18,7 @@ bash scripts/setup-dev.sh
 
 ## 2. 配置模型
 
-在仓库外的 `$HOME/.key/nova/secrets.env` 中填写真实 `EMBED_API_KEY`。当前 `.env.example` 默认使用 Voyage API、`voyage-4-lite`、1024 维；真实向量索引需要有效的模型配置。
+在仓库外的 `$HOME/.key/nova/secrets.env` 中填写真实 `EMBED_API_KEY`。当前 `.env.example` 默认使用 Voyage API、`voyage-code-4`、1024 维；真实向量索引需要有效的模型配置。
 
 从仓库根目录加载环境：
 

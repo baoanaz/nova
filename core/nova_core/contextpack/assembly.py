@@ -444,6 +444,26 @@ _CPP_SUFFIXES = (
 )
 
 
+def _aggregate_target(
+    slots: dict[tuple[str, str], _Slot], candidate: Candidate
+) -> _Slot | None:
+    """同符号聚合的目标槽位；没有则 ``None``。
+
+    同一文件里同名、不同行段的 chunk 是**重载 / 条件编译的不同实现**（``TcpConnection::send`` 的三个
+    重载只有一个转发、一个才含跨线程调度），内容不同，不能当作重复；只有跨文件的声明/实现
+    （头文件声明 + 源文件实现）才聚合。
+    """
+    if not candidate.symbol_fqn:
+        return None
+    existing = slots.get(_symbol_key(candidate))
+    if existing is None:
+        return None
+    other = existing.candidate
+    if other.path == candidate.path and other.start_line != candidate.start_line:
+        return None
+    return existing
+
+
 def _symbol_key(candidate: Candidate) -> tuple[str, str]:
     """同符号聚合的键。
 
@@ -863,7 +883,7 @@ def assemble(
             omitted += 1
             continue
 
-        existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
+        existing = _aggregate_target(symbol_slots, candidate)
         if existing is not None and existing is not slot:
             omitted += 1  # 同符号聚合：留最高分，其余计入 omittedCount 并在 reason 注明
             existing.aggregated += 1
@@ -952,7 +972,7 @@ def assemble(
             slot = _build_slot(store, candidate, index_signals)
             if slot is None:
                 continue
-            existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
+            existing = _aggregate_target(symbol_slots, candidate)
             if existing is not None and existing is not slot:
                 continue  # 同符号聚合优先（不覆盖 R15）
             tokens = slot.tokens
@@ -1027,7 +1047,7 @@ def assemble(
         slot = _build_slot(store, candidate, index_signals)
         if slot is None:
             continue
-        existing = symbol_slots.get(_symbol_key(candidate)) if candidate.symbol_fqn else None
+        existing = _aggregate_target(symbol_slots, candidate)
         if existing is not None and existing is not slot:
             continue  # 同符号聚合：该符号已在包内，不必重复补
         if reason and reason not in slot.item.reason:

@@ -15,7 +15,7 @@ from .targets import Expected, Question
 
 _EMBED_DEFAULTS = {
     "EMBED_MODE": "api",
-    "EMBED_MODEL": "voyage-4-lite",
+    "EMBED_MODEL": "voyage-code-4",
     "EMBED_BASE_URL": "https://api.voyageai.com",
     "EMBED_DIM": "1024",
 }

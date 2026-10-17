@@ -54,7 +54,7 @@ from queue import Empty, Queue
 
 import numpy as np
 
-from nova_core.chunking import embedding_text
+from nova_core.chunking import EMBEDDING_TEXT_VERSION, embedding_text
 from nova_core.interfaces import EmbeddingProvider
 from nova_core.timing import StageClock, StageTiming
 from nova_core.types import ChunkDef
@@ -193,7 +193,7 @@ class EmbeddingSink:
         self._known = known
         #: 本 sink 所在线程的分段计时（lookup / embed / upsert / cache_put）。
         self.clock = StageClock()
-        self._model_id = embedding.profile.model_id
+        self._model_id = f"{embedding.profile.model_id}|text{EMBEDDING_TEXT_VERSION}"
         #: 单个 sink 的窗口。并行时由 pipeline 传 ``总窗口 ÷ K``（内存总量守恒，见其 docstring）；
         #: 独立使用时取 provider 的完整窗口。
         self._window = max(1, window) if window is not None else embed_window_size(embedding)
