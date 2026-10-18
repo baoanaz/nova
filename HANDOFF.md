@@ -45,6 +45,24 @@
 - 仍失败的题多是“流程中间一环没被补检到”（如 gkd `ResolvedRule.status` 的计算、cc-switch 新增 CLI 应用的适配模块面），
   可继续从规划提示或检索侧补。
 
+### 线上部署（zgo / acenova.space，2026-10-18 实查）
+
+- **服务实际加载 `/opt/nova` 的代码快照**（systemd `EnvironmentFile=/etc/nova/service.env` 里
+  `PYTHONPATH=/opt/nova/service:/opt/nova/core`），**不是** git 仓库 `/root/xuwenzheng/ace/nova`；
+  只在仓库里 `git pull` 后重启，线上仍是旧代码（本轮就因此 ask 没有多轮调研）。升级步骤：
+  ```bash
+  cd /root/xuwenzheng/ace/nova && git pull --ff-only
+  mkdir /opt/nova.new && git archive HEAD | tar -x -C /opt/nova.new && git rev-parse HEAD > /opt/nova.new/DEPLOYED_COMMIT
+  mv /opt/nova /opt/nova.prev && mv /opt/nova.new /opt/nova && systemctl restart nova-service
+  ```
+  venv 用的是仓库里的 `/root/xuwenzheng/ace/nova/.venv`；依赖变化时先在仓库里 `uv sync`。
+- 前端站点根是 `/var/www/acenova`（根路径部署，API 同源 `/api`）：默认参数 `npx vite build` 即可，
+  在本地构建后上传更省服务器内存（2 GB）。
+- 线上 search 修复后单条 1.2~2 s（服务端 0.3~0.8 s）。两处修复：rerank 的 stale spec 检查批量走部分索引；
+  `spec_references(spec_block_id)` 补普通索引（打开库时自动补建，不升 schema 版本）。
+- 冷启动 fastapi 90 s：Voyage 向量化约 76 s 墙钟（换 voyage-code-4 后缓存全部失效 + 模型更慢），
+  解析 24 s（2 核）。fastapi 的 chunk 60% 是非英文翻译文档；若要压到 30 s 内，可考虑翻译文档不向量化/不进索引（待决策）。
+
 ## 2026-10-17 检索与 ask 优化轮
 
 用新增的 [`bench/`](bench/README.md)（六个真实公开仓库 × 60 题，靶场见
