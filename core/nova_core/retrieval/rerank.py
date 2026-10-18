@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 
@@ -139,6 +140,7 @@ FEATURE_SYNTHESIZED = "synthesized edge"
 FEATURE_TRANSLATION = "translation variant (duplicate of another language)"
 FEATURE_CHANGELOG = "changelog / release notes"
 FEATURE_EXAMPLE_PATH = "example / tutorial path"
+FEATURE_NAME_WORD = "query word in symbol name"
 
 #: 特征名（供测试与 03 的可解释性断言引用）。
 FEATURE_NAMES = (
@@ -162,6 +164,7 @@ FEATURE_NAMES = (
     FEATURE_TRANSLATION,
     FEATURE_CHANGELOG,
     FEATURE_EXAMPLE_PATH,
+    FEATURE_NAME_WORD,
 )
 
 #: "测试意图查询" 的确定性词表（V1 口径，见任务卡"执行记录"）。
@@ -276,6 +279,12 @@ class RerankWeights:
     #: **示例 / 教程目录**（查询没有明示要示例时）：同名变量与调用多，容易压过核心实现
     #: （muduo ``examples/`` 的 ``loop_`` 成员声明）。只取 -0.6，示例仍是真实代码。
     example_path: float = -0.6
+    #: **查询词出现在符号全名里**（每个词，最多 :data:`NAME_WORD_CAP` 个）。
+    #: 实测（fastapi，问 exit stack 何时关闭，查询带 ``request``）：HTTP 主路径
+    #: ``request_response.app`` 与 WebSocket 变体 ``websocket_session.app.app`` 正文几乎一样，
+    #: 各通道打平，变体排第一。符号名是作者对“这段代码是干什么的”的最直接标注；
+    #: 只比较外层函数/类名切出的词，取小值，只在打平时起作用。
+    name_word: float = 0.15
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +303,8 @@ class RerankSignals:
     translation_variant_ids: frozenset[str] = frozenset()
     changelog_intent: bool = False
     example_intent: bool = False
+    #: 查询里的自然语言英文词（小写、≥4 字母、去虚词），供 ``name_word`` 特征。
+    query_words: frozenset[str] = frozenset()
 
 
 def _symbol_names(symbol: str) -> set[str]:
@@ -425,7 +436,39 @@ def features(
         weights.example_path,
         not signals.example_intent and is_example_path(path),
     )
+    if signals.query_words and symbol:
+        matched = len(signals.query_words & _name_tokens(symbol))
+        hit(FEATURE_NAME_WORD, weights.name_word * min(matched, NAME_WORD_CAP), matched > 0)
     return hits
+
+
+#: ``name_word`` 最多计几个词（防止长名字靠堆词取胜）。
+NAME_WORD_CAP = 3
+_CAMEL = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|[0-9]+")
+_QUERY_WORD = re.compile(r"(?<![A-Za-z0-9_])[A-Za-z]{4,}(?![A-Za-z0-9_])")
+#: 不当作“名字词”的常见虚词/泛词。
+_NAME_STOPWORDS = frozenset({
+    "what", "when", "where", "which", "does", "into", "from", "with", "that", "this",
+    "have", "will", "should", "would", "could", "there", "their", "about", "after",
+    "before", "code", "file", "function", "method", "class", "implement", "implemented",
+    "implementation", "work", "works", "used", "using", "call", "called", "value",
+})
+
+
+def _name_tokens(symbol: str) -> set[str]:
+    """符号全名 → 小写词集合（按 ``.`` ``::`` ``_`` 与驼峰切分）。"""
+    tokens: set[str] = set()
+    for part in re.split(r"[.:_/\-]+", symbol):
+        tokens.update(word.lower() for word in _CAMEL.findall(part))
+    return tokens
+
+
+def query_words(query: str) -> frozenset[str]:
+    """查询里独立出现的英文单词（标识符里的片段不算：那归符号/字面量通道）。"""
+    return frozenset(
+        word.lower() for word in _QUERY_WORD.findall(query)
+        if word.lower() not in _NAME_STOPWORDS
+    )
 
 
 def rerank(
@@ -541,6 +584,7 @@ def collect_signals(
         translation_variant_ids=translation_variants(candidates, query),
         changelog_intent=changelog_intent(query),
         example_intent=example_intent(query),
+        query_words=query_words(query),
         query_symbols=query_symbols,
         explicit_chunk_ids=explicit_chunk_ids,
         top1_seed_chunk_id=top1,

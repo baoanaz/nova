@@ -950,3 +950,21 @@ def test_non_first_backfill_candidate_respects_single_cap(
     if huge is not None:
         # 作为第二位候选不得免检：要么被降级，要么被放弃；不能整段进包
         assert huge.elided_lines > 0, "非首位候选不应享受首位豁免"
+
+
+def test_long_docstrings_are_folded_code_kept() -> None:
+    """长文档块只留开头两行与结尾行，代码一行不少（FastAPI 的 Doc 参数说明实测占满预算）。"""
+    from nova_core.contextpack.assembly import _fold_long_comments, _Segment
+
+    body = ["def f(", '    x: Annotated[str, Doc("""']
+    body += [f"        doc line {i}" for i in range(20)]
+    body += ['    """)] = "",', ") -> None:", "    return x"]
+    text = "\n".join(body)
+    pieces = _fold_long_comments(_Segment(10, 10 + len(body) - 1, text))
+    kept = "\n".join(piece.text for piece in pieces)
+    assert "doc line 0" in kept and "doc line 19" not in kept
+    assert "return x" in kept and 'Doc("""' in kept
+    assert sum(p.end - p.start + 1 for p in pieces) < len(body)
+    # #include 这类预处理行不是注释，不折
+    c_text = "\n".join(f"#include <h{i}.h>" for i in range(20))
+    assert _fold_long_comments(_Segment(1, 20, c_text))[0].text == c_text

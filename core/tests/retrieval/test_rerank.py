@@ -209,10 +209,10 @@ def test_feature_synthesized_edge_negative_only() -> None:
 
 def test_feature_names_cover_fifteen() -> None:
     """特征表规模（TASK-101 新增 2 条 literal；TASK-105 新增 2 条 vector rank；
-    TASK-MCP-BUDGET 新增 1 条 deprecated path）。
+    TASK-MCP-BUDGET 新增 1 条 deprecated path；2026-10-18 新增 1 条查询词在符号名里）。
     """
-    assert len(FEATURE_NAMES) == 20  # 含“调用链节点”加分
-    assert len(set(FEATURE_NAMES)) == 20
+    assert len(FEATURE_NAMES) == 21  # 含“调用链节点”加分
+    assert len(set(FEATURE_NAMES)) == 21
 
 
 # --------------------------------------------------------------------------- 打分与排序
@@ -266,7 +266,7 @@ def test_weights_override_does_not_change_feature_structure() -> None:
     lightweight = with_weights(RerankWeights(), explicit_hit=0.0)
     assert lightweight.explicit_hit == 0.0
     assert lightweight.symbol_match == 1.0
-    assert len(RerankWeights().__dataclass_fields__) == 20
+    assert len(RerankWeights().__dataclass_fields__) == 21
     with pytest.raises(TypeError):
         with_weights(RerankWeights(), not_a_feature=1.0)
 
@@ -540,3 +540,17 @@ def test_deprecation_penalty_is_off_when_nothing_marked(store, seed_file, sym) -
     signals = collect_signals(store, "f", [candidate])
     assert signals.deprecated_chunk_ids == frozenset()
     assert not any(FEATURE_DEPRECATED_PATH in r for r in candidate.reasons)
+
+
+def test_query_word_in_symbol_name_breaks_ties() -> None:
+    """查询词 request 只在主路径的外层函数名里：打平时主路径排前（fastapi 实测）。"""
+    from nova_core.retrieval.rerank import RerankSignals, query_words
+
+    signals = RerankSignals(query_words=query_words("exit stack scope request"))
+    main = _candidate("r.py:a:1", rrf_score=1 / 62, symbol_fqn="request_response.app")
+    variant = _candidate("r.py:b:1", rrf_score=1 / 61, symbol_fqn="websocket_session.app.app")
+    ranked = rerank([variant, main], signals)
+    assert ranked[0].symbol_fqn == "request_response.app"
+    # 标识符里的片段不算查询词（归符号/字面量通道）
+    assert query_words("fastapi_inner_astack") == frozenset()
+

@@ -1302,15 +1302,95 @@ def _build_slot(store: Store, candidate: Candidate, signals: IndexSignals) -> _S
         elided_lines=0,
         stale_refs=tuple(signals.stale_doc_refs.get(candidate.chunk_id, ())),
     )
+    full = _Segment(chunk.start_line, chunk.end_line, chunk.content)
     slot = _Slot(
         candidate=candidate,
         item=item,
         base_reason=reason,
-        segments=[_Segment(chunk.start_line, chunk.end_line, chunk.content)],
+        segments=[full] if is_spec else _fold_long_comments(full),
         elision_upper=chunk.end_line,
     )
     _sync(slot)
     return slot
+
+
+#: 文档块（docstring / 块注释 / 连续行注释）超过这么多行就折叠中间部分。
+LONG_COMMENT_LINES = 8
+#: 折叠时保留开头几行（说清“这是什么”），结尾行保留（闭合引号/注释符，代码仍可读）。
+COMMENT_HEAD_LINES = 2
+_TRIPLE_QUOTE = re.compile(r'(?:[rRbBuUfF]{0,2})("""|\'\'\')')
+#: 行注释：`//` `///` `-- ` 与 `# `（# 后须是空白：#include / #define / #[derive] 不算）。
+_LINE_COMMENT = re.compile(r"^\s*(//|--\s|#(?:\s|$))")
+
+
+def _comment_blocks(lines: list[str]) -> list[tuple[int, int]]:
+    """切片正文里的文档块区间（0 基、含两端）：三引号字符串、``/* */`` 块注释、连续行注释。
+
+    纯文本扫描，不依赖解析器；只认“整行都在块里”的形态，判断不准时宁可不折。
+    """
+    blocks: list[tuple[int, int]] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        quote = _TRIPLE_QUOTE.search(line)
+        if quote and line.count(quote.group(1)) == 1:
+            closing = next(
+                (j for j in range(index + 1, len(lines)) if quote.group(1) in lines[j]), None
+            )
+            if closing is None:
+                break
+            blocks.append((index, closing))
+            index = closing + 1
+            continue
+        if line.lstrip().startswith("/*") and "*/" not in line:
+            closing = next((j for j in range(index + 1, len(lines)) if "*/" in lines[j]), None)
+            if closing is None:
+                break
+            blocks.append((index, closing))
+            index = closing + 1
+            continue
+        if _LINE_COMMENT.match(line):
+            end = index
+            while end + 1 < len(lines) and _LINE_COMMENT.match(lines[end + 1]):
+                end += 1
+            blocks.append((index, end))
+            index = end + 1
+            continue
+        index += 1
+    return blocks
+
+
+def _fold_long_comments(segment: _Segment) -> list[_Segment]:
+    """把长文档块的中间折掉（就地标注省略行数），代码本身一行不动。
+
+    实测：``FastAPI.include_router`` 的签名里每个参数都带 ``Doc(\"\"\"…\"\"\")``，
+    整段约 200 行说明文字占满了 search 预算，真正的实现被挤到省略段里。
+    """
+    lines = segment.text.split("\n")
+    if len(lines) != segment.end - segment.start + 1:
+        return [segment]  # 夹具里正文与声明区间不等长：不按行号切
+    drops = [
+        (first + COMMENT_HEAD_LINES, last - 1)
+        for first, last in _comment_blocks(lines)
+        if last - first + 1 > LONG_COMMENT_LINES
+    ]
+    if not drops:
+        return [segment]
+    pieces: list[_Segment] = []
+    cursor = 0
+    for drop_start, drop_end in drops:
+        if drop_start > cursor:
+            pieces.append(_piece(segment, lines, cursor, drop_start - 1))
+        cursor = drop_end + 1
+    if cursor < len(lines):
+        pieces.append(_piece(segment, lines, cursor, len(lines) - 1))
+    return pieces
+
+
+def _piece(segment: _Segment, lines: list[str], first: int, last: int) -> _Segment:
+    return _Segment(
+        segment.start + first, segment.start + last, "\n".join(lines[first : last + 1])
+    )
 
 
 def _degrade(
