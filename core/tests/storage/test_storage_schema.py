@@ -75,3 +75,15 @@ def test_empty_database_file_gets_initialized(tmp_path: Path) -> None:
     with Store.open(proj) as store:
         assert store.get_config("schema_version") == SCHEMA_VERSION
         assert store.counts()["files"] == 0
+
+
+def test_open_backfills_additive_spec_index(tmp_path) -> None:
+    from nova_core.storage import Store
+
+    store = Store.open(tmp_path)
+    store._conn.execute("DROP INDEX idx_spec_refs_spec")  # 模拟升级前建的旧库
+    store.close()
+    store = Store.open(tmp_path)
+    names = {r[0] for r in store._conn.execute("SELECT name FROM sqlite_master WHERE type='index'")}
+    store.close()
+    assert "idx_spec_refs_spec" in names

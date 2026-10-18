@@ -106,11 +106,35 @@ def initialize_database(conn: sqlite3.Connection) -> None:
     )
 
 
+#: 后加的纯读优化索引：不改表结构、不改查询结果，所以不升 schema_version，在打开旧库时补建。
+#: ``spec_references`` 原先只有 stale=1 的部分索引，按 ``spec_block_id`` 取引用是全表扫描
+#: （fastapi 8 万行，单次约 75 ms，一次检索要查几十个文档候选，线上 search 因此慢 2~4 秒）。
+_ADDITIVE_INDEXES = (
+    "CREATE INDEX IF NOT EXISTS idx_spec_refs_spec ON spec_references(spec_block_id)",
+)
+
+
 def ensure_database(conn: sqlite3.Connection) -> None:
-    """空库/未初始化库 → 建库；随后校验 schema_version。"""
+    """空库/未初始化库 → 建库；随后校验 schema_version，并补建后加的读优化索引。"""
     if not _is_initialized(conn):
         initialize_database(conn)
     validate_schema_version(conn)
+    _ensure_additive_indexes(conn)
+
+
+def _ensure_additive_indexes(conn: sqlite3.Connection) -> None:
+    names = {
+        row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'index'")
+    }
+    for statement in _ADDITIVE_INDEXES:
+        name = statement.split(" IF NOT EXISTS ", 1)[1].split(" ", 1)[0]
+        if name in names:
+            continue
+        try:
+            conn.execute(statement)
+        except sqlite3.OperationalError:
+            # 只读打开 / 并发写锁：本次不建，下次打开再补；不影响查询正确性。
+            pass
 
 
 def validate_schema_version(conn: sqlite3.Connection) -> None:
