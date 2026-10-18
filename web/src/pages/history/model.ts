@@ -3,10 +3,10 @@
  * 并把后端的阶段耗时整理成用户能读懂的瀑布。纯函数，不碰网络和 React。
  */
 
-import type { EvidenceMetaItem, IndexRun, UsageRecord } from "../../api/client";
+import type { EvidenceMetaItem, IndexProgressView, IndexRun, UsageRecord } from "../../api/client";
 
 export type Kind = "init" | "search" | "ask";
-export type RowState = "ok" | "insufficient" | "failed" | "degraded";
+export type RowState = "ok" | "insufficient" | "failed" | "degraded" | "running";
 
 export const KIND_LABEL: Record<Kind, string> = {
   init: "仓库初始化",
@@ -129,10 +129,50 @@ export function buildRows(
   records: UsageRecord[],
   since: number,
   nameOf: Namer,
+  active: { projectId: string; progress: IndexProgressView | null }[] = [],
+  now: number = Math.floor(Date.now() / 1000),
 ): ActivityRow[] {
-  return [...buildInitRows(runs, since, nameOf), ...buildQueryRows(records, since, nameOf)].sort(
-    (left, right) => right.at - left.at,
-  );
+  return [
+    ...buildRunningRows(active, now, nameOf),
+    ...buildInitRows(runs, since, nameOf),
+    ...buildQueryRows(records, since, nameOf),
+  ].sort((left, right) => right.at - left.at);
+}
+
+/**
+ * 正在进行的初始化。``index_runs`` 只在索引结束后才写入，进行中的那次只能从项目的
+ * ``indexProgress``（state=running）看到；不补这一行，用户在冷启动的一两分钟里会以为什么都没发生。
+ */
+function buildRunningRows(
+  active: { projectId: string; progress: IndexProgressView | null }[],
+  now: number,
+  nameOf: Namer,
+): ActivityRow[] {
+  return active.flatMap(({ projectId, progress }) => {
+    if (progress === null || progress.state !== "running" || progress.startedAt === null) return [];
+    const files = progress.totalFiles
+      ? `${progress.processedFiles}/${progress.totalFiles} 文件`
+      : "收集文件中";
+    return [
+      {
+        kind: "init" as const,
+        key: `running-${projectId}-${progress.startedAt}`,
+        at: progress.startedAt,
+        project: nameOf(projectId),
+        summary: `正在初始化 · ${files}`,
+        tool: "—",
+        state: "running" as const,
+        durationMs: Math.max(0, now - progress.startedAt) * 1000,
+        volume: "—",
+        traceId: null,
+        input: "",
+        output: "",
+        metrics: [{ label: "进度", value: files }],
+        note: "索引进行中，完成后这里会换成完整的初始化记录（分阶段耗时等）。",
+        coarseDuration: true,
+      },
+    ];
+  });
 }
 
 /** 同一 callId 的多批上传折叠成一次初始化；没有 callId 的各自独立，不假装属于同一次。 */
@@ -255,7 +295,8 @@ function queryState(record: UsageRecord): RowState {
 export type KindSummary = { count: number; failed: number; avgMs: number | null; maxMs: number | null };
 
 export function summarize(rows: ActivityRow[], kind: Kind): KindSummary {
-  const list = rows.filter((row) => row.kind === kind);
+  // 进行中的那次耗时还在涨，不计入统计。
+  const list = rows.filter((row) => row.kind === kind && row.state !== "running");
   if (list.length === 0) return { count: 0, failed: 0, avgMs: null, maxMs: null };
   const total = list.reduce((sum, row) => sum + row.durationMs, 0);
   return {

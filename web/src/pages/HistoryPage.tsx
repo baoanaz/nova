@@ -116,8 +116,12 @@ export function HistoryPage() {
   const rows = useMemo<ActivityRow[] | null>(() => {
     if (runs === null || usage === null) return null;
     const since = Math.floor(Date.now() / 1000) - days * 86400;
-    return buildRows(runs, usage.recent, since, nameOf);
-  }, [runs, usage, days, nameOf]);
+    const active = (projects ?? []).map((item) => ({
+      projectId: item.projectId,
+      progress: item.indexProgress ?? null,
+    }));
+    return buildRows(runs, usage.recent, since, nameOf, active);
+  }, [runs, usage, days, nameOf, projects]);
   rowsRef.current = rows;
 
   const visible = useMemo(

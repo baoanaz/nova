@@ -22,6 +22,7 @@ const STATE: Record<RowState, [string, string]> = {
   failed: ["失败", "bg-error-soft text-error-text border-error-line"],
   insufficient: ["证据不足", "bg-warning-soft text-warning-text border-warning-line"],
   degraded: ["降级", "bg-warning-soft text-warning-text border-warning-line"],
+  running: ["进行中", "bg-paper-base text-ink-primary border-ink-line"],
 };
 
 export function StateBadge({ state }: { state: RowState }) {

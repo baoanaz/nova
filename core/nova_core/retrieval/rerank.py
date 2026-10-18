@@ -609,13 +609,8 @@ def _exported_chunk_ids(store: Store, candidates: Sequence[Candidate]) -> frozen
 
 def _stale_spec_chunk_ids(store: Store, candidates: Sequence[Candidate]) -> frozenset[str]:
     """带 stale 引用的 SpecBlock chunk（−0.8，G4 的 rerank 侧消费）。"""
-    found: set[str] = set()
-    for candidate in candidates:
-        if candidate.kind != KIND_SPEC:
-            continue
-        if any(ref.stale for ref in store.spec_refs_for_spec(candidate.chunk_id)):
-            found.add(candidate.chunk_id)
-    return frozenset(found)
+    specs = [candidate.chunk_id for candidate in candidates if candidate.kind == KIND_SPEC]
+    return frozenset(store.stale_spec_blocks(specs)) if specs else frozenset()
 
 
 def _query_names_test_symbol(store: Store, query_symbols: frozenset[str]) -> bool:

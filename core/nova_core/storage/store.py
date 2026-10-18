@@ -1111,6 +1111,25 @@ class Store:
         ).fetchall()
         return [_spec_ref_from_row(r) for r in rows]
 
+    def stale_spec_blocks(self, spec_block_ids: Sequence[str]) -> set[str]:
+        """给定 spec 块里带 stale 引用的那些（rerank 的 −0.8 特征只需要“有没有”）。
+
+        条件里带 ``stale = 1`` 才能走部分索引 ``idx_spec_refs_stale``；按 ``spec_block_id``
+        逐个取全部引用行没有可用索引，是全表扫描（fastapi 8 万行 × 几十个文档候选，
+        线上单次检索 rerank 2~7 秒）。
+        """
+        found: set[str] = set()
+        for batch in _batches(list(dict.fromkeys(spec_block_ids))):
+            placeholders = ", ".join("?" for _ in batch)
+            found.update(
+                row[0] for row in self._conn.execute(
+                    "SELECT DISTINCT spec_block_id FROM spec_references"
+                    f" WHERE stale = 1 AND spec_block_id IN ({placeholders})",
+                    list(batch),
+                )
+            )
+        return found
+
     def freshness(self) -> Freshness:
         """如实报告新鲜度：``indexed_at`` = files 表最大 indexed_at。
 

@@ -102,6 +102,8 @@ def test_delete_file_clears_rows_and_marks_spec_refs_stale(
     refs = store.spec_refs_for_spec(spec_id)
     assert len(refs) == 1 and refs[0].stale is True
     assert refs[0].provenance == "inferred"
+    assert store.stale_spec_blocks([spec_id, "docs/none.md:x:1"]) == {spec_id}
+    assert store.stale_spec_blocks([]) == set()
 
 
 def test_delete_keeps_incoming_edges_from_other_files(
