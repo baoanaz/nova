@@ -80,6 +80,14 @@ MAX_LITERAL_PHRASES = 6
 DEFAULT_LITERAL_LIMIT = 30
 
 _BACKTICK_RE = re.compile(r"`([^`]+)`")
+#: 引号包住的原文（报错文案、日志串常这样贴）：中英文双引号与中文单引号。
+#: 英文单引号不算——它常出现在原文内部（``must start with '/'``、``don't``），当分隔符会切坏。
+_QUOTED_RE = re.compile(r'"([^"]+)"|“([^”]+)”|‘([^’]+)’')
+#: 整句原文的长度区间：短于下限交给 BM25，长于上限不可能是一条连续原文。
+MIN_SENTENCE_CHARS = 12
+MAX_SENTENCE_CHARS = 200
+#: 报错/日志文案里常见、而关键词式查询里少见的符号。
+_MESSAGE_CHARS = "'/:%{}()<>=!,."
 #: 裸字面量：由字母数字与 ``-`` ``_`` ``.`` ``:`` ``/`` ``=`` 组成的连续串（≥ MIN_LITERAL_CHARS）。
 _BARE_RE = re.compile(
     rf"[A-Za-z0-9][A-Za-z0-9._:/=\-]{{{MIN_LITERAL_CHARS - 1},}}"
@@ -165,6 +173,21 @@ def extract_literal_phrases(
 
     for match in _BACKTICK_RE.finditer(query):
         _add(match.group(1))
+    for match in _QUOTED_RE.finditer(query):
+        _add(next(group for group in match.groups() if group))
+    # 整条查询就是一句原文（报错文案、日志行，如 ``A path prefix must start with '/'``）：
+    # 带空格的句子不会被下面的裸串规则提取，BM25 又会被长函数稀释，整句当强短语直接找子串。
+    # 只在句子带报错/日志文案常见的符号时才扫（大仓一次全表扫描在 2 核 VPS 上要几百毫秒，
+    # 普通的关键词串/问句不该为它买单）。
+    sentence = query.strip().strip("`\"'“”‘’")
+    if (
+        not strong  # 已有反引号/引号原文时以它们为准
+        and " " in sentence
+        and any(char in sentence for char in _MESSAGE_CHARS)
+        and MIN_SENTENCE_CHARS <= len(sentence) <= MAX_SENTENCE_CHARS
+        and sum(char.isascii() for char in sentence) >= 0.9 * len(sentence)
+    ):
+        _add(sentence)
     for match in _BARE_RE.finditer(query):
         token = match.group(0)
         if _is_worth(token):

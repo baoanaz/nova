@@ -575,6 +575,8 @@ export interface UsageRecord {
   docsCount: number;
   usedTokens: number;
   citationCoverage: number | null;
+  /** LLM 阶段耗时（ask 含多轮调研；search 与未调 LLM 的 ask 为 null）。 */
+  llmLatencyMs?: number | null;
   /**
    * 请求 trace id（TASK-094 §C）：与响应头 `X-Request-Id`、服务端日志的 `requestId` 同源。
    * `null` = 这条记录落库时没有 trace（旧版本写下的行）——页面显示 `—`，不编造。

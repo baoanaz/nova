@@ -56,6 +56,7 @@ from typing import Any
 
 from nova_core.contextpack.reason import agent_reason
 from nova_core.parsing.markdown import classify_doctype
+from nova_core.retrieval.literal import REASON_LITERAL
 from nova_core.storage import Store
 from nova_core.types import (
     Budget,
@@ -1587,6 +1588,12 @@ def _assess(
       候选里至少有一个结构化代码切片（函数/方法/类等），把"只有文档和 import 前导段"堵住。
     """
     explicit_hits = sum(1 for candidate in pool if _is_explicit(candidate))
+    # 强字面量（反引号/引号原文、报错文案整句）逐字命中代码切片：和符号命中一样是硬依据。
+    # 不算它时，“贴报错原文”这种最精确的查询反而被判 low，并提示 Agent 换词重搜。
+    literal_hits = sum(
+        1 for candidate in pool
+        if _is_strong_literal(candidate) and candidate.kind in _STRUCTURED_CODE_KINDS
+    )
     inferred_hits = sum(1 for candidate in pool if _is_inferred(candidate))
     consensus = _consensus_count(pool)
     consensus_files = _consensus_files(pool)
@@ -1595,11 +1602,12 @@ def _assess(
         _is_corroborated_top(pool[0] if pool else None)
         or (median > 0.0 and _consensus_peak(pool) >= CONSENSUS_SCORE_RATIO * median)
     )
-    answerable = explicit_hits >= 1 or inferred_hits >= 1 or structural_result or corroborated
+    hard = explicit_hits >= 1 or inferred_hits >= 1 or literal_hits >= 1 or structural_result
+    answerable = hard or corroborated
     if has_code and answerable and not structural_result and not _has_structured_code(pool):
         # 旧规则的全部依据都是“文本相似”，没有任何可读代码结构时不足以支撑回答
         # （文档 + import 前导段也会双通道共识）。显式符号命中仍视为强依据。
-        answerable = explicit_hits >= 1 or inferred_hits >= 1 or structural_result
+        answerable = hard
 
     spec_only = bool(docs) and not evidence
     if not answerable:
@@ -1610,7 +1618,14 @@ def _assess(
         confidence = "medium"
     else:
         confidence = "low"
+    if confidence == "low" and literal_hits >= 1:
+        confidence = "medium"
     return answerable, confidence
+
+
+def _is_strong_literal(candidate: Candidate) -> bool:
+    """强字面量命中（``explicit literal …``）；标识符词根的 ``literal root`` 不算。"""
+    return any(reason.startswith(REASON_LITERAL) for reason in candidate.reasons)
 
 
 def _missing_evidence(

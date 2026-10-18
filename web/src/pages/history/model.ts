@@ -256,7 +256,8 @@ function buildQueryRows(records: UsageRecord[], since: number, nameOf: Namer): A
         summary: record.query,
         tool: isAsk ? "ask_project" : "search_context",
         state: queryState(record),
-        durationMs: record.latencyMs,
+        // ask 的 latencyMs 只是检索段；LLM 阶段（含多轮调研）另记在 llmLatencyMs。
+        durationMs: record.latencyMs + (record.llmLatencyMs ?? 0),
         volume: `${record.usedTokens} token`,
         traceId: record.requestId,
         input: record.query,
@@ -268,6 +269,12 @@ function buildQueryRows(records: UsageRecord[], since: number, nameOf: Namer): A
           { label: "Token", value: String(record.usedTokens) },
           { label: "证据（代码/文档/测试）", value: evidenceBreakdown(record) },
           ...(record.answerStatus ? [{ label: "答案状态", value: record.answerStatus }] : []),
+          ...(record.llmLatencyMs != null
+            ? [
+                { label: "检索耗时", value: `${record.latencyMs} ms` },
+                { label: "LLM 耗时（含调研）", value: `${record.llmLatencyMs} ms` },
+              ]
+            : []),
         ],
         ...noteFor(record),
       };

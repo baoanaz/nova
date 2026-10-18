@@ -668,6 +668,8 @@ def answer_question(
 
     失败时抛 :class:`AnswerError`（消息已脱敏），由调用方转成 D-26 降级包。
     """
+    # ``latency_ms`` 记整个 LLM 阶段（多轮调研 + 总结），历史页的 ask 耗时 = 检索 + 这一段。
+    started = time.perf_counter()
     research_meta = None
     if search is not None and settings.ask_research_rounds > 0:
         pack, trace = research(
@@ -675,7 +677,7 @@ def answer_question(
         )
         research_meta = trace.as_meta()
     user = build_user_prompt(pack, question)
-    started = time.perf_counter()
+
     def call() -> str:
         return provider.complete(
             system=SYSTEM_PROMPT,
