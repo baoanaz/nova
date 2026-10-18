@@ -1778,7 +1778,6 @@ def _next_queries(
 
 #: 目标形态：``query = template.format(subject=...)``（缺口类型 → 自愈问法，Module/03 §5）。
 _QUERY_TEMPLATES: Mapping[str, str] = {
-    "unresolved_reference": "{subject} 的调用方有哪些",
     "stale_doc_reference": "{subject} 现在在哪里实现",
     "graph_boundary": "{subject} 的调用链完整路径",
     "symbol_ambiguous": "{subject} 到底指哪一个",

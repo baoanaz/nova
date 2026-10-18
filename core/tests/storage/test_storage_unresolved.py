@@ -171,3 +171,14 @@ def test_content_signature_changes_on_write(
     )
     store.apply_file_change(parsed, [make_chunk()], "h1")
     assert store.content_signature() != before
+
+
+def test_phrase_search_matches_adjacent_words_ignoring_punctuation(
+    store: Store, make_parsed: Callable[..., ParsedFile], make_chunk: Callable[..., ChunkDef]
+) -> None:
+    content = 'assert prefix.startswith("/"), "A path prefix must start with \'/\'"\n'
+    store.apply_file_change(make_parsed(), [make_chunk(content=content)], "h1")
+    assert store.phrase_search("A path prefix must start with '/'")
+    assert store.phrase_search("path prefix must start")
+    assert store.phrase_search("prefix path must start") == []  # 词序不对
+    assert store.phrase_search("prefix") == []  # 单词交给 BM25

@@ -287,9 +287,7 @@ def test_warning_and_exceeded_markdown_differ(env: Env) -> None:
 
     env.relaunch(storage_limit_per_project_bytes=env.limit_for_ratio(0.8))
     warning = warning_for(env.manager, env.settings, project_id=env.project_id)
-    assert warning is not None and warning.startswith(STORAGE_WARNING_HEADING)
-    assert "上传会被拒绝" not in warning
-    assert "请提醒用户" in warning
+    assert warning is None, "80% 只在控制台展示，不进 tool 返回（2026-10-18）"
 
     env.relaunch(storage_limit_per_project_bytes=max(1, used // 2))
     exceeded = warning_for(env.manager, env.settings, project_id=env.project_id)
@@ -298,21 +296,18 @@ def test_warning_and_exceeded_markdown_differ(env: Env) -> None:
     assert "上传会被拒绝" in exceeded, "超限必须写明上传会被拒（TASK-110 硬拒新索引）"
     assert "检索" in exceeded and "不受影响" in exceeded
     assert "删除" in exceeded and "源码不受影响" in exceeded
-    assert exceeded != warning
 
 
 def test_warning_markdown_states_real_numbers(env: Env) -> None:
     """文案里的数字是**真实测量值**（用量与上限都能对回目录求和），不是编的。"""
     used = _usage_bytes(env)
-    limit = env.limit_for_ratio(0.8)
+    limit = max(1, used // 2)
     env.relaunch(storage_limit_per_project_bytes=limit)
 
     markdown = warning_for(env.manager, env.settings, project_id=env.project_id)
     assert markdown is not None
     assert format_bytes(used) in markdown
     assert format_bytes(limit) in markdown
-    assert "80%" in markdown
-    assert markdown.count("80%") == 1, "百分比只出现一次（不要重复一遍）"
 
 
 def test_user_limit_counts_all_owned_projects(env: Env) -> None:
@@ -480,20 +475,16 @@ def test_no_warning_section_when_quota_disabled(env: Env) -> None:
     assert STORAGE_WARNING_HEADING not in _search_via_mcp(env)
 
 
-def test_warning_appears_in_mcp_tool_content(env: Env) -> None:
-    """DoD：≥80% → **tool 返回内容**里出现告警节（用户明确要求，不只是日志）。"""
-    used = _usage_bytes(env)
+def test_near_limit_warning_stays_out_of_tool_content(env: Env) -> None:
+    """80% 的“快满了”不进 tool 返回（与当次检索无关，只占 Agent 上下文；控制台可看）。"""
+    _usage_bytes(env)
     env.relaunch(storage_limit_per_user_bytes=env.limit_for_ratio(0.8))
 
     text = _search_via_mcp(env)
 
-    assert STORAGE_WARNING_HEADING in text
-    assert "请提醒用户" in text, "文案要能被 Agent 直接转述给用户"
-    assert format_bytes(used) in text
-    # 告警是**追加**在原有内容之后：正文仍逐字来自 render_markdown（D-21 不动）。
+    assert STORAGE_WARNING_HEADING not in text
     assert text.startswith("[nova] answerable=")
     assert "## Relevant Context" in text
-    assert text.index("### Meta") < text.index(STORAGE_WARNING_HEADING)
 
 
 def test_exceeded_still_serves_and_warns_about_uploads(env: Env) -> None:
@@ -555,10 +546,10 @@ def test_mcp_calls_are_written_to_query_audit(env: Env) -> None:
     assert {record.mode for record in summary.recent} >= {"fast", "deep"}
 
 
-def test_ask_project_tool_also_carries_warning(env: Env) -> None:
-    """``ask_project`` 的返回同样带告警（两个工具都能提醒，不只 search）。"""
-    _usage_bytes(env)
-    env.relaunch(storage_limit_per_user_bytes=env.limit_for_ratio(0.8))
+def test_ask_project_tool_also_carries_exceeded_notice(env: Env) -> None:
+    """超限时 ``ask_project`` 的返回同样带提示（两个工具都能提醒，不只 search）。"""
+    used = _usage_bytes(env)
+    env.relaunch(storage_limit_per_user_bytes=max(1, used // 2))
 
     assert STORAGE_WARNING_HEADING in _ask_via_mcp(env)
 
@@ -566,10 +557,10 @@ def test_ask_project_tool_also_carries_warning(env: Env) -> None:
 # --------------------------------------------------------------------------- §B REST 面
 
 
-def test_rest_search_markdown_carries_warning(env: Env) -> None:
-    """REST 面（``POST /api/query/search``）的 ``markdown`` 同样带告警（两面一致）。"""
-    _usage_bytes(env)
-    env.relaunch(storage_limit_per_project_bytes=env.limit_for_ratio(0.8))
+def test_rest_search_markdown_carries_exceeded_notice(env: Env) -> None:
+    """REST 面（``POST /api/query/search``）的 ``markdown`` 超限时同样带提示（两面一致）。"""
+    used = _usage_bytes(env)
+    env.relaunch(storage_limit_per_project_bytes=max(1, used // 2))
 
     body = env.client.post(
         "/api/query/search", json={"projectId": env.project_id, "query": TARGET_SYMBOL}
@@ -580,9 +571,9 @@ def test_rest_search_markdown_carries_warning(env: Env) -> None:
 
 
 def test_rest_ask_carries_warning_in_degraded_branch(env: Env) -> None:
-    """``ask`` 的**降级分支**也必须带告警——恰好走降级时不该看不到提醒。"""
-    _usage_bytes(env)
-    env.relaunch(storage_limit_per_project_bytes=env.limit_for_ratio(0.8))
+    """``ask`` 的**降级分支**也必须带超限提示——恰好走降级时不该看不到提醒。"""
+    used = _usage_bytes(env)
+    env.relaunch(storage_limit_per_project_bytes=max(1, used // 2))
 
     body = env.client.post(
         "/api/query/ask", json={"projectId": env.project_id, "question": TARGET_SYMBOL}

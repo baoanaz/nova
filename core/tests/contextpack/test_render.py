@@ -306,3 +306,18 @@ def test_retry_tips_only_for_low_confidence(store, seed_file, sym, cand) -> None
     rich = _build_pack(store, seed_file, sym, cand)
     assert rich.confidence != "low"
     assert "### Retry Tips" not in render_markdown(rich, now=NOW)
+
+
+def test_agent_output_hides_index_diagnostics(store, seed_file, sym, cand) -> None:
+    """未解析引用 / 候选池裁剪是维护诊断：留在 pack 里，但不进面向 Agent 的 Markdown。"""
+    from nova_core.types import MissingEvidence
+
+    pack = _build_pack(store, seed_file, sym, cand)
+    pack.missing_evidence = [
+        MissingEvidence(code="unresolved_reference", message="285 个符号引用无法解析"),
+        MissingEvidence(code="retrieval_truncated", message="候选池被裁剪"),
+    ]
+    text = render_markdown(pack, now=NOW)
+    assert "### Missing Evidence" not in text
+    assert "无法解析" not in text and "候选池被裁剪" not in text
+

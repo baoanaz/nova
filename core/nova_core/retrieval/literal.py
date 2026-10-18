@@ -86,8 +86,9 @@ _QUOTED_RE = re.compile(r'"([^"]+)"|“([^”]+)”|‘([^’]+)’')
 #: 整句原文的长度区间：短于下限交给 BM25，长于上限不可能是一条连续原文。
 MIN_SENTENCE_CHARS = 12
 MAX_SENTENCE_CHARS = 200
-#: 报错/日志文案里常见、而关键词式查询里少见的符号。
-_MESSAGE_CHARS = "'/:%{}()<>=!,."
+#: 整句原文至少几个词（两三个词的短语交给 BM25 与符号通道）。
+MIN_SENTENCE_WORDS = 4
+_WORD_RE = re.compile(r"[A-Za-z0-9_]+")
 #: 裸字面量：由字母数字与 ``-`` ``_`` ``.`` ``:`` ``/`` ``=`` 组成的连续串（≥ MIN_LITERAL_CHARS）。
 _BARE_RE = re.compile(
     rf"[A-Za-z0-9][A-Za-z0-9._:/=\-]{{{MIN_LITERAL_CHARS - 1},}}"
@@ -175,15 +176,14 @@ def extract_literal_phrases(
         _add(match.group(1))
     for match in _QUOTED_RE.finditer(query):
         _add(next(group for group in match.groups() if group))
-    # 整条查询就是一句原文（报错文案、日志行，如 ``A path prefix must start with '/'``）：
-    # 带空格的句子不会被下面的裸串规则提取，BM25 又会被长函数稀释，整句当强短语直接找子串。
-    # 只在句子带报错/日志文案常见的符号时才扫（大仓一次全表扫描在 2 核 VPS 上要几百毫秒，
-    # 普通的关键词串/问句不该为它买单）。
+    # 整条查询就是一句原文（报错文案、日志行，如 ``Cannot include the same APIRouter
+    # instance into itself``）：带空格的句子不会被下面的裸串规则提取，BM25 又会被包含它的长函数
+    # 稀释。整句当强短语，由 :func:`recall_literal` 走 FTS 短语查询（词序相邻、毫秒级）；
+    # 自然语言问句与关键词串几乎不可能逐词相邻地出现在代码里，不命中也没有代价。
     sentence = query.strip().strip("`\"'“”‘’")
     if (
         not strong  # 已有反引号/引号原文时以它们为准
-        and " " in sentence
-        and any(char in sentence for char in _MESSAGE_CHARS)
+        and len(_WORD_RE.findall(sentence)) >= MIN_SENTENCE_WORDS
         and MIN_SENTENCE_CHARS <= len(sentence) <= MAX_SENTENCE_CHARS
         and sum(char.isascii() for char in sentence) >= 0.9 * len(sentence)
     ):
@@ -225,8 +225,13 @@ def recall_literal(
     candidates: list[Candidate] = []
     seen: set[str] = set()
     for phrase in phrases:
-        if phrase.strong:
+        if phrase.strong and " " in phrase.text.strip():
+            # 带空格的原文走 FTS 短语查询（索引内毫秒级）；全表子串扫描在大仓上要秒级。
             found: list[tuple[str, str]] = [
+                (chunk_id, "phrase") for chunk_id in store.phrase_search(phrase.text, limit=limit)
+            ]
+        elif phrase.strong:
+            found = [
                 (chunk_id, f"{hits} hits")
                 for chunk_id, hits in store.literal_search(phrase.text, limit=limit)
             ]

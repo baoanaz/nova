@@ -178,11 +178,18 @@ def _flow_section(pack: ContextPack) -> list[str]:
     return lines
 
 
+#: 只给维护者看的索引诊断：与当次查询无关（“全仓 285 个符号引用无法解析”“候选池裁掉 129 个”），
+#: 每次都占 Agent 上下文，还会诱导它去追无意义的线索（实测建议查 ``__name__`` 的调用方）。
+#: 仍保留在 ``pack.missing_evidence`` / meta 里，只是不进面向 Agent 的 Markdown。
+AGENT_HIDDEN_GAPS = frozenset({"unresolved_reference", "retrieval_truncated"})
+
+
 def _missing_section(pack: ContextPack) -> list[str]:
-    if not pack.missing_evidence:
+    shown = [item for item in pack.missing_evidence if item.code not in AGENT_HIDDEN_GAPS]
+    if not shown:
         return []
     lines = ["### Missing Evidence"]
-    for item in pack.missing_evidence:
+    for item in shown:
         symbol = f" ({item.symbol})" if item.symbol else ""
         lines.append(f"- [{item.code}]{symbol} {item.message}")
     return lines

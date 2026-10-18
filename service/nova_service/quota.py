@@ -130,13 +130,13 @@ class QuotaStatus:
         }
 
     def warning_markdown(self) -> str | None:
-        """tool 返回里要追加的那一节；``ok``/不限 → ``None``（**不打扰**）。
+        """tool 返回里要追加的那一节：**只在超限（exceeded）时**给，其余 → ``None``。
 
-        文案是给 **Agent 读并转述**的：每条都以"请提醒用户"收尾，并说清"去哪儿删、删了会怎样"
-        （配合 §D 的删除入口形成闭环）。超限时**明确写出"不阻断"**——否则 Agent 可能自作主张
-        停止索引，而那不是我们的行为。
+        2026-10-18 用户拍板：80% 的“快满了”提醒不进 tool 返回——它与当次检索无关，每次都占
+        Agent 的上下文，还会让 Agent 打断任务去转述（占用在控制台看）。超限不同：新的索引上传
+        会被拒绝，索引会落后于代码，这是影响结果的错误状态，与“冷启动中”同类，需要 Agent 告诉用户。
         """
-        if not self.should_warn:
+        if self.status != STATUS_EXCEEDED:
             return None
         lines = [STORAGE_WARNING_HEADING]
         lines.extend(_dimension_lines(self.user, subject="当前账户的索引数据"))
@@ -144,16 +144,10 @@ class QuotaStatus:
             lines.extend(
                 _dimension_lines(self.project, subject=f"项目 {self.project_id} 的索引数据")
             )
-        if self.status == STATUS_EXCEEDED:
-            lines.append(
-                "- 已超出上限：**检索与已有项目的使用不受影响**，但**新的索引上传会被拒绝**；"
-                f"请提醒用户去控制台（{_CONSOLE_PATH}）删除不再需要的项目（只删索引数据，源码不受影响）。"
-            )
-        else:
-            lines.append(
-                f"- 请提醒用户：可在控制台（{_CONSOLE_PATH}）查看各项目占用，"
-                "删除不再需要的项目以释放空间。删除只影响索引数据，源码文件不受影响。"
-            )
+        lines.append(
+            "- 已超出上限：**检索与已有项目的使用不受影响**，但**新的索引上传会被拒绝**；"
+            f"请提醒用户去控制台（{_CONSOLE_PATH}）删除不再需要的项目（只删索引数据，源码不受影响）。"
+        )
         return "\n".join(lines)
 
 

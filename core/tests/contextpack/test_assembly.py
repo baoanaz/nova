@@ -723,7 +723,8 @@ def test_next_queries_come_from_gaps_not_pool_top_symbols(store, seed_file, sym,
     pack = _unresolved_pack(store, seed_file, sym, cand, answerable=False)
     assert "unresolved_reference" in [item.code for item in pack.missing_evidence]
     joined = " ".join(pack.next_queries)
-    assert "runtime_input" in joined
+    # 2026-10-18：未解析引用不再生成“X 的调用方有哪些”（实测建议查 ``__name__``，误导 Agent）。
+    assert "调用方有哪些" not in joined
     assert "test_user_input_reaches_runtime" not in joined, "不得再建议去查测试函数"
     assert "Runtime.accept" not in joined, "也不得从 pool 取符号"
     assert len(pack.next_queries) <= 3

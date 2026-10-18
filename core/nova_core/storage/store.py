@@ -1013,6 +1013,25 @@ class Store:
         ).fetchall()
         return [(str(r["chunk_id"]), float(r["score"])) for r in rows]
 
+    def phrase_search(self, phrase: str, limit: int = 30) -> list[str]:
+        """多词原文的**短语**检索：FTS5 短语查询（词序相邻），走全文索引。
+
+        给“报错原文/日志行”这类带空格的长串用：:meth:`literal_search` 是全表子串扫描，
+        大仓（2 万切片）在 2 核 VPS 上一次约 1 秒，不能对每条多词查询都做；短语查询只要毫秒级。
+        标点不参与匹配（unicode61 分词时丢弃），``must start with '/'`` 与正文同样命中。
+        """
+        tokens = segment(phrase).split()
+        words = [token for token in tokens if any(char.isalnum() for char in token)]
+        if len(words) < 2:
+            return []
+        match = '"' + " ".join(words).replace('"', '""') + '"'
+        rows = self._conn.execute(
+            "SELECT c.id AS chunk_id FROM chunks_fts JOIN chunks c ON c.rowid = chunks_fts.rowid"
+            " WHERE chunks_fts MATCH ? ORDER BY bm25(chunks_fts) LIMIT ?",
+            (match, limit),
+        ).fetchall()
+        return [str(row["chunk_id"]) for row in rows]
+
     def edges_for(self, fqn: str, kinds: Sequence[str] | None = None) -> list[EdgeRow]:
         """返回与 fqn 相关的边（**双向**：source 侧出边 + target 侧入边）。
 

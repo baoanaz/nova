@@ -25,7 +25,6 @@
      ⚠ 引用了已删除符号 LegacyToken.rotate，文档可能过时
 ### Missing Evidence
 - [index_stale] 索引落后于工作区：1 个文件已变更但未重索引，证据可能不是当前代码。
-- [unresolved_reference] 2 个符号引用无法解析（unresolved_refs status=failed：引用名为表达式或变量，无稳定符号名），涉及这些符号的调用关系可能缺失。
 - [stale_doc_reference] (LegacyToken.rotate) 文档 docs/design/auth.md 引用了已删除或改名的符号（LegacyToken.rotate），该文档可能已过时；需要以代码为准并更新文档。
 ### Meta
 confidence: high | index: stale (1 files) | budget: 705/10.0K
