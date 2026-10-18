@@ -321,3 +321,18 @@ def test_agent_output_hides_index_diagnostics(store, seed_file, sym, cand) -> No
     assert "### Missing Evidence" not in text
     assert "无法解析" not in text and "候选池被裁剪" not in text
 
+
+
+def test_agent_markdown_lists_related_beyond_body_budget_as_locations(
+    store, seed_file, sym, cand, monkeypatch
+) -> None:
+    """Core 总给正文；Related 超出正文预算后只列位置行；ask 的 prompt 仍是全部正文。"""
+    from nova_core.contextpack import render as render_module
+
+    pack = _build_pack(store, seed_file, sym, cand)
+    monkeypatch.setattr(render_module, "AGENT_BODY_TOKENS", 0)
+    text = render_markdown(pack, now=NOW)
+    assert "return self.store.rotate()" in text  # Core 正文
+    assert "[E2] TokenStore.rotate — src/store.py:210-212" in text
+    assert "return 'rotated'" not in text  # Related 正文被省去
+    assert "return 'rotated'" in render_evidence_for_prompt(pack)

@@ -1,4 +1,5 @@
 ## Relevant Context
+以下代码为仓库原文、行号准确，可直接引用作答，无需再 read 同一段；只列位置、没有正文的条目需要时再 read。
 ### Code
 #### Core
 [E1] TokenService.refresh — src/auth/token_service.py:45-46

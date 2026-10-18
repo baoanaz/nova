@@ -29,7 +29,7 @@ from __future__ import annotations
 import time
 from collections.abc import Sequence
 
-from nova_core.contextpack.assembly import elision_note, has_elision_note
+from nova_core.contextpack.assembly import elision_note, estimate_tokens, has_elision_note
 from nova_core.contextpack.reason import agent_reason
 from nova_core.types import ContextPack, EvidenceItem, Freshness
 
@@ -74,10 +74,29 @@ def evidence_group(
     return GROUP_RELATED
 
 
+#: 面向 Agent 的用法提示：实测 Agent 拿到 search 结果后 85% 的 read 是重读已返回的文件
+#: （不确定片段是否完整），同一段代码进两次上下文。低置信度时不写（那时该看 Retry Tips）。
+CORE_USAGE_NOTE = (
+    "以下代码为仓库原文、行号准确，可直接引用作答，无需再 read 同一段；"
+    "只列位置、没有正文的条目需要时再 read。"
+)
+
+#: 面向 Agent 的正文预算：Core 总是给正文，Related 按排名给到累计约这么多 token 为止。
+#: 全给正文时单次 search 约 6k token（Agent 仍会重读）；只给 Core 又会丢掉排在 Core
+#: 门槛之下的答案（场景评测 38/45 → 31/45）。
+AGENT_BODY_TOKENS = 3_000
+
+
 def render_markdown(pack: ContextPack, *, now: int | None = None) -> str:
-    """完整 ContextPack → Markdown（Fast 模式 MCP 直接返回的形态）。"""
+    """完整 ContextPack → Markdown（Fast 模式 MCP 直接返回的形态）。
+
+    面向 Agent 的形态“少而深”：Core 给正文，Related / Tests 只给位置行（不带代码）。
+    ask 的 prompt 走 :func:`render_evidence_for_prompt`，仍是全部正文。
+    """
     sections: list[str] = ["## Relevant Context"]
-    sections.extend(_code_section(pack))
+    if pack.evidence and pack.confidence != "low":
+        sections.append(CORE_USAGE_NOTE)
+    sections.extend(_code_section(pack, locate_only=True))
     sections.extend(_flow_section(pack))
     sections.extend(_docs_section(pack))
     sections.extend(_missing_section(pack))
@@ -98,23 +117,40 @@ def render_evidence_for_prompt(pack: ContextPack) -> str:
 # --------------------------------------------------------------------------- 分节
 
 
-def _code_section(pack: ContextPack, *, heading: str = "### Code") -> list[str]:
+def _code_section(
+    pack: ContextPack, *, heading: str = "### Code", locate_only: bool = False
+) -> list[str]:
     """``### Code`` 节。
 
     TASK-095 §B：节内按置信度分 ``#### Core`` / ``#### Related`` / ``#### Tests``。分组
-    只影响**标题与分组归属**，不改任何一条证据的正文或编号——三个组的拼接顺序
+    只影响**标题与分组归属**，不改任何一条证据的编号——三个组的拼接顺序
     （Core → Related → Tests）保证 ``[E*]`` 仍按装填顺序递增（编号 = 装填顺序，D-21）。
     空组不渲染（全是 Core 时不出现 ``#### Related`` / ``#### Tests``）。
+
+    ``locate_only``：Core 全部给正文；Related 按装填顺序给正文直到累计
+    :data:`AGENT_BODY_TOKENS`，其余与 Tests 只渲染位置行（``[E*] 符号 — 路径:行``）。
     """
     if not pack.evidence:
         return []
     lines = [heading]
+    body_tokens = 0
     for group_heading, items in _group_evidence(pack.evidence):
         if not items:
             continue  # 空组不渲染（空标题白占 token）
         lines.append(group_heading)
         for item in items:
-            lines.extend(_evidence_lines(item))
+            body = _evidence_lines(item)
+            cost = estimate_tokens("\n".join(body))
+            show = (
+                not locate_only
+                or group_heading == _CORE_HEADING
+                or (group_heading == _RELATED_HEADING and body_tokens + cost <= AGENT_BODY_TOKENS)
+            )
+            if show:
+                lines.extend(body)
+                body_tokens += cost
+            else:
+                lines.append(_evidence_header(item))
     return lines
 
 
@@ -226,18 +262,20 @@ def _next_queries_section(pack: ContextPack) -> list[str]:
     return ["### Suggested Next Queries", *(f"- {query}" for query in pack.next_queries)]
 
 
-def _evidence_lines(item: EvidenceItem, *, is_doc: bool = False) -> list[str]:
+def _evidence_header(item: EvidenceItem, *, is_doc: bool = False) -> str:
     if is_doc:
         doctype = f"（{item.doctype}）" if item.doctype else ""
         heading = f" > {item.heading_path}" if item.heading_path else ""
-        header = f"[{item.id}] {item.path}{heading}{doctype}"
-    else:
-        target = item.symbol or item.path
-        span = ""
-        if item.lines is not None:
-            span = f":{item.lines[0]}-{item.lines[1]}"
-        header = f"[{item.id}] {target} — {item.path}{span}"
-    lines = [header]
+        return f"[{item.id}] {item.path}{heading}{doctype}"
+    target = item.symbol or item.path
+    span = ""
+    if item.lines is not None:
+        span = f":{item.lines[0]}-{item.lines[1]}"
+    return f"[{item.id}] {target} — {item.path}{span}"
+
+
+def _evidence_lines(item: EvidenceItem, *, is_doc: bool = False) -> list[str]:
+    lines = [_evidence_header(item, is_doc=is_doc)]
     reason = agent_reason(item.reason)
     if reason:
         lines.append(f"     reason: {reason}")
